@@ -154,7 +154,10 @@ async function renderSettings() {
   const s = await getSettings();
   $("settings").innerHTML = `
     <label class="srow"><input type="checkbox" id="s-autostart" ${s.autostart ? "checked" : ""}/> 開機自動啟動</label>
-    <label class="srow"><input type="checkbox" id="s-refresh" ${s.allow_token_refresh ? "checked" : ""}/> 允許 Claude 權杖更新<span class="warn">（可能影響 Claude Code 登入）</span></label>
+    <div class="srow">Claude 權杖更新 <select id="s-refresh">
+      <option value="off" ${s.allow_token_refresh ? "" : "selected"}>關閉（過期時顯示估算）</option>
+      <option value="on" ${s.allow_token_refresh ? "selected" : ""}>開啟（過期自動換新）</option>
+    </select><span class="warn">可能影響 Claude Code 登入</span></div>
     <div class="srow">警戒 <input type="number" id="s-warn" value="${s.warn_pct}" min="1" max="100"/>% · 危險 <input type="number" id="s-crit" value="${s.crit_pct}" min="1" max="100"/>%</div>
     <div class="srow">島嶼顯示 <select id="s-island">
       <option value="both" ${s.island_mode !== "claude" && s.island_mode !== "codex" ? "selected" : ""}>Claude + Codex 並排</option>
@@ -172,7 +175,7 @@ function readSettingsForm(): Settings {
   const v = (id: string) => $(id) as HTMLInputElement;
   return {
     autostart: v("s-autostart").checked,
-    allow_token_refresh: v("s-refresh").checked,
+    allow_token_refresh: ($("s-refresh") as HTMLSelectElement).value === "on",
     warn_pct: +v("s-warn").value || 75,
     crit_pct: +v("s-crit").value || 90,
     compact: ui.compact,

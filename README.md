@@ -124,16 +124,21 @@ src/                前端（vanilla TS）
   panel.ts          額度列表 + 下鑽詳情
   analytics.ts      用量分析（六個分頁）
   datasource.ts     資料層抽象（Tauri ⇄ mock）
-  engine 相關型別    types.ts / format.ts / colors.ts
+  icons.ts          供應商品牌 icon（assets/ 內的 lobe-icons SVG）
+  types.ts / format.ts / colors.ts
 src-tauri/src/      後端（Rust）
   lib.rs            入口：視窗、系統匣、排程器、通知
-  providers/        anthropic.rs（usage API）、codex.rs（本機檔案）
+  providers/        anthropic.rs（usage API）、codex.rs（本機快照）、
+                    codex_live.rs（即時帳號用量，opt-in）
   engine.rs         取樣歷史 → 狀態/pace/runway
   burnrate.rs       燒速斜率與 runway 投影
   ranking.rs        最危險額度選擇（遲滯防抖）
   analytics.rs      本機 jsonl 用量統計
   config.rs         settings.json 讀寫
-docs/               UX 規格書、資料來源實測、參數總表（CONFIG.md）
+docs/               UX 規格書 v3、資料來源實測、參數總表（CONFIG.md）
+  archive/          已被 v3 取代的舊規格
+scripts/            collect-installers.mjs（把安裝檔集中到 release/）
+release/            打包後的安裝檔（gitignore，發佈走 GitHub Releases）
 ```
 
 ## 開發
@@ -143,7 +148,7 @@ npm install                                    # 前端依賴
 npm run tauri dev                              # 開發模式（TOKENBAR_DEBUG=1 可看每輪數值）
 npm run dev                                    # 純前端 mock 模式（瀏覽器 http://localhost:1420）
 cargo test --manifest-path src-tauri/Cargo.toml  # 後端測試
-npm run tauri build                            # 打包（產物在 src-tauri/target/release/bundle/）
+npm run build:release                          # 打包（安裝檔集中複製到 release/）
 ```
 
 行為規格的唯一真相是 [docs/TokenBar UX Spec v3.md](docs/TokenBar%20UX%20Spec%20v3.md)，資料層實測見 [docs/data-sources-findings.md](docs/data-sources-findings.md)。

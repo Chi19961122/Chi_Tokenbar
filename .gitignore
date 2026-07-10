@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# 打包產物集中處（scripts/collect-installers.mjs 產生，發佈走 GitHub Releases）
+release/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

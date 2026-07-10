@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:release": "tauri build && node scripts/collect-installers.mjs",
+    "collect": "node scripts/collect-installers.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

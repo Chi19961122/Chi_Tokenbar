@@ -27,7 +27,7 @@
 
 | 欄位 | 預設 | 說明 |
 |---|---|---|
-| `allow_token_refresh` | `false` | 允許 TokenBar 更新 Claude OAuth token。**opt-in**：refresh 會輪替 token，理論上可能影響 Claude Code 登入（已實作原子寫回並實測無礙，仍保持自選）。關閉時 token 過期就顯示「估算」degraded 狀態 |
+| `allow_token_refresh` | `false` | 允許 TokenBar 更新 Claude OAuth token（設定區下拉：關閉／開啟，改動即時生效、免重啟）。**opt-in**：refresh 會輪替 token，理論上可能影響 Claude Code 登入（已實作原子寫回並實測無礙，仍保持自選）。關閉時 token 過期就顯示「估算」degraded 狀態 |
 | `autostart` | `false` | 開機自動啟動 |
 | `warn_pct` | `75` | 通知門檻：util% 到達即發「warning」系統通知 |
 | `crit_pct` | `90` | 通知門檻：util% 到達即發「critical」系統通知（LOCKED 也算 critical） |

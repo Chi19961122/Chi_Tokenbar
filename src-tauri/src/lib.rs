@@ -66,7 +66,6 @@ fn set_settings(app: AppHandle, data: State<'_, AppData>, settings: Settings) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = config::load();
-    let allow_refresh = settings.allow_token_refresh;
     let (refresh_tx, refresh_rx) = mpsc::channel::<()>();
 
     tauri::Builder::default()
@@ -91,7 +90,7 @@ pub fn run() {
             build_tray(app.handle())?;
             position_island(app.handle());
             apply_autostart(app.handle(), settings.autostart);
-            spawn_scheduler(app.handle().clone(), allow_refresh, refresh_rx);
+            spawn_scheduler(app.handle().clone(), refresh_rx);
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -204,10 +203,10 @@ fn capsule_icon(pct_left: f64, rgb: (u8, u8, u8)) -> Image<'static> {
 
 // ── scheduler ────────────────────────────────────────────────────────
 
-fn spawn_scheduler(app: AppHandle, allow_refresh: bool, refresh_rx: Receiver<()>) {
+fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
     std::thread::spawn(move || {
         let mut engine = Engine::new();
-        let mut anthropic = AnthropicProvider::new(allow_refresh);
+        let mut anthropic = AnthropicProvider::new();
         let mut codex_live = providers::codex_live::CodexLiveProvider::new();
         let mut notified: HashMap<String, i64> = HashMap::new();
         let debug = std::env::var("TOKENBAR_DEBUG").is_ok();
@@ -217,10 +216,16 @@ fn spawn_scheduler(app: AppHandle, allow_refresh: bool, refresh_rx: Receiver<()>
         loop {
             let now = chrono::Utc::now().timestamp();
 
-            let codex_source = app
+            // Read live settings once per round so both toggles apply without restart.
+            let (codex_source, allow_refresh) = app
                 .try_state::<AppData>()
-                .and_then(|data| data.settings.lock().ok().map(|s| s.codex_usage_source.clone()))
-                .unwrap_or_else(|| "local".into());
+                .and_then(|data| {
+                    data.settings
+                        .lock()
+                        .ok()
+                        .map(|s| (s.codex_usage_source.clone(), s.allow_token_refresh))
+                })
+                .unwrap_or_else(|| ("local".into(), false));
             let live = if matches!(codex_source.as_str(), "live" | "auto") {
                 codex_live.poll(now, force)
             } else {
@@ -232,7 +237,7 @@ fn spawn_scheduler(app: AppHandle, allow_refresh: bool, refresh_rx: Receiver<()>
                 Vec::new()
             };
             let mut limits = providers::codex_live::choose_limits(&codex_source, live, local);
-            limits.extend(anthropic.poll(now, force));
+            limits.extend(anthropic.poll(now, force, allow_refresh));
             let snapshot = engine.ingest(limits, now);
 
             if debug {

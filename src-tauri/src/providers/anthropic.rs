@@ -23,15 +23,13 @@ const REFRESH_SECS: i64 = 180; // cache window per §9 (~180s)
 const FORCE_MIN_SECS: i64 = 5;
 
 pub struct AnthropicProvider {
-    allow_refresh: bool,
     last_fetch: i64,
     cached: Vec<Limit>,
 }
 
 impl AnthropicProvider {
-    pub fn new(allow_refresh: bool) -> Self {
+    pub fn new() -> Self {
         Self {
-            allow_refresh,
             last_fetch: 0,
             cached: Vec::new(),
         }
@@ -39,23 +37,25 @@ impl AnthropicProvider {
 
     /// Return limits, hitting the network at most every REFRESH_SECS
     /// (FORCE_MIN_SECS when the user asked for a manual refresh).
-    pub fn poll(&mut self, now: i64, force: bool) -> Vec<Limit> {
+    /// `allow_refresh` is read from live settings each round so the toggle
+    /// takes effect without restarting the app.
+    pub fn poll(&mut self, now: i64, force: bool, allow_refresh: bool) -> Vec<Limit> {
         let min_gap = if force { FORCE_MIN_SECS } else { REFRESH_SECS };
         if now - self.last_fetch < min_gap && !self.cached.is_empty() {
             return self.cached.clone();
         }
         self.last_fetch = now;
-        self.cached = self.fetch().unwrap_or_else(degraded_limits);
+        self.cached = self.fetch(allow_refresh).unwrap_or_else(degraded_limits);
         self.cached.clone()
     }
 
-    fn fetch(&self) -> Option<Vec<Limit>> {
+    fn fetch(&self, allow_refresh: bool) -> Option<Vec<Limit>> {
         let creds = read_creds()?;
         let now_ms = chrono::Utc::now().timestamp_millis();
 
         let token = if creds.expires_ms > now_ms + 60_000 {
             creds.access
-        } else if self.allow_refresh {
+        } else if allow_refresh {
             refresh_token(&creds.refresh)?
         } else {
             // Expired and refresh disabled → degrade honestly (no rotation risk).

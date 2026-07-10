@@ -2,6 +2,8 @@
 
 ## 目前狀態:全部里程碑完成,修正版已打包並在跑
 
+- **Codex 即時來源 + 設定整理 + 目錄整理**(2026-07-10 晚):使用者自行實作 codex_live.rs(local/live/auto 三來源,修正本機快照過舊顯示 0% 的問題);Claude 權杖更新改為下拉且**即時生效**(allow_refresh 改為每輪從 settings 重讀,不再需要重啟);AGENTS.md 修復(原為 Claude→Codex 誤植的壞檔);舊規格歸檔至 docs/archive/;新增 `npm run build:release` + scripts/collect-installers.mjs,安裝檔集中到根目錄 release/(gitignored)。
+
 - M0–M7 全部完成(scaffold、Codex provider、burn-rate 引擎、Live Island 視覺、Anthropic provider+降級、面板下鑽、第三層分析、通知/設定/autostart)。
 - Polish 完成:island 拖曳+吸邊、tray rich tooltip、綠色方塊 logo(`src-tauri/icon-source.png`)。
 - **數值修正完成**(使用者回報數值不準的 bug):Codex 快照過期/陳舊語意,見 CLAUDE.md 鐵則。19/19 cargo 測試通過。
