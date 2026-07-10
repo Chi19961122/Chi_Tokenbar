@@ -20,6 +20,13 @@
   --pill-bg: rgba(10, 12, 15, 0.9);
   --track: rgba(255, 255, 255, 0.08);
 
+  /* Island is intentionally theme-invariant: portable, NSIS, and MSI all
+     use this opaque dark capsule with the same contrast as the reference. */
+  --island-bg: #090b0e;
+  --island-border: rgba(255, 255, 255, 0.16);
+  --island-text: #e8edf5;
+  --island-text-dim: #a4adba;
+
   --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo,
     Consolas, monospace;
   --sans: "Geist", -apple-system, system-ui, "Segoe UI", sans-serif;
@@ -58,6 +65,8 @@ body.expanded #island {
 }
 
 /* ── Island (collapsed): fuel capsule + % left ────────────────────── */
+/* Release invariant: portable, NSIS, and MSI all package this same Vite CSS.
+   Reference skin: opaque #090b0e pill, amber near border/glow, high-contrast text. */
 
 .island {
   display: flex;
@@ -69,8 +78,9 @@ body.expanded #island {
   width: max-content;
   max-width: calc(100vw - 8px);
   border-radius: 999px;
-  background: var(--pill-bg);
-  border: 1px solid var(--border);
+  background: var(--island-bg);
+  border: 1px solid var(--island-border);
+  color: var(--island-text);
   white-space: nowrap;
   cursor: pointer;
   transition: opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
@@ -123,7 +133,7 @@ body.expanded #island {
   margin-left: auto;
   font-family: var(--mono);
   font-size: 10.5px;
-  color: var(--text-dim);
+  color: var(--island-text-dim);
   white-space: nowrap;
 }
 
@@ -138,8 +148,8 @@ body.expanded #island {
 .island.status-near {
   opacity: 1;
   color: var(--near);
-  border-color: rgba(251, 191, 36, 0.55);
-  box-shadow: 0 2px 14px rgba(251, 191, 36, 0.22);
+  border-color: rgba(251, 191, 36, 0.72);
+  box-shadow: 0 2px 14px rgba(251, 191, 36, 0.28);
 }
 .island.status-locked {
   opacity: 1;

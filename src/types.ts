@@ -37,6 +37,7 @@ export interface Snapshot {
 
 /** Island layout: both providers side-by-side, or a single provider. */
 export type IslandMode = "both" | "claude" | "codex";
+export type CodexUsageSource = "live" | "auto" | "local";
 
 export interface Settings {
   allow_token_refresh: boolean;
@@ -45,6 +46,7 @@ export interface Settings {
   crit_pct: number;
   compact: boolean;
   island_mode: IslandMode;
+  codex_usage_source: CodexUsageSource;
 }
 
 // ── Layer ③ analytics (UX Spec v3 §11) ──────────────────────────────

@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: Settings = {
   crit_pct: 90,
   compact: false,
   island_mode: "both",
+  codex_usage_source: "local",
 };
 
 export const isTauri = () =>

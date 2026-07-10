@@ -33,6 +33,7 @@
 | `crit_pct` | `90` | 通知門檻：util% 到達即發「critical」系統通知（LOCKED 也算 critical） |
 | `compact` | `false` | 展開面板預設用精簡模式（只有額度列表，隱藏分析分頁）；由 header 的 ⊟/⊞ 按鈕切換並自動記住 |
 | `island_mode` | `"both"` | 島嶼佈局：`both`（Claude+Codex 並排）／`claude`／`codex`；⚙ 設定區可切（未知舊值一律當 both） |
+| `codex_usage_source` | `"local"` | Codex 用量來源：`local` 只讀本機 session 快照（預設，零網路請求）／`live` 讀已登入帳號的即時用量／`auto` 優先即時、失敗才回本機快照。選擇 `live` 或 `auto` 才會進行唯讀網路查詢，不會生成模型回應或輪替權杖。 |
 
 定義：`src-tauri/src/config.rs`。
 
@@ -96,8 +97,13 @@
 |---|---|---|
 | Claude Code | usage API（token 來自 `~/.claude/.credentials.json`） | 每 180 秒（手動 ⟳ 可立即） |
 | Codex | `~/.codex/sessions/**/rollout-*.jsonl` 最新檔尾端的 `rate_limits` | 只在 Codex 執行時寫入；TokenBar 每 15 秒重讀 |
+| Codex（即時／自動） | `https://chatgpt.com/backend-api/wham/usage` | 每 180 秒唯讀查詢一次；手動 ⟳ 可提早查詢（最短間隔 5 秒）。只在設定選擇 `live` 或 `auto` 時使用 |
 
 ## 6. 除錯
 
 - `TOKENBAR_DEBUG=1` 環境變數：stderr 每輪印 `[tb]` 各 limit 的 util/status/runway。
 - 瀏覽器 preview（非 Tauri）自動進 mock 模式，devbar 可切 safe / near / locked / degraded / stale / empty 情境。
+
+## 7. 發行版外觀一致性
+
+免安裝 exe、NSIS 與 MSI 都由相同的 `dist` 前端資產打包；島嶼膠囊的唯一配色來源是 `src/styles.css`。不得依安裝方式加入不同的 CSS 或程式分支。

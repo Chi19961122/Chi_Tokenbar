@@ -18,6 +18,9 @@ pub struct Settings {
     pub compact: bool,
     /// Island layout: "both" (providers side-by-side), "claude", "codex".
     pub island_mode: String,
+    /// Codex quota source: "local" (rollout snapshot), "live" (account API),
+    /// or "auto" (live first, then local fallback).
+    pub codex_usage_source: String,
 }
 
 impl Default for Settings {
@@ -29,6 +32,7 @@ impl Default for Settings {
             crit_pct: 90.0,
             compact: false,
             island_mode: "both".into(),
+            codex_usage_source: "local".into(),
         }
     }
 }
@@ -52,5 +56,21 @@ pub fn save(s: &Settings) {
         if let Ok(json) = serde_json::to_string_pretty(s) {
             let _ = std::fs::write(p, json);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_local_codex_usage() {
+        assert_eq!(Settings::default().codex_usage_source, "local");
+    }
+
+    #[test]
+    fn missing_source_deserializes_to_local() {
+        let s: Settings = serde_json::from_str(r#"{ "autostart": true }"#).unwrap();
+        assert_eq!(s.codex_usage_source, "local");
     }
 }

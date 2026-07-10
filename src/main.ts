@@ -160,6 +160,11 @@ async function renderSettings() {
       <option value="both" ${s.island_mode !== "claude" && s.island_mode !== "codex" ? "selected" : ""}>Claude + Codex 並排</option>
       <option value="claude" ${s.island_mode === "claude" ? "selected" : ""}>僅 Claude</option>
       <option value="codex" ${s.island_mode === "codex" ? "selected" : ""}>僅 Codex</option>
+    </select></div>
+    <div class="srow">Codex 用量來源 <select id="s-codex-source">
+      <option value="live" ${s.codex_usage_source === "live" ? "selected" : ""}>即時帳號用量</option>
+      <option value="auto" ${s.codex_usage_source === "auto" ? "selected" : ""}>自動（即時優先）</option>
+      <option value="local" ${s.codex_usage_source !== "live" && s.codex_usage_source !== "auto" ? "selected" : ""}>本機 session 快照</option>
     </select></div>`;
 }
 
@@ -172,6 +177,7 @@ function readSettingsForm(): Settings {
     crit_pct: +v("s-crit").value || 90,
     compact: ui.compact,
     island_mode: (($("s-island") as HTMLSelectElement).value || "both") as Settings["island_mode"],
+    codex_usage_source: (($("s-codex-source") as HTMLSelectElement).value || "local") as Settings["codex_usage_source"],
   };
 }
 

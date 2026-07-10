@@ -208,6 +208,7 @@ fn spawn_scheduler(app: AppHandle, allow_refresh: bool, refresh_rx: Receiver<()>
     std::thread::spawn(move || {
         let mut engine = Engine::new();
         let mut anthropic = AnthropicProvider::new(allow_refresh);
+        let mut codex_live = providers::codex_live::CodexLiveProvider::new();
         let mut notified: HashMap<String, i64> = HashMap::new();
         let debug = std::env::var("TOKENBAR_DEBUG").is_ok();
         let mut first = true;
@@ -216,7 +217,21 @@ fn spawn_scheduler(app: AppHandle, allow_refresh: bool, refresh_rx: Receiver<()>
         loop {
             let now = chrono::Utc::now().timestamp();
 
-            let mut limits = providers::codex::read_limits();
+            let codex_source = app
+                .try_state::<AppData>()
+                .and_then(|data| data.settings.lock().ok().map(|s| s.codex_usage_source.clone()))
+                .unwrap_or_else(|| "local".into());
+            let live = if matches!(codex_source.as_str(), "live" | "auto") {
+                codex_live.poll(now, force)
+            } else {
+                None
+            };
+            let local = if matches!(codex_source.as_str(), "local" | "auto") {
+                providers::codex::read_limits()
+            } else {
+                Vec::new()
+            };
+            let mut limits = providers::codex_live::choose_limits(&codex_source, live, local);
             limits.extend(anthropic.poll(now, force));
             let snapshot = engine.ingest(limits, now);
 
