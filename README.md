@@ -138,8 +138,9 @@ src-tauri/src/      後端（Rust）
 Ai_Assistant/       AI 產出的文件與規範：UX 規格書 v3、資料來源實測、
                     參數總表（CONFIG.md）、進度快照（HANDOFF.md）、截圖
   archive/          已被 v3 取代的舊規格
-scripts/            collect-installers.mjs（把安裝檔集中到 release/）
-release/            打包後的安裝檔（gitignore，發佈走 GitHub Releases）
+scripts/            collect-installers.mjs（把安裝檔集中到 ../TokenBar-release/）
+
+../TokenBar-release/  打包後的安裝檔，放在 repo 外的同層資料夾（發佈走 GitHub Releases）
 ```
 
 ## 開發
@@ -149,7 +150,7 @@ npm install                                    # 前端依賴
 npm run tauri dev                              # 開發模式（TOKENBAR_DEBUG=1 可看每輪數值）
 npm run dev                                    # 純前端 mock 模式（瀏覽器 http://localhost:1420）
 cargo test --manifest-path src-tauri/Cargo.toml  # 後端測試
-npm run build:release                          # 打包（安裝檔集中複製到 release/）
+npm run build:release                          # 打包（安裝檔集中到 ../TokenBar-release/）
 ```
 
 行為規格的唯一真相是 [Ai_Assistant/TokenBar UX Spec v3.md](Ai_Assistant/TokenBar%20UX%20Spec%20v3.md)，資料層實測見 [Ai_Assistant/data-sources-findings.md](Ai_Assistant/data-sources-findings.md)。

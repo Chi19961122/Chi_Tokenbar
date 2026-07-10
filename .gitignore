@@ -12,7 +12,8 @@ dist
 dist-ssr
 *.local
 
-# 打包產物集中處（scripts/collect-installers.mjs 產生，發佈走 GitHub Releases）
+# 打包產物集中在 repo 外的 ../TokenBar-release/（scripts/collect-installers.mjs
+# 產生，發佈走 GitHub Releases）。留此行以防有人改回輸出到專案內。
 release/
 
 # Editor directories and files
