@@ -15,7 +15,7 @@ Windows 常駐的 AI coding 額度 runway 監控器（Tauri 2 + vanilla TS）。
 - 圖示重生：`npm run tauri icon src-tauri/icon-source.png`
 
 ## 鐵則與陷阱
-- **Port 1420 互斥**：`tauri dev` 與瀏覽器 preview 都要 1420（tauri.conf devUrl + vite strictPort），同時只能跑一個；打包前先 `taskkill /IM tokenbar.exe /F`（exe 檔案鎖）。
+- **Port 1420 互斥**：`tauri dev` 與瀏覽器 preview 都要 1420（tauri.conf devUrl + vite strictPort），同時只能跑一個；打包前先 `taskkill /IM tokenbar.exe /F` 與 `taskkill /IM TokenBar-portable.exe /F`（exe 檔案鎖；release/ 的免安裝版行程名是 TokenBar-portable）。
 - **瀏覽器 preview = mock 模式**：非 Tauri 環境自動用 `src/mock.ts` 的情境（devbar 可切 safe/near/locked/degraded/stale/empty）。
 - **機密**：`~/.claude/.credentials.json` 與 `~/.codex/auth.json` 的 token 任何情況不得印出/寫 log（部分遮蔽也不行）。
 - **Codex 本機來源數值語意**（providers/codex.rs，勿回退）：快照 `resets_at` 已過 → util=0 + Idle；視窗未到期但檔案 >15min 舊 → 保留最後已知值 + Stale。本機快照只在使用者跑 Codex 時更新；需要即時值可在設定切 `codex_usage_source` 為 live/auto（providers/codex_live.rs，唯讀查詢）。
