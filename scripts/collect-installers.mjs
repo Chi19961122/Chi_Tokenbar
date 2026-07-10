@@ -10,8 +10,8 @@ const root = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "
 const rel = (...p) => join(root, ...p);
 
 const bundleDir = rel("src-tauri", "target", "release", "bundle");
-// Sibling of the project (e.g. C:\Coding\TokenBar-release); namespaced so it
-// won't collide with other projects under the same parent directory.
+// Sibling of the repo folder (e.g. C:\Coding\TokenBar\TokenBar-release, next to
+// TokenBar-Src); namespaced so it won't collide with other projects.
 const outDir = join(root, "..", "TokenBar-release");
 const outName = "TokenBar-release";
 mkdirSync(outDir, { recursive: true });

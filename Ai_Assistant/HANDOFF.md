@@ -2,7 +2,8 @@
 
 ## 目前狀態:全部里程碑完成,修正版已打包並在跑
 
-- **目錄重組**(2026-07-10 晚):repo 內約定為 `src/`+`src-tauri/`(程式碼)、`Ai_Assistant/`(原 docs/,AI 產出文件與規範);CLAUDE.md/AGENTS.md 因工具自動載入需求留在根目錄。**安裝檔已移到 repo 外同層 `C:\Coding\TokenBar-release\`**(原 `release/`,collect-installers.mjs 輸出改為 `../TokenBar-release`);.gitignore 仍保留 `release/` 一行防有人改回。所有路徑引用(README/CLAUDE/AGENTS/Rust 註解)已同步;歷史紀錄中的 docs/ 路徑一律讀作 Ai_Assistant/、根目錄 release/ 讀作 ../TokenBar-release/。
+- **容器化目錄結構**(2026-07-10 晚):`C:\Coding\TokenBar\` 現為容器,內含 `TokenBar-Src\`(整個 git repo,即現在的專案根)與 `TokenBar-release\`(安裝檔)。**重要:專案根已從 `C:\Coding\TokenBar` 下移到 `C:\Coding\TokenBar\TokenBar-Src`**,之後開 Claude Code / 編輯器要指到 TokenBar-Src。collect-installers.mjs 用相對 `../TokenBar-release` 不受影響(仍輸出到容器內的 TokenBar-release)。
+- **目錄重組**(2026-07-10 晚):repo 內約定為 `src/`+`src-tauri/`(程式碼)、`Ai_Assistant/`(原 docs/,AI 產出文件與規範);CLAUDE.md/AGENTS.md 因工具自動載入需求留在 repo 根目錄。安裝檔在 repo 外同層(`../TokenBar-release`,即 `C:\Coding\TokenBar\TokenBar-release\`);.gitignore 仍保留 `release/` 一行防有人改回。歷史紀錄中的 docs/ 路徑一律讀作 Ai_Assistant/、根目錄 release/ 讀作 ../TokenBar-release/。
 - **Codex 即時來源 + 設定整理 + 目錄整理**(2026-07-10 晚):使用者自行實作 codex_live.rs(local/live/auto 三來源,修正本機快照過舊顯示 0% 的問題);Claude 權杖更新改為下拉且**即時生效**(allow_refresh 改為每輪從 settings 重讀,不再需要重啟);AGENTS.md 修復(原為 Claude→Codex 誤植的壞檔);舊規格歸檔至 docs/archive/;新增 `npm run build:release` + scripts/collect-installers.mjs,安裝檔集中到根目錄 release/(gitignored)。
 
 - M0–M7 全部完成(scaffold、Codex provider、burn-rate 引擎、Live Island 視覺、Anthropic provider+降級、面板下鑽、第三層分析、通知/設定/autostart)。
@@ -15,7 +16,7 @@
 - **島嶼第三輪微調**(2026-07-10):右側輔助改為今日燒速 tok/min(移除 ↻ 倒數與總量);供應商識別改用品牌 icon,島嶼與面板分組標題都套用;Claude 主題色從綠改為品牌橘 `--claude` #d97757。icon 改用 lobehub/lobe-icons v1.91.0 官方 SVG(claude-color/codex-color),vendor 在 src/assets/ 本地打包、Codex 白底板移除(手繪版已淘汰)。**陷阱已修**:SVG 漸層 id 是文件全域,隱藏的島嶼副本會搶走 id 且 display:none 內的 defs 不生效 → 面板 Codex 雲朵無填色;icons.ts 現在每個實例注入唯一 id 後綴。
 - **高度鎖定 + 島嶼強化**(2026-07-10 第二輪回饋):自動縮放改為「進入模式時量一次後鎖定」(展開/切精簡/開關設定才重算),點分頁與每秒 tick 不再 resize → 消除卡頓;#analytics 固定 300px 讓所有分頁同高;移除捲軸(overflow hidden)。島嶼改為可配置(settings `island_mode`,預設 both):Claude/Codex 並排膠囊(各取該供應商最危險一條)+ ↻重置倒數 + 今日總 tokens(60s 更新);視窗 collapsed 寬 340(並排)/270(單一)。
 - **usage API 已改版 + Fable 顯示完成**(2026-07-10):API 新增結構化 `limits` 陣列(session/weekly_all/weekly_scoped),`parse_limits_array` 通用解析(Opus 沿用 `cc.opus`,其他模型 scoped 週限制 → `cc.w.<slug>`,如 Fable → `cc.w.fable`「Weekly · Fable」),舊欄位當 fallback。dev 實測 API 回傳 Fable 6% 正常顯示。23/23 cargo 測試通過(新增 4 個解析測試)。schema 詳見 data-sources-findings.md。
-- Release 產物(2026-07-10 打包,`npm run build:release` 自動集中到 repo 外 `C:\Coding\TokenBar-release\`):
+- Release 產物(2026-07-10 打包,`npm run build:release` 自動集中到 `C:\Coding\TokenBar\TokenBar-release\`):
   - `TokenBar_0.1.0_x64-setup.exe`(推薦安裝)
   - `TokenBar_0.1.0_x64_en-US.msi`
   - `TokenBar-portable.exe`(免安裝,常駐,行程名 TokenBar-portable,~30MB RAM)
