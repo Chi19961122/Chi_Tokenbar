@@ -1,6 +1,6 @@
 [package]
 name = "tokenbar"
-version = "0.1.0"
+version = "0.1.1"
 description = "TokenBar — AI coding quota runway monitor"
 authors = ["you"]
 edition = "2021"
