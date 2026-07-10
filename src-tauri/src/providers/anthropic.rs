@@ -1,4 +1,4 @@
-//! Anthropic provider — the fragile path (UX Spec v3 §9, docs/data-sources-findings.md).
+//! Anthropic provider — the fragile path (UX Spec v3 §9, Ai_Assistant/data-sources-findings.md).
 //!
 //! Reads the OAuth token from `~/.claude/.credentials.json` and calls the
 //! undocumented `GET /api/oauth/usage`. Everything is guarded: any failure
@@ -288,7 +288,7 @@ fn slug(s: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Shape observed live 2026-07-10 (docs/data-sources-findings.md).
+    /// Shape observed live 2026-07-10 (Ai_Assistant/data-sources-findings.md).
     const MODERN: &str = r#"{
         "five_hour": { "utilization": 25.0, "resets_at": "2026-07-10T06:19:59+00:00" },
         "seven_day": { "utilization": 3.0, "resets_at": "2026-07-14T02:59:59+00:00" },

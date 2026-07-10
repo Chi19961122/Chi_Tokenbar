@@ -2,6 +2,7 @@
 
 ## 目前狀態:全部里程碑完成,修正版已打包並在跑
 
+- **目錄重組**(2026-07-10 晚):根目錄約定為 `src/`+`src-tauri/`(程式碼)、`Ai_Assistant/`(原 docs/,AI 產出文件與規範)、`release/`(安裝檔,gitignored);CLAUDE.md/AGENTS.md 因工具自動載入需求留在根目錄。所有路徑引用(README/CLAUDE/AGENTS/Rust 註解)已同步;歷史紀錄中的 docs/ 路徑一律讀作 Ai_Assistant/。
 - **Codex 即時來源 + 設定整理 + 目錄整理**(2026-07-10 晚):使用者自行實作 codex_live.rs(local/live/auto 三來源,修正本機快照過舊顯示 0% 的問題);Claude 權杖更新改為下拉且**即時生效**(allow_refresh 改為每輪從 settings 重讀,不再需要重啟);AGENTS.md 修復(原為 Claude→Codex 誤植的壞檔);舊規格歸檔至 docs/archive/;新增 `npm run build:release` + scripts/collect-installers.mjs,安裝檔集中到根目錄 release/(gitignored)。
 
 - M0–M7 全部完成(scaffold、Codex provider、burn-rate 引擎、Live Island 視覺、Anthropic provider+降級、面板下鑽、第三層分析、通知/設定/autostart)。
@@ -14,10 +15,10 @@
 - **島嶼第三輪微調**(2026-07-10):右側輔助改為今日燒速 tok/min(移除 ↻ 倒數與總量);供應商識別改用品牌 icon,島嶼與面板分組標題都套用;Claude 主題色從綠改為品牌橘 `--claude` #d97757。icon 改用 lobehub/lobe-icons v1.91.0 官方 SVG(claude-color/codex-color),vendor 在 src/assets/ 本地打包、Codex 白底板移除(手繪版已淘汰)。**陷阱已修**:SVG 漸層 id 是文件全域,隱藏的島嶼副本會搶走 id 且 display:none 內的 defs 不生效 → 面板 Codex 雲朵無填色;icons.ts 現在每個實例注入唯一 id 後綴。
 - **高度鎖定 + 島嶼強化**(2026-07-10 第二輪回饋):自動縮放改為「進入模式時量一次後鎖定」(展開/切精簡/開關設定才重算),點分頁與每秒 tick 不再 resize → 消除卡頓;#analytics 固定 300px 讓所有分頁同高;移除捲軸(overflow hidden)。島嶼改為可配置(settings `island_mode`,預設 both):Claude/Codex 並排膠囊(各取該供應商最危險一條)+ ↻重置倒數 + 今日總 tokens(60s 更新);視窗 collapsed 寬 340(並排)/270(單一)。
 - **usage API 已改版 + Fable 顯示完成**(2026-07-10):API 新增結構化 `limits` 陣列(session/weekly_all/weekly_scoped),`parse_limits_array` 通用解析(Opus 沿用 `cc.opus`,其他模型 scoped 週限制 → `cc.w.<slug>`,如 Fable → `cc.w.fable`「Weekly · Fable」),舊欄位當 fallback。dev 實測 API 回傳 Fable 6% 正常顯示。23/23 cargo 測試通過(新增 4 個解析測試)。schema 詳見 data-sources-findings.md。
-- Release 產物(2026-07-10 11:33,含手動更新/視窗改造/模式鎖定高度/精簡模式/島嶼並排+lobe-icons 官方品牌 icon+漸層 id 修正/Fable):
-  - `src-tauri\target\release\bundle\nsis\TokenBar_0.1.0_x64-setup.exe`(推薦安裝)
-  - `src-tauri\target\release\bundle\msi\TokenBar_0.1.0_x64_en-US.msi`
-  - `src-tauri\target\release\tokenbar.exe`(免安裝,新版已啟動常駐,~27MB RAM)
+- Release 產物(2026-07-10 20:29 打包,`npm run build:release` 自動集中到根目錄 `release\`):
+  - `release\TokenBar_0.1.0_x64-setup.exe`(推薦安裝)
+  - `release\TokenBar_0.1.0_x64_en-US.msi`
+  - `release\TokenBar-portable.exe`(免安裝,已啟動常駐,行程名 TokenBar-portable,~30MB RAM)
 
 ## 實測過的關鍵事實
 - Claude `allow_token_refresh` 已由使用者啟用(`%APPDATA%\TokenBar\settings.json`),refresh 實測成功、原子寫回 `.credentials.json`、Claude Code 登入未受影響。Claude 四條限制顯示真值(當時:5h 88% Near、週 45%)。
@@ -33,4 +34,4 @@
 6. 開機啟動時「僅系統匣、不彈 island」選項。
 
 ## 若要繼續開發
-先讀 `CLAUDE.md`(指令、port 1420 互斥、機密鐵則),行為規格在 `docs/TokenBar UX Spec v3.md`,資料層事實在 `docs/data-sources-findings.md`。前端 mock 情境切換在瀏覽器 preview 的 devbar。
+先讀 `CLAUDE.md`(指令、port 1420 互斥、機密鐵則),行為規格在 `Ai_Assistant/TokenBar UX Spec v3.md`,資料層事實在 `Ai_Assistant/data-sources-findings.md`。前端 mock 情境切換在瀏覽器 preview 的 devbar。

@@ -1,6 +1,6 @@
 //! Codex provider — reads the newest `rollout-*.jsonl` session file and pulls
 //! the most recent `rate_limits` snapshot. Schema confirmed against a real file
-//! (see docs/data-sources-findings.md):
+//! (see Ai_Assistant/data-sources-findings.md):
 //!
 //! ```json
 //! "rate_limits": {

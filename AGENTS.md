@@ -3,10 +3,11 @@
 Windows 常駐的 AI coding 額度 runway 監控器（Tauri 2 + vanilla TS）。監控 Claude Code 與 Codex 的 5h/週限制，island pill + 系統匣電量膠囊 + 展開面板 + 用量分析。
 
 ## 真相來源（改任何行為前先讀）
-- `docs/TokenBar UX Spec v3.md` — 行為/狀態機/演算法的唯一真相（§編號在程式註解中被引用）
-- `docs/data-sources-findings.md` — 各 provider 的實測資料 schema 與安全注意
-- `docs/CONFIG.md` — 所有設定與內建參數總表
-- `docs/HANDOFF.md` — 目前進度快照與待辦
+- `Ai_Assistant/TokenBar UX Spec v3.md` — 行為/狀態機/演算法的唯一真相（§編號在程式註解中被引用）
+- `Ai_Assistant/data-sources-findings.md` — 各 provider 的實測資料 schema 與安全注意
+- `Ai_Assistant/CONFIG.md` — 所有設定與內建參數總表
+- `Ai_Assistant/HANDOFF.md` — 目前進度快照與待辦
+- 目錄約定：`src/`+`src-tauri/` = 程式碼、`Ai_Assistant/` = AI 產出文件與規範、`release/` = 安裝檔（gitignored）
 
 ## 常用指令
 - 測試：`cargo test --manifest-path src-tauri\Cargo.toml`（PATH 需先加 `%USERPROFILE%\.cargo\bin`）
