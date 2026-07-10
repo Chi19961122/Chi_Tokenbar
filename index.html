@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TokenBar</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body class="collapsed">
+    <div id="app">
+      <!-- collapsed island -->
+      <div id="island" class="island status-empty"></div>
+
+      <!-- expanded panel -->
+      <div id="panel">
+        <header class="phead" data-tauri-drag-region>
+          <span class="brand">Limits</span>
+          <span class="rate" id="rate"></span>
+          <span class="updated" id="updated" title="上次更新"></span>
+          <button id="refresh" title="立即更新">⟳</button>
+          <button id="mode" title="精簡模式">⊟</button>
+          <button id="gear" title="Settings">⚙</button>
+          <button id="collapse" title="Collapse">▾</button>
+        </header>
+
+        <section id="settings" hidden></section>
+
+        <section id="cards"></section>
+
+        <nav class="subtabs" id="subtabs"></nav>
+        <div class="toggles" id="toggles"></div>
+        <section id="analytics"></section>
+      </div>
+
+      <!-- dev-only mock switcher (hidden under Tauri) -->
+      <div id="devbar"></div>
+    </div>
+  </body>
+</html>
