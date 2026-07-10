@@ -148,6 +148,10 @@ npm run tauri build                            # 打包（產物在 src-tauri/ta
 
 行為規格的唯一真相是 [docs/TokenBar UX Spec v3.md](docs/TokenBar%20UX%20Spec%20v3.md)，資料層實測見 [docs/data-sources-findings.md](docs/data-sources-findings.md)。
 
+## 授權
+
+[MIT](LICENSE) © PingChi
+
 ## 致謝
 
 - 品牌 icon 來自 [lobehub/lobe-icons](https://github.com/lobehub/lobe-icons)（MIT），vendor 於 `src/assets/`
