@@ -1,7 +1,8 @@
 # HANDOFF — 進度快照(2026-07-10)
 
-## 目前狀態:全部里程碑完成,修正版已打包並在跑
+## 目前狀態:全部里程碑完成,v0.1.1 已發佈並在跑
 
+- **v0.1.1 發佈**(2026-07-10):GitHub Release https://github.com/Chi19961122/Chi_Tokenbar/releases/tag/v0.1.1(latest),含 setup.exe + MSI。版本號三處(package.json/tauri.conf/Cargo.toml)升 0.1.1,commit dfb450c。v0.1.0 後的新功能:Codex 即時用量來源、Claude 權杖更新下拉即時生效、島嶼固定配色。**踩雷紀錄**:搬移專案目錄後 Rust `target/` 快取含舊絕對路徑會導致 build 失敗(os error 3 讀 permissions toml),需先 `cargo clean` 全量重編(一次性)。
 - **容器化目錄結構**(2026-07-10 晚):`C:\Coding\TokenBar\` 現為容器,內含 `TokenBar-Src\`(整個 git repo,即現在的專案根)與 `TokenBar-release\`(安裝檔)。**重要:專案根已從 `C:\Coding\TokenBar` 下移到 `C:\Coding\TokenBar\TokenBar-Src`**,之後開 Claude Code / 編輯器要指到 TokenBar-Src。collect-installers.mjs 用相對 `../TokenBar-release` 不受影響(仍輸出到容器內的 TokenBar-release)。
 - **目錄重組**(2026-07-10 晚):repo 內約定為 `src/`+`src-tauri/`(程式碼)、`Ai_Assistant/`(原 docs/,AI 產出文件與規範);CLAUDE.md/AGENTS.md 因工具自動載入需求留在 repo 根目錄。安裝檔在 repo 外同層(`../TokenBar-release`,即 `C:\Coding\TokenBar\TokenBar-release\`);.gitignore 仍保留 `release/` 一行防有人改回。歷史紀錄中的 docs/ 路徑一律讀作 Ai_Assistant/、根目錄 release/ 讀作 ../TokenBar-release/。
 - **Codex 即時來源 + 設定整理 + 目錄整理**(2026-07-10 晚):使用者自行實作 codex_live.rs(local/live/auto 三來源,修正本機快照過舊顯示 0% 的問題);Claude 權杖更新改為下拉且**即時生效**(allow_refresh 改為每輪從 settings 重讀,不再需要重啟);AGENTS.md 修復(原為 Claude→Codex 誤植的壞檔);舊規格歸檔至 docs/archive/;新增 `npm run build:release` + scripts/collect-installers.mjs,安裝檔集中到根目錄 release/(gitignored)。
