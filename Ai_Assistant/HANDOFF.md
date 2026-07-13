@@ -4,7 +4,9 @@
 - **問題**:使用者回報 Codex「5h 沒有 token 顯示」。實測(7/13)發現 Codex 改了 rate_limits schema — `primary`/`secondary` 不再固定對應 5h/週。現況只回**週視窗**(放在 `primary`,`window_minutes:10080`,util 3%),`secondary` 為 null,**完全不回 5h(300)視窗**(今天整個 session 檔 54 筆全是 10080;live API `/wham/usage` 同步:`primary_window`=604800s 週、`secondary_window` null)。舊版硬把 `primary`→「Codex·5h」,於是把週的 3% 誤標成 5h,真正的 5h 反而消失。
 - **修正**:`providers/codex.rs` 與 `providers/codex_live.rs` 都改成**依視窗長度分類**(<24h→codex.5h、否則→codex.week),不再依 primary/secondary 位置;snapshot 只有一個視窗時只顯示該視窗(正確標籤),不再湊數。codex.rs 另修:degenerate snapshot(只有 credits、兩窗皆 null)產出空集時繼續往舊檔找,不再直接回空。新增 4 個回歸測試,`cargo test` 31/31 通過。
 - **對使用者的答案**:目前顯示「5h 沒 token」是**正解** — Codex 端現在根本沒回 5h 視窗(可能該視窗閒置未觸發);之前看到的「Codex·5h 3%」其實是**週**的數字被誤標。修正後會正確顯示「Codex·週 3%」(reset ~7/20),有 5h 時才會多一條 5h。
-- 版本升 v0.1.2(三處),`npm run build:release` 重新產出安裝檔到 `../TokenBar-release/`。尚未 git commit、尚未發 GitHub Release(等使用者決定)。
+- **自動適應強化**(同日追加):解析改為**掃描整個 rate_limits/rate_limit 物件、撈出所有 window 形狀欄位**,不再依 `primary`/`secondary` 鍵名或位置;依 window_minutes 分類(≈300→codex.5h、≈10080→codex.week,其他長度用時長自動命名 codex.min{n} / Codex·{h}h|{d}d,不丟棄)。本機+live 共用 `codex::classify`。cargo test 33/33(含「改鍵名照抓」「未知長度自動命名」兩個未來相容測試)。
+- **已 commit + push + 發 Release**:commit 75d8fc0(main);GitHub Release **v0.1.2** 已發佈為 Latest,首次附**免安裝版 TokenBar-portable.exe** + setup.exe + MSI(https://github.com/Chi19961122/Chi_Tokenbar/releases/tag/v0.1.2)。安裝版已靜默升級到 0.1.2 並在跑。
+- **collect-installers.mjs 強化**:主資料夾只留當前版安裝檔,舊版(TokenBar_x.y.z_*)自動移入 `../TokenBar-release/archive/`;歸檔在複製後掃描(Tauri bundle 目錄會累積舊版產物,複製前歸檔會被抵銷)。0.1.1 已進 archive/。
 
 ## 目前狀態:全部里程碑完成,v0.1.1 已發佈並在跑
 
