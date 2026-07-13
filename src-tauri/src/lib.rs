@@ -69,6 +69,15 @@ pub fn run() {
     let (refresh_tx, refresh_rx) = mpsc::channel::<()>();
 
     tauri::Builder::default()
+        // Single-instance guard MUST be the first plugin: if TokenBar is already
+        // running, a second launch just wakes the existing one (shows + focuses
+        // the island) and exits, instead of stacking another tray icon.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
