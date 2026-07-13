@@ -3,7 +3,7 @@
 // project tree or git. Run via `npm run build:release` (or standalone after
 // any `npm run tauri build`).
 
-import { cpSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -15,6 +15,8 @@ const bundleDir = rel("src-tauri", "target", "release", "bundle");
 const outDir = join(root, "..", "TokenBar-release");
 const outName = "TokenBar-release";
 mkdirSync(outDir, { recursive: true });
+
+const version = JSON.parse(readFileSync(rel("package.json"), "utf8")).version;
 
 const picks = [
   { dir: join(bundleDir, "nsis"), ext: ".exe" }, // 安裝版（推薦）
@@ -51,3 +53,21 @@ if (copied === 0) {
   console.error("找不到任何打包產物 — 先跑 npm run tauri build");
   process.exit(1);
 }
+
+// Keep only the current version's installers in the release folder; sweep any
+// older versioned installer (TokenBar_<x.y.z>_...) into archive/ as a backup.
+// Runs AFTER copying because Tauri's bundle dir accumulates past builds, so the
+// copy step above may re-introduce stale versions.
+const archiveDir = join(outDir, "archive");
+const versioned = /^TokenBar_(\d+\.\d+\.\d+)_/;
+let archived = 0;
+for (const f of readdirSync(outDir)) {
+  const m = f.match(versioned);
+  if (m && m[1] !== version) {
+    mkdirSync(archiveDir, { recursive: true });
+    renameSync(join(outDir, f), join(archiveDir, f));
+    console.log(`archived  ${outName}/archive/${f}`);
+    archived++;
+  }
+}
+if (archived) console.log(`(${archived} 個舊版安裝檔移入 archive/,主資料夾只留 v${version})`);

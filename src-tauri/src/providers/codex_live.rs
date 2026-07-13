@@ -2,8 +2,10 @@
 //! user selects the live or auto source; credentials stay in memory and are
 //! never refreshed, persisted, or logged.
 
+use super::codex::classify;
 use crate::model::{Limit, LimitStatus, Provider};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
@@ -68,14 +70,19 @@ fn read_creds() -> Option<Creds> {
     })
 }
 
-fn parse_window(id: &str, label: &str, node: &Value) -> Option<Limit> {
+/// Turn one window node into a Limit, labeling it by length via the shared
+/// `classify` (`limit_window_seconds` → minutes). Returns None for anything that
+/// isn't a window object (scalars, `null` slots, credits, …).
+fn parse_window(node: &Value) -> Option<Limit> {
+    let window_secs = node.get("limit_window_seconds")?.as_i64()?;
+    let (id, label) = classify(window_secs / 60);
     Some(Limit {
-        id: id.into(),
+        id,
         provider: Provider::Codex,
-        label: label.into(),
+        label,
         util: node.get("used_percent")?.as_f64()?,
         resets_at: node.get("reset_at")?.as_i64()?,
-        window_secs: node.get("limit_window_seconds")?.as_i64()?,
+        window_secs,
         status: LimitStatus::Normal,
         absolute: None,
         pace: None,
@@ -83,12 +90,17 @@ fn parse_window(id: &str, label: &str, node: &Value) -> Option<Limit> {
     })
 }
 
+/// Discover every window in the `rate_limit` object regardless of its key name
+/// (`primary_window`, `secondary_window`, or anything Codex adds later), shortest
+/// first and one per id. `None` when no usable window is present (e.g. a
+/// credits-only response) so `auto` can fall back to the local snapshot.
 pub fn parse_usage(v: &Value) -> Option<Vec<Limit>> {
-    let limits = v.get("rate_limit")?;
-    Some(vec![
-        parse_window("codex.5h", "Codex·5h", limits.get("primary_window")?)?,
-        parse_window("codex.week", "Codex·週", limits.get("secondary_window")?)?,
-    ])
+    let rate_limit = v.get("rate_limit")?.as_object()?;
+    let mut out: Vec<Limit> = rate_limit.values().filter_map(parse_window).collect();
+    out.sort_by_key(|l| l.window_secs);
+    let mut seen = HashSet::new();
+    out.retain(|l| seen.insert(l.id.clone()));
+    (!out.is_empty()).then_some(out)
 }
 
 pub fn choose_limits(source: &str, live: Option<Vec<Limit>>, local: Vec<Limit>) -> Vec<Limit> {
@@ -141,6 +153,22 @@ mod tests {
     #[test]
     fn rejects_missing_primary_window() {
         assert!(parse_usage(&json!({ "rate_limit": {} })).is_none());
+    }
+
+    #[test]
+    fn weekly_only_live_response_is_labeled_weekly() {
+        // Observed 2026-07: primary_window carries the weekly window (604800s),
+        // secondary_window is null. Must surface as the weekly limit, not "5h".
+        let usage = json!({
+            "rate_limit": {
+                "primary_window": { "used_percent": 3, "limit_window_seconds": 604800, "reset_at": 1784549867i64 },
+                "secondary_window": null
+            }
+        });
+        let limits = parse_usage(&usage).expect("weekly window is usable data");
+        assert_eq!(limits.len(), 1);
+        assert_eq!(limits[0].id, "codex.week");
+        assert_eq!(limits[0].util, 3.0);
     }
 
     fn limit(id: &str, util: f64) -> Limit {

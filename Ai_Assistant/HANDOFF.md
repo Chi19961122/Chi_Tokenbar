@@ -1,4 +1,10 @@
-# HANDOFF — 進度快照(2026-07-10)
+# HANDOFF — 進度快照(2026-07-13)
+
+## 2026-07-13:修正 Codex 5h 誤標 / 不顯示(v0.1.2)
+- **問題**:使用者回報 Codex「5h 沒有 token 顯示」。實測(7/13)發現 Codex 改了 rate_limits schema — `primary`/`secondary` 不再固定對應 5h/週。現況只回**週視窗**(放在 `primary`,`window_minutes:10080`,util 3%),`secondary` 為 null,**完全不回 5h(300)視窗**(今天整個 session 檔 54 筆全是 10080;live API `/wham/usage` 同步:`primary_window`=604800s 週、`secondary_window` null)。舊版硬把 `primary`→「Codex·5h」,於是把週的 3% 誤標成 5h,真正的 5h 反而消失。
+- **修正**:`providers/codex.rs` 與 `providers/codex_live.rs` 都改成**依視窗長度分類**(<24h→codex.5h、否則→codex.week),不再依 primary/secondary 位置;snapshot 只有一個視窗時只顯示該視窗(正確標籤),不再湊數。codex.rs 另修:degenerate snapshot(只有 credits、兩窗皆 null)產出空集時繼續往舊檔找,不再直接回空。新增 4 個回歸測試,`cargo test` 31/31 通過。
+- **對使用者的答案**:目前顯示「5h 沒 token」是**正解** — Codex 端現在根本沒回 5h 視窗(可能該視窗閒置未觸發);之前看到的「Codex·5h 3%」其實是**週**的數字被誤標。修正後會正確顯示「Codex·週 3%」(reset ~7/20),有 5h 時才會多一條 5h。
+- 版本升 v0.1.2(三處),`npm run build:release` 重新產出安裝檔到 `../TokenBar-release/`。尚未 git commit、尚未發 GitHub Release(等使用者決定)。
 
 ## 目前狀態:全部里程碑完成,v0.1.1 已發佈並在跑
 
