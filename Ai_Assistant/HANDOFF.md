@@ -1,4 +1,15 @@
-# HANDOFF — 進度快照(2026-07-14)
+# HANDOFF — 進度快照(2026-07-15)
+
+## 2026-07-15:HTTPS 根憑證 + 白話失敗提示 + 主動通知(v0.1.4 已發佈)
+
+起因是使用者在**另一台機器**上 Claude 一律 SourceFailed,但同一份憑證用 curl 打 API 回 200。根因不是 OAuth 失效,而是 `ureq` 走編譯期寫死的 `webpki-roots`、**完全不讀 Windows 憑證存放區**;PowerShell/curl 走 schannel 所以看得到被攔截注入的憑證。有企業代理/防毒 HTTPS 攔截/自簽根憑證的機器就會中。**是環境差異,不是程式邏輯 bug。**
+
+- **50b9460 HTTPS 改用系統根憑證**:`ureq` 加 `native-certs` feature。**注意是「取代」不是「疊加」**(ureq `rtls.rs:62-86`:啟用後從 `RootCertStore::empty()` 開始、只載系統憑證,內建 Mozilla 清單完全不用;`rtls.rs:75` 自帶警告「系統憑證一張都載不到時所有 HTTPS 都會失敗」)。實測 `cargo tree` 出現 rustls-native-certs→schannel。
+- **17cb08f 白話失敗提示**:新增 `FailureStage`,同一列舉兩種輸出 —— `label()` 走 `TOKENBAR_DEBUG` stderr(精確、含狀態碼),`user_hint()` 走 UI(白話、不含術語)。狀態機不動,仍是 §7 單一 SourceFailed。**踩雷**:計畫原本的測試用 `unwrap_err()`,那會要求 `Creds: Debug` —— 而 `Creds` 裝著 token,加 `Debug` 正是鐵則禁止的洩漏面;改用 `.err()`,`Creds` 永遠不可列印。另修掉一個謊言:面板原說「改用本機估算」但 `degraded_limits` 只回 util:0.0 佔位值、**根本沒估算**,徽章改「無法取得」。(§7 要求的本機估算實作從未做過,見 backlog。)
+- **ee39d06 主動通知 + 一鍵重新登入**:SourceFailed 的 util 恆為 0.0,而 `fire_notifications` 只在 util>=warn/crit 或 Locked 時發 → **原本永遠不會通知**,使用者不開面板就不知道壞了。現在會發,內文共用同一份 hint。抑制窗 6h(非既有的 30 分,那是為額度警告設計的),恢復時清去重 key。按鈕只在**登入類**失敗出現(後端 `FailureStage::action()` 決定,非前端比對文案 —— 連不上時給登入按鈕是誤導)。**已查證**:`claude auth login --claudeai` 是官方子指令(互動式、開瀏覽器),`claude auth status --json` 唯讀且不含 token,**無非互動式登入**;因此不自行實作 OAuth(自行輪替 token 可能把使用者的 Claude Code 登出)。**安全**:自行從 PATH 解析 claude 再直接當 program 執行,不用 `cmd /C start` —— 後者會把路徑當 shell 語法重解析,PATH 含 `&` 的目錄會被切成第二條指令。
+- **c108176 runway 灌水修正**(意外發現,比原需求重要):`HISTORY_CAP=60` 只依筆數淘汰、無時間上限,而 `compute_runway` 取 front/back 兩點算斜率 → 任何取樣空窗後 front 是老樣本、斜率被稀釋。實測 2h 空窗後報 11.2 小時、真值 25 分鐘(**26.9 倍**,失效方向最糟)。**筆電闔蓋睡眠**就會觸發,與平台切換無關。修法是把原意圖明確化(60×`POLL_SECS`15=900s,「最近 15 分鐘」本來就是意圖,筆數上限只是取樣規律時的等價代理),新增 `HISTORY_WINDOW_SECS=900` 依時間淘汰;另非 Normal 狀態不寫入 history(佔位值會污染斜率)。正常路徑逐位元不變。
+- **測試 33 → 92**。**踩雷**:曾有一輪的新測試是**同義反覆**(斷言述詞而非行為),突變測試證明把判斷式反相後仍 47/47 全過、一個都沒抓到。已重寫為注入式真路由測試。**之後新增測試一律要能通過突變驗證**(改壞實作、確認測試變紅)。
+- 實測 v0.1.4 release 產物:Claude(cc.5h 3%/cc.week 13%/Fable 20%)與 Codex(週 0%)均回真值、無 SourceFailed —— 證明 native-certs 在本機沒搞砸。
 
 ## 2026-07-14:全域「顯示平台」過濾(island_mode → providers)
 
