@@ -37,6 +37,10 @@ pub fn compute_pace(limit: &Limit, now: i64) -> Option<Pace> {
 /// Honesty constraints (§4.3): needs >= MIN_SAMPLES_FOR_RUNWAY samples and a
 /// positive slope; returns None when idle or samples are insufficient so the UI
 /// falls back to showing the reset countdown instead of a fabricated number.
+///
+/// Contract: the slope is taken from `front`/`back` only, so `history` must
+/// already be bounded to a recent time window (see `engine::HISTORY_WINDOW_SECS`).
+/// Given a stale `front` this happily reports a badly inflated runway.
 pub fn compute_runway(history: &VecDeque<(i64, f64)>, util: f64) -> Option<i64> {
     if history.len() < MIN_SAMPLES_FOR_RUNWAY {
         return None;
