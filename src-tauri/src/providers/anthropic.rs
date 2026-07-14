@@ -9,7 +9,7 @@
 //! opt-in (`allow_refresh`, default false). The read-only usage GET never
 //! rotates anything and is always safe to attempt.
 
-use crate::model::{Limit, LimitStatus, Provider};
+use crate::model::{Limit, LimitAction, LimitStatus, Provider};
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -91,6 +91,29 @@ impl FailureStage {
             FailureStage::RefreshJson | FailureStage::UsageJson | FailureStage::UsageShape => {
                 "Claude 回應的格式不認得，可能需要更新 TokenBar"
             }
+        }
+    }
+
+    /// Whether re-running the official login flow would actually fix this.
+    ///
+    /// **Login-class failures only.** Offering "sign in again" for a network
+    /// or AV/proxy block sends the user down a dead end — they press it,
+    /// nothing improves, and they conclude their account is broken while the
+    /// real cause (`user_hint` already names it) goes unread. Transient
+    /// server-side states retry on their own, and a schema change needs a new
+    /// TokenBar, not a new session; neither gets a button either.
+    ///
+    /// Invariant, enforced by `relogin_action_matches_what_the_hint_tells_the_user`:
+    /// a stage offers `Relogin` exactly when its `user_hint()` tells the user
+    /// to log in. Change one and the test makes you change the other.
+    fn action(&self) -> Option<LimitAction> {
+        match self {
+            FailureStage::CredentialsFile
+            | FailureStage::CredentialsShape
+            | FailureStage::RefreshDisabled
+            | FailureStage::RefreshHttp(401 | 403)
+            | FailureStage::UsageHttp(401 | 403) => Some(LimitAction::Relogin),
+            _ => None,
         }
     }
 }
@@ -326,6 +349,7 @@ fn window(id: &str, label: &str, node: &Value, window_secs: i64) -> Option<Limit
         pace: None,
         runway_secs: None,
         hint: None,
+        action: None,
     })
 }
 
@@ -352,6 +376,7 @@ fn parse_usage(v: &Value) -> Vec<Limit> {
                 pace: None,
                 runway_secs: None,
                 hint: None,
+                action: None,
             });
         }
     }
@@ -410,6 +435,7 @@ fn parse_limits_array(v: &Value) -> Option<Vec<Limit>> {
             pace: None,
             runway_secs: None,
             hint: None,
+            action: None,
         });
     }
     if out.is_empty() {
@@ -632,6 +658,99 @@ mod tests {
         assert!(!net.contains("登入"), "連線失敗不該誤導使用者去重新登入");
     }
 
+    /// 只有「重新登入真的會修好」的階段才可以帶 relogin。
+    ///
+    /// 這是這顆按鈕的整個重點:連不上 Claude(防毒/公司網路)時給重新登入按鈕,
+    /// 使用者按了沒用,還會以為是自己帳號有問題。
+    #[test]
+    fn only_login_failures_offer_relogin() {
+        for s in [
+            FailureStage::CredentialsFile,
+            FailureStage::CredentialsShape,
+            FailureStage::RefreshDisabled,
+            FailureStage::RefreshHttp(401),
+            FailureStage::RefreshHttp(403),
+            FailureStage::UsageHttp(401),
+            FailureStage::UsageHttp(403),
+        ] {
+            assert_eq!(s.action(), Some(LimitAction::Relogin), "{:?} 應可重新登入", s);
+        }
+        for s in [
+            // 網路/防毒擋住 —— 重新登入完全幫不上忙
+            FailureStage::UsageTransport("connection_failed"),
+            FailureStage::RefreshTransport("dns"),
+            // 會自動再試的暫時狀況
+            FailureStage::UsageHttp(429),
+            FailureStage::UsageHttp(503),
+            FailureStage::RefreshHttp(500),
+            // schema 變了 —— 要更新 TokenBar,不是重新登入
+            FailureStage::RefreshJson,
+            FailureStage::UsageJson,
+            FailureStage::UsageShape,
+        ] {
+            assert_eq!(s.action(), None, "{:?} 不該給重新登入按鈕", s);
+        }
+    }
+
+    /// 提示叫使用者去登入,就必須給得出按鈕;反之亦然 —— 兩者不可走針。
+    ///
+    /// 比對的是**祈使句**(「請重新登入」/「請先登入」),不是「登入」二字:
+    /// `RefreshHttp(500)` 的「Claude 登入更新失敗,稍後會自動再試」有「登入」
+    /// 卻是在說「不用動作」—— 它不該有按鈕。這個區別正是這條不變式的重點。
+    #[test]
+    fn relogin_action_matches_what_the_hint_tells_the_user() {
+        for s in [
+            FailureStage::CredentialsFile,
+            FailureStage::CredentialsShape,
+            FailureStage::RefreshDisabled,
+            FailureStage::RefreshHttp(401),
+            FailureStage::RefreshHttp(403),
+            FailureStage::RefreshHttp(500),
+            FailureStage::RefreshTransport("dns"),
+            FailureStage::RefreshJson,
+            FailureStage::UsageHttp(401),
+            FailureStage::UsageHttp(403),
+            FailureStage::UsageHttp(429),
+            FailureStage::UsageHttp(503),
+            FailureStage::UsageTransport("connection_failed"),
+            FailureStage::UsageJson,
+            FailureStage::UsageShape,
+        ] {
+            let h = s.user_hint();
+            let asks_user_to_log_in = h.contains("請重新登入") || h.contains("請先登入");
+            assert_eq!(
+                s.action().is_some(),
+                asks_user_to_log_in,
+                "{:?}: 提示與按鈕不一致 ({:?})",
+                s,
+                s.user_hint()
+            );
+        }
+    }
+
+    /// 降級資料本身要帶 action —— UI 讀的是 limit,不是 FailureStage。
+    #[test]
+    fn degraded_limits_carry_the_action_for_login_failures() {
+        let ls = degraded_limits(&FailureStage::UsageHttp(403));
+        assert!(!ls.is_empty());
+        assert!(ls.iter().all(|l| l.action == Some(LimitAction::Relogin)));
+    }
+
+    /// 連線失敗的降級資料**不得**帶 action。
+    #[test]
+    fn degraded_limits_omit_the_action_for_network_failures() {
+        let ls = degraded_limits(&FailureStage::UsageTransport("connection_failed"));
+        assert!(!ls.is_empty());
+        assert!(ls.iter().all(|l| l.action.is_none()));
+    }
+
+    /// 正常路徑的 limit 不該帶 action(否則按鈕會出現在健康的列上)。
+    #[test]
+    fn healthy_limits_have_no_action() {
+        let v: Value = serde_json::from_str(MODERN).unwrap();
+        assert!(parse_usage(&v).iter().all(|l| l.action.is_none()));
+    }
+
     /// 降級的 limit 必須帶著提示,否則 UI 沒東西可顯示。
     #[test]
     fn degraded_limits_carry_the_hint() {
@@ -709,6 +828,7 @@ fn degraded_limits(stage: &FailureStage) -> Vec<Limit> {
             pace: None,
             runway_secs: None,
             hint: Some(stage.user_hint().to_string()),
+            action: stage.action(),
         })
         .collect()
 }

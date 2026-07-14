@@ -65,6 +65,24 @@ export async function refreshNow(): Promise<void> {
   emitMock();
 }
 
+/**
+ * Launch the official `claude auth login` flow via the backend.
+ *
+ * Rejects with a fixed code ("claude_not_found" / "spawn_failed"); the panel
+ * treats any rejection the same way — it shows the command to run by hand.
+ * That path is not rare: TokenBar autostarts from Explorer with a different
+ * PATH than the user's terminal, and a WSL-only Claude Code has no Windows
+ * launcher at all.
+ *
+ * The browser preview has no backend, so it rejects — which conveniently makes
+ * the fallback (the taller, layout-risky branch) the previewable one.
+ */
+export async function relogin(): Promise<void> {
+  if (!isTauri()) throw new Error("claude_not_found");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("relogin");
+}
+
 export async function onSnapshot(cb: Cb): Promise<void> {
   if (isTauri()) {
     const { listen } = await import("@tauri-apps/api/event");

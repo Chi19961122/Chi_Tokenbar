@@ -24,6 +24,19 @@ pub enum LimitStatus {
     Idle,
 }
 
+/// A remedy the **backend** decided the user can act on for a failed limit.
+///
+/// A closed enum, not a free string, on purpose: the panel turns this into a
+/// button that launches an external process, so the value must never be
+/// derivable from an API response or from matching on hint text. Adding a
+/// variant here is a deliberate decision about what a button may start.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LimitAction {
+    /// A login-class failure that `claude auth login` can actually fix.
+    Relogin,
+}
+
 /// Pace vs an even-burn line over the window (UX Spec v3 §4.1).
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Pace {
@@ -54,6 +67,13 @@ pub struct Limit {
     /// SECRET: 只放固定文案,絕不放 token / email / account id / response body。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// 只有「重新登入真的修得好」的失效才帶 (§7);其餘一律 None。
+    ///
+    /// 連線被防毒/公司網路擋住時給「重新登入」按鈕是誤導 —— 使用者按了沒用,
+    /// 還會以為是自己帳號有問題。決定權在後端的 `FailureStage::action()`,
+    /// 前端不得改用比對 `hint` 文字來猜。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<LimitAction>,
 }
 
 impl Limit {

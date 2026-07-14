@@ -1,7 +1,8 @@
 import "./fonts.css";
 import "./styles.css";
 import type { Snapshot } from "./types";
-import type { PanelView } from "./panel";
+import type { PanelView, ReloginState } from "./panel";
+import { MANUAL_LOGIN_CMD } from "./panel";
 import type { AnalyticsOpts, Group, Metric, SubTab } from "./analytics";
 import type { Settings } from "./types";
 import {
@@ -12,6 +13,7 @@ import {
   mockScenarioNames,
   onSnapshot,
   refreshNow,
+  relogin,
   resizeAnchored,
   setMockScenario,
   setSettings,
@@ -34,6 +36,10 @@ const ui = {
   metric: "tokens" as Metric,
   group: "agent" as Group,
   range: "week" as "today" | "week",
+  // Re-login button state. Held here, not in the DOM: renderCards() runs on
+  // every 1s tick and would wipe anything written straight onto the elements.
+  relogin: "idle" as ReloginState,
+  copied: false,
 };
 
 let lastSnap: Snapshot | null = null;
@@ -85,7 +91,16 @@ function renderIslandNow() {
 }
 
 function renderCards() {
-  renderPanel($("cards"), lastSnap, ui.view);
+  renderPanel($("cards"), lastSnap, ui.view, { relogin: ui.relogin, copied: ui.copied });
+}
+
+/** Leaving a limit's detail view drops any re-login state with it, so the
+ *  button never re-appears mid-flow on an unrelated limit. */
+function setView(view: PanelView) {
+  ui.view = view;
+  ui.relogin = "idle";
+  ui.copied = false;
+  renderCards();
 }
 
 /** "X 前更新" in the panel header, from the snapshot's updated_at. */
@@ -194,6 +209,8 @@ async function setExpanded(on: boolean) {
   document.body.classList.toggle("collapsed", !on);
   if (on) {
     ui.view = { kind: "list" };
+    ui.relogin = "idle";
+    ui.copied = false;
     renderModeBtn();
     renderCards();
     renderUpdated();
@@ -266,18 +283,53 @@ function wireEvents() {
     }
   });
 
-  // Limits list ↔ per-limit detail drill-down.
+  // Limits list ↔ per-limit detail drill-down, plus the re-login affordance.
   $("cards").addEventListener("click", (e) => {
     const el = e.target as HTMLElement;
     if (el.closest("[data-back]")) {
-      ui.view = { kind: "list" };
-      renderCards();
+      setView({ kind: "list" });
       return;
     }
+
+    // Hand off to the official `claude auth login`. Any failure (usually:
+    // claude isn't on TokenBar's PATH) becomes the manual-command fallback —
+    // never a dead end.
+    if (el.closest("[data-relogin]")) {
+      ui.relogin = "launching";
+      renderCards();
+      relogin().then(
+        () => {
+          ui.relogin = "ok";
+          renderCards();
+        },
+        () => {
+          ui.relogin = "failed";
+          renderCards();
+        },
+      );
+      return;
+    }
+
+    if (el.closest("[data-relogin-copy]")) {
+      // Best-effort: the <code> is selectable too, so a blocked clipboard
+      // still leaves the user a way to copy the command by hand.
+      navigator.clipboard?.writeText(MANUAL_LOGIN_CMD).then(
+        () => {
+          ui.copied = true;
+          renderCards();
+          setTimeout(() => {
+            ui.copied = false;
+            renderCards();
+          }, 1500);
+        },
+        () => {},
+      );
+      return;
+    }
+
     const rowEl = el.closest("[data-limit]");
     if (rowEl) {
-      ui.view = { kind: "detail", id: rowEl.getAttribute("data-limit")! };
-      renderCards();
+      setView({ kind: "detail", id: rowEl.getAttribute("data-limit")! });
     }
   });
 

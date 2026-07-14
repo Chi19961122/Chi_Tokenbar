@@ -111,6 +111,7 @@ mod tests {
             pace: None,
             runway_secs: None,
             hint: None,
+            action: None,
         }
     }
 

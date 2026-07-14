@@ -7,6 +7,14 @@ import { providerIcon } from "./icons";
 
 export type PanelView = { kind: "list" } | { kind: "detail"; id: string };
 
+/** Re-login button lifecycle. Lives in main.ts's `ui` rather than the DOM
+ *  because the 1s countdown tick re-renders this whole subtree. */
+export type ReloginState = "idle" | "launching" | "ok" | "failed";
+export type PanelOpts = { relogin?: ReloginState; copied?: boolean };
+
+/** The exact command shown (and copied) when we can't start it ourselves. */
+export const MANUAL_LOGIN_CMD = "claude auth login";
+
 const PROVIDER_META: Record<Provider, { name: string; cls: string }> = {
   anthropic: { name: "Claude Code", cls: "prov-claude" },
   codex: { name: "Codex", cls: "prov-codex" },
@@ -86,7 +94,35 @@ function list(limits: Limit[]): string {
   return groups || `<div class="empty-note">工具目前未在執行</div>`;
 }
 
-function detail(l: Limit): string {
+/**
+ * The re-login affordance, shown only when the backend said this failure is
+ * one that logging in again actually fixes (`l.action === "relogin"`).
+ *
+ * The "failed" branch is the point of the whole thing: `claude` frequently
+ * isn't on TokenBar's PATH (it inherits Explorer's/autostart's environment,
+ * and Claude Code may live in WSL entirely). A dead-end error would leave the
+ * user stuck, so we show the command itself, copyable.
+ */
+function reloginBlock(state: ReloginState, copied: boolean): string {
+  if (state === "failed") {
+    return `<div class="relogin-manual">
+      <div>TokenBar 叫不動 claude。請在終端機自己執行：</div>
+      <div class="relogin-cmd">
+        <code>${escapeHtml(MANUAL_LOGIN_CMD)}</code>
+        <button class="relogin-copy" data-relogin-copy>${copied ? "已複製" : "複製"}</button>
+      </div>
+    </div>`;
+  }
+  if (state === "ok") {
+    return `<div class="relogin-note">已開啟登入視窗。完成後按上方 ⟳ 重新整理。</div>`;
+  }
+  const busy = state === "launching";
+  return `<button class="relogin" data-relogin ${busy ? "disabled" : ""}>${
+    busy ? "開啟中…" : "重新登入 Claude"
+  }</button>`;
+}
+
+function detail(l: Limit, opts: PanelOpts): string {
   const unknown = isUnknown(l);
   const left = pctLeft(l.util);
 
@@ -98,7 +134,9 @@ function detail(l: Limit): string {
   } else if (l.status === "source_failed") {
     // No "估算" badge: nothing is estimated — the backend sends 0% placeholders.
     // Show the real reason instead of implying the 0% is a computed estimate.
-    sub = `<span class="badge">無法取得</span> ${escapeHtml(l.hint ?? "暫時取不到 Claude 用量")}`;
+    // The fallback stays provider-neutral: Codex's live degradation carries no
+    // hint, and naming Claude there would just be a different lie.
+    sub = `<span class="badge">無法取得</span> ${escapeHtml(l.hint ?? "暫時取不到用量資料")}`;
   } else if (l.status === "stale") {
     sub = `<span class="badge">stale</span> 上次執行時的數據，可能已變動`;
   } else if (l.status === "idle") {
@@ -116,6 +154,12 @@ function detail(l: Limit): string {
     sub = parts.join(" · ");
   }
 
+  // Gated on the backend's decision, never on what `hint` happens to say.
+  const action =
+    l.status === "source_failed" && l.action === "relogin"
+      ? reloginBlock(opts.relogin ?? "idle", opts.copied ?? false)
+      : "";
+
   const absLine = l.absolute
     ? `<div class="detail-abs">${fmtTokens(l.absolute[0])} / ${fmtTokens(l.absolute[1])} tokens</div>`
     : "";
@@ -132,6 +176,7 @@ function detail(l: Limit): string {
     <div class="detail-pct">${unknown ? "—" : `${left}%`}<small>left</small></div>
     <div class="dmeter"><div class="dmeter-fill" style="width:${unknown ? 0 : left}%"></div></div>
     ${sub ? `<div class="detail-sub">${sub}</div>` : ""}
+    ${action}
     ${absLine}
     ${reset ? `<div class="detail-reset">${reset}</div>` : ""}
   </div>`;
@@ -141,12 +186,13 @@ export function renderPanel(
   container: HTMLElement,
   snap: Snapshot | null,
   view: PanelView,
+  opts: PanelOpts = {},
 ): void {
   const limits = snap?.limits ?? [];
   if (view.kind === "detail") {
     const l = limits.find((x) => x.id === view.id);
     if (l) {
-      container.innerHTML = detail(l);
+      container.innerHTML = detail(l, opts);
       return;
     }
     // limit vanished (tool stopped) — fall through to the list

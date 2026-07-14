@@ -51,6 +51,16 @@
 | 參數 | 值 | 意義 |
 |---|---|---|
 | `NOTIFY_SUPPRESS_SECS` | 1800 秒（30 分） | 同一個 limit 通知後 30 分鐘內不再通知 |
+| `SOURCE_FAIL_SUPPRESS_SECS` | 21600 秒（6 小時） | 來源失效通知的抑制窗。**刻意不沿用上面的 30 分鐘**：額度警告的數字一直在動、重複提醒有意義；「請重新登入」是要使用者動手的事，修好之前每半小時彈一次只是騷擾。來源恢復時去重 key 會被清掉，所以「壞掉→修好→又壞掉」仍會再通知一次，不必等這個窗到期 |
+
+來源失效通知每個 provider 最多一則（`cc.5h` 與 `cc.week` 會同時失效，逐 limit 發會跳兩則一樣的）。內文直接用 `Limit.hint` —— 與面板共用同一份白話文案，不會走針。
+
+### 重新登入（lib.rs `relogin` 指令）
+面板在**登入類**失敗時才顯示「重新登入」按鈕（由後端 `FailureStage::action()` 決定，非前端猜文案）；連不上 Claude 時不顯示，因為按了也沒用、反而誤導。
+
+按鈕啟動官方的 `claude auth login --claudeai`（互動式，會開瀏覽器）。TokenBar **不自行實作 OAuth**：官方有正門，而自行輪替 token 可能把使用者的 Claude Code 登出（見 `anthropic.rs` 開頭）。
+
+已知限制：`claude` 常不在 TokenBar 的 PATH 上（GUI 程式繼承的是檔案總管／開機自動啟動的環境，且 Claude Code 可能整個裝在 WSL）。叫不動時面板會降級顯示 `claude auth login` 指令並附複製鈕，不是跳一個沒有出路的錯誤。
 
 ### 燃燒率 / runway（burnrate.rs）
 | 參數 | 值 | 意義 |
