@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS: Settings = {
   compact: false,
   providers: "both",
   codex_usage_source: "local",
+  // Mirrors config.rs `Settings::default()` — pinned unless the user opts out.
+  always_on_top: true,
 };
 
 export const isTauri = () =>

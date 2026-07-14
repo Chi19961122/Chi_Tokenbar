@@ -65,6 +65,8 @@ export interface Settings {
   compact: boolean;
   providers: ProviderFilter;
   codex_usage_source: CodexUsageSource;
+  /** Keep the island above other windows. Defaults to true (matches tauri.conf.json). */
+  always_on_top: boolean;
 }
 
 // ── Layer ③ analytics (UX Spec v3 §11) ──────────────────────────────

@@ -173,6 +173,7 @@ async function renderSettings() {
   const s = await getSettings();
   $("settings").innerHTML = `
     <label class="srow"><input type="checkbox" id="s-autostart" ${s.autostart ? "checked" : ""}/> 開機自動啟動</label>
+    <label class="srow"><input type="checkbox" id="s-always-on-top" ${s.always_on_top ? "checked" : ""}/> 視窗置頂<span class="warn">關閉後會被其他視窗蓋住，可從系統匣叫回</span></label>
     <div class="srow">Claude 權杖更新 <select id="s-refresh">
       <option value="off" ${s.allow_token_refresh ? "" : "selected"}>關閉（過期時顯示估算）</option>
       <option value="on" ${s.allow_token_refresh ? "selected" : ""}>開啟（過期自動換新）</option>
@@ -194,6 +195,7 @@ function readSettingsForm(): Settings {
   const v = (id: string) => $(id) as HTMLInputElement;
   return {
     autostart: v("s-autostart").checked,
+    always_on_top: v("s-always-on-top").checked,
     allow_token_refresh: ($("s-refresh") as HTMLSelectElement).value === "on",
     warn_pct: +v("s-warn").value || 75,
     crit_pct: +v("s-crit").value || 90,

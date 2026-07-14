@@ -29,6 +29,14 @@ pub struct Settings {
     /// Codex quota source: "local" (rollout snapshot), "live" (account API),
     /// or "auto" (live first, then local fallback).
     pub codex_usage_source: String,
+    /// Keep the island above other windows. Defaults to `true` to match the
+    /// `alwaysOnTop` in tauri.conf.json — the window is *created* pinned, so a
+    /// `false` here has to be applied over it at startup (`lib::run`), not just
+    /// when the user flips it.
+    ///
+    /// Turning it off changes what "visible" means for the island (it can be
+    /// buried), which `lib::toggle_action` accounts for.
+    pub always_on_top: bool,
 }
 
 impl Default for Settings {
@@ -42,6 +50,7 @@ impl Default for Settings {
             providers: "both".into(),
             island_mode: "both".into(),
             codex_usage_source: "local".into(),
+            always_on_top: true,
         }
     }
 }
@@ -131,5 +140,35 @@ mod tests {
     #[test]
     fn unparseable_settings_fall_back_to_defaults() {
         assert_eq!(load_from_str("not json").providers, "both");
+    }
+
+    // ── always_on_top ────────────────────────────────────────────────
+    //
+    // The default must stay `true`: tauri.conf.json creates the window with
+    // alwaysOnTop, so anything else here would silently change the behaviour
+    // every existing user already has.
+
+    #[test]
+    fn defaults_to_always_on_top() {
+        assert!(Settings::default().always_on_top);
+    }
+
+    /// Every settings.json written before this setting existed lacks the key.
+    /// Those users must keep the pinned window they have today.
+    #[test]
+    fn settings_saved_before_this_setting_existed_stay_pinned() {
+        assert!(load_from_str(r#"{ "autostart": true }"#).always_on_top);
+    }
+
+    /// The whole point of the feature: an explicit opt-out must survive a
+    /// round-trip through disk, not be re-defaulted back to pinned.
+    #[test]
+    fn explicit_opt_out_survives_a_save_load_round_trip() {
+        let s = Settings {
+            always_on_top: false,
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(!load_from_str(&json).always_on_top, "取消置頂被存檔洗掉了");
     }
 }

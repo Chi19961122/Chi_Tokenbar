@@ -104,6 +104,7 @@ fn get_settings(data: State<'_, AppData>) -> Settings {
 fn set_settings(app: AppHandle, data: State<'_, AppData>, settings: Settings) {
     config::save(&settings);
     apply_autostart(&app, settings.autostart);
+    apply_always_on_top(&app, settings.always_on_top);
     if let Ok(mut g) = data.settings.lock() {
         *g = settings;
     }
@@ -228,6 +229,7 @@ pub fn run() {
             build_tray(app.handle())?;
             position_island(app.handle());
             apply_autostart(app.handle(), settings.autostart);
+            apply_always_on_top(app.handle(), settings.always_on_top);
             spawn_scheduler(app.handle().clone(), refresh_rx);
             Ok(())
         })
@@ -255,16 +257,47 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// What the tray's "Show / Hide" should do to the island.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ToggleAction {
+    Show,
+    Hide,
+}
+
+/// The tray toggle's decision, split out from the window calls so it can be
+/// tested (a `WebviewWindow` cannot be built under `cargo test`).
+///
+/// "Visible" is not "the user can see it". While `always_on_top` was hardcoded
+/// on, the two were interchangeable and `is_visible()` alone was enough. With
+/// the pin now optional, a visible window can sit buried under whatever the
+/// user is reading — and `skipTaskbar: true` means the tray is the *only* way
+/// back, so treating that as "hide it" would make the menu item do the exact
+/// opposite of what was clicked, twice in a row.
+///
+/// Focus is the discriminator: hide only what is both visible and frontmost.
+pub fn toggle_action(visible: bool, focused: bool) -> ToggleAction {
+    if visible && focused {
+        ToggleAction::Hide
+    } else {
+        ToggleAction::Show
+    }
+}
+
 fn toggle_main(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        match win.is_visible() {
-            Ok(true) => {
-                let _ = win.hide();
-            }
-            _ => {
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    // Fail toward Show: if either query errors, the safe move is to surface a
+    // window the user just asked for, never to hide one they cannot recover.
+    let visible = win.is_visible().unwrap_or(false);
+    let focused = win.is_focused().unwrap_or(false);
+    match toggle_action(visible, focused) {
+        ToggleAction::Hide => {
+            let _ = win.hide();
+        }
+        ToggleAction::Show => {
+            let _ = win.show();
+            let _ = win.set_focus();
         }
     }
 }
@@ -287,6 +320,18 @@ fn apply_autostart(app: &AppHandle, enable: bool) {
     use tauri_plugin_autostart::ManagerExt;
     let mgr = app.autolaunch();
     let _ = if enable { mgr.enable() } else { mgr.disable() };
+}
+
+/// Pin/unpin the island at runtime.
+///
+/// Must also run at startup, not only on change: tauri.conf.json creates the
+/// window with `alwaysOnTop: true` unconditionally, so a stored `false` only
+/// takes effect if we override it here — otherwise the setting would appear to
+/// reset itself on every launch.
+fn apply_always_on_top(app: &AppHandle, enable: bool) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.set_always_on_top(enable);
+    }
 }
 
 // ── tray fuel-capsule icon (§5.1) ────────────────────────────────────
@@ -882,5 +927,39 @@ mod tests {
     #[test]
     fn similarly_named_programs_are_not_mistaken_for_claude() {
         assert_eq!(find(r"C:\a", &[r"C:\a\claude-code.exe", r"C:\a\myclaude.cmd"]), None);
+    }
+
+    // ── tray Show/Hide decision (§5.1) ───────────────────────────────
+    //
+    // This is the exact function `toggle_main` dispatches on — the window
+    // calls around it cannot be driven under test, the decision can. Once the
+    // window can be un-pinned, "visible" stops meaning "the user can see it",
+    // which is what these pin down.
+
+    #[test]
+    fn tray_toggle_hides_the_window_the_user_is_looking_at() {
+        assert_eq!(toggle_action(true, true), ToggleAction::Hide);
+    }
+
+    #[test]
+    fn tray_toggle_shows_a_hidden_window() {
+        assert_eq!(toggle_action(false, false), ToggleAction::Show);
+    }
+
+    /// The regression this feature would otherwise introduce: with alwaysOnTop
+    /// off, a window buried under other windows is still `is_visible() == true`.
+    /// Hiding it there is the opposite of what the user asked for — and with
+    /// `skipTaskbar: true` there is no taskbar button to get it back, so they
+    /// must click the tray twice to undo TokenBar's own mistake.
+    #[test]
+    fn tray_toggle_raises_a_visible_window_that_is_buried_instead_of_hiding_it() {
+        assert_eq!(toggle_action(true, false), ToggleAction::Show);
+    }
+
+    /// A hidden window cannot hold focus; if the platform ever claims it does,
+    /// showing it is still the safe answer — never hide something invisible.
+    #[test]
+    fn a_hidden_window_is_never_hidden_again() {
+        assert_eq!(toggle_action(false, true), ToggleAction::Show);
     }
 }

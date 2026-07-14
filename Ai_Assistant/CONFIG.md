@@ -35,8 +35,21 @@
 | `providers` | `"both"` | **顯示平台（全域）**：`both`（兩個都顯示）／`claude`（只顯示 Claude）／`codex`（只顯示 Codex）；⚙ 設定區可切、即時生效。作用範圍是**整個 app**：島嶼、面板、系統匣 tooltip、通知、排名、分析頁全部只呈現選定平台，被關掉的平台連 poll／檔案掃描都跳過。<br>**未知值一律「顯示全部」**（`worst`、空字串、大小寫不符如 `CLAUDE`、手改打錯字皆是）——只有完全相符的 `claude`／`codex` 才會縮限，永不產生空畫面。 |
 | `island_mode` | — | **DEPRECATED（2026-07-14）**，已被 `providers`取代。只在載入時讀一次做遷移：舊檔有 `island_mode` 且**無** `providers` 時，值搬到 `providers`（`providers` 存在時以它為準）；遷移後不再寫回 settings.json（`skip_serializing`），執行期完全不讀。 |
 | `codex_usage_source` | `"local"` | Codex 用量來源：`local` 只讀本機 session 快照（預設，零網路請求）／`live` 讀已登入帳號的即時用量／`auto` 優先即時、失敗才回本機快照。選擇 `live` 或 `auto` 才會進行唯讀網路查詢，不會生成模型回應或輪替權杖。 |
+| `always_on_top` | `true` | 視窗是否置頂（設定區勾選：視窗置頂，改動即時生效、免重啟）。預設 `true` 對齊 `tauri.conf.json` 的 `alwaysOnTop`——視窗**建立時一律置頂**，所以 `false` 必須在啟動時由 `lib::run` 的 `apply_always_on_top` 覆寫回來，否則每次重開都會變回置頂。**與 `skipTaskbar: true` 的互動**：關掉置頂後視窗會被其他視窗蓋住，而它不在工作列上，唯一叫回的方法是系統匣選單的 Show / Hide（見下方 §3.1）。 |
 
 定義：`src-tauri/src/config.rs`。
+
+### 3.1 `always_on_top` 與系統匣 Show / Hide 的互動
+
+`lib::toggle_main` 的決策抽成純函式 `lib::toggle_action(visible, focused)`（可測；視窗 API 在 `cargo test` 下無法驅動）：
+
+| 視窗狀態 | 動作 |
+|---|---|
+| 可見且有焦點（在最前面） | `Hide` |
+| 可見但無焦點（被其他視窗蓋住） | `Show` + `set_focus`（浮到最上層） |
+| 已隱藏 | `Show` + `set_focus` |
+
+判斷條件是「可見**且**有焦點」而不只是「可見」：置頂寫死時兩者等價，但一旦可以取消置頂，被蓋住的視窗仍然 `is_visible() == true`——只看可見會在使用者想叫回視窗時反而把它隱藏，而 `skipTaskbar: true` 表示沒有其他叫回的途徑，使用者得再點一次才看得到。`is_visible()` / `is_focused()` 查詢失敗時一律 fail toward `Show`：寧可多顯示，不可讓視窗無法救回。
 
 ## 4. 內建參數（寫死，改需重編譯）
 
