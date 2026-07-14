@@ -11,7 +11,7 @@ const DEFAULT_SETTINGS: Settings = {
   warn_pct: 75,
   crit_pct: 90,
   compact: false,
-  island_mode: "both",
+  providers: "both",
   codex_usage_source: "local",
 };
 

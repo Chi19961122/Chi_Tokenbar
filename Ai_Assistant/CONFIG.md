@@ -32,7 +32,8 @@
 | `warn_pct` | `75` | 通知門檻：util% 到達即發「warning」系統通知 |
 | `crit_pct` | `90` | 通知門檻：util% 到達即發「critical」系統通知（LOCKED 也算 critical） |
 | `compact` | `false` | 展開面板預設用精簡模式（只有額度列表，隱藏分析分頁）；由 header 的 ⊟/⊞ 按鈕切換並自動記住 |
-| `island_mode` | `"both"` | 島嶼佈局：`both`（Claude+Codex 並排）／`claude`／`codex`；⚙ 設定區可切（未知舊值一律當 both） |
+| `providers` | `"both"` | **顯示平台（全域）**：`both`（兩個都顯示）／`claude`（只顯示 Claude）／`codex`（只顯示 Codex）；⚙ 設定區可切、即時生效。作用範圍是**整個 app**：島嶼、面板、系統匣 tooltip、通知、排名、分析頁全部只呈現選定平台，被關掉的平台連 poll／檔案掃描都跳過。<br>**未知值一律「顯示全部」**（`worst`、空字串、大小寫不符如 `CLAUDE`、手改打錯字皆是）——只有完全相符的 `claude`／`codex` 才會縮限，永不產生空畫面。 |
+| `island_mode` | — | **DEPRECATED（2026-07-14）**，已被 `providers`取代。只在載入時讀一次做遷移：舊檔有 `island_mode` 且**無** `providers` 時，值搬到 `providers`（`providers` 存在時以它為準）；遷移後不再寫回 settings.json（`skip_serializing`），執行期完全不讀。 |
 | `codex_usage_source` | `"local"` | Codex 用量來源：`local` 只讀本機 session 快照（預設，零網路請求）／`live` 讀已登入帳號的即時用量／`auto` 優先即時、失敗才回本機快照。選擇 `live` 或 `auto` 才會進行唯讀網路查詢，不會生成模型回應或輪替權杖。 |
 
 定義：`src-tauri/src/config.rs`。
@@ -88,7 +89,7 @@
 | 展開方向 | 以視窗右下角為錨點,**向上/向左長**,並夾在工作區內 |
 | 拖曳吸邊 | 靠近上/下/左/右邊 40px 內放開即吸附(邊距 8px);以工作區為準,不會蓋到工作列 |
 | 精簡切換 | header ⊟(切精簡)/⊞(切完整);精簡 = 隱藏 subtabs/toggles/analytics/tok-min rate |
-| 島嶼內容 | 依 `island_mode`:並排時 Claude/Codex 各取該供應商最危險一條(鎖定>警戒>util 高者),品牌 icon + 膠囊 + %左;右側輔助 = 今日燒速 tok/min(每 60 秒更新) |
+| 島嶼內容 | 依 `providers`:並排時 Claude/Codex 各取該供應商最危險一條(鎖定>警戒>util 高者),品牌 icon + 膠囊 + %左;右側輔助 = 今日燒速 tok/min(每 60 秒更新)。單一平台時視窗 collapsed 寬 270,否則 340(未知值走並排 → 維持 340) |
 | 品牌配色 | Claude = `--claude` 橘 #d97757(星芒 icon、面板分組標題);Codex = `--accent` 紫 #a78bfa + 藍紫漸層雲朵 icon。icon 來源:lobehub/lobe-icons v1.91.0(MIT)官方 SVG,vendor 在 `src/assets/*.svg` 本地打包(不走 CDN,離線可用;Codex 白色底板已移除) |
 
 ## 5. 資料來源路徑

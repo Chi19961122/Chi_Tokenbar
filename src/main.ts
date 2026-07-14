@@ -79,7 +79,7 @@ function renderToggles() {
 
 function renderIslandNow() {
   renderIsland($("island"), lastSnap, {
-    mode: settings?.island_mode ?? "both",
+    mode: settings?.providers ?? "both",
     tokPerMin: todayRate,
   });
 }
@@ -119,9 +119,13 @@ function contentHeight(): number {
   return Math.max(h, 120);
 }
 
-/** Collapsed island width depends on layout (dual providers need more room). */
+/** Collapsed island width depends on layout (dual providers need more room).
+ *  Mirrors island.ts's branching: only an exact claude/codex renders one
+ *  group, so only those get the narrow width — an unknown value shows both
+ *  and must keep the wide one. */
 function collapsedW(): number {
-  return (settings?.island_mode ?? "both") === "both" ? SIZE.collapsed.w : 270;
+  const p = settings?.providers ?? "both";
+  return p === "claude" || p === "codex" ? 270 : SIZE.collapsed.w;
 }
 
 /** Resize the OS window for the current mode (no-op in browser). */
@@ -159,10 +163,10 @@ async function renderSettings() {
       <option value="on" ${s.allow_token_refresh ? "selected" : ""}>開啟（過期自動換新）</option>
     </select><span class="warn">可能影響 Claude Code 登入</span></div>
     <div class="srow">警戒 <input type="number" id="s-warn" value="${s.warn_pct}" min="1" max="100"/>% · 危險 <input type="number" id="s-crit" value="${s.crit_pct}" min="1" max="100"/>%</div>
-    <div class="srow">島嶼顯示 <select id="s-island">
-      <option value="both" ${s.island_mode !== "claude" && s.island_mode !== "codex" ? "selected" : ""}>Claude + Codex 並排</option>
-      <option value="claude" ${s.island_mode === "claude" ? "selected" : ""}>僅 Claude</option>
-      <option value="codex" ${s.island_mode === "codex" ? "selected" : ""}>僅 Codex</option>
+    <div class="srow">顯示平台 <select id="s-providers">
+      <option value="both" ${s.providers !== "claude" && s.providers !== "codex" ? "selected" : ""}>兩個都顯示</option>
+      <option value="claude" ${s.providers === "claude" ? "selected" : ""}>只顯示 Claude</option>
+      <option value="codex" ${s.providers === "codex" ? "selected" : ""}>只顯示 Codex</option>
     </select></div>
     <div class="srow">Codex 用量來源 <select id="s-codex-source">
       <option value="live" ${s.codex_usage_source === "live" ? "selected" : ""}>即時帳號用量</option>
@@ -179,7 +183,7 @@ function readSettingsForm(): Settings {
     warn_pct: +v("s-warn").value || 75,
     crit_pct: +v("s-crit").value || 90,
     compact: ui.compact,
-    island_mode: (($("s-island") as HTMLSelectElement).value || "both") as Settings["island_mode"],
+    providers: (($("s-providers") as HTMLSelectElement).value || "both") as Settings["providers"],
     codex_usage_source: (($("s-codex-source") as HTMLSelectElement).value || "local") as Settings["codex_usage_source"],
   };
 }
@@ -243,10 +247,14 @@ function wireEvents() {
     }
     fitWindow();
   });
-  $("settings").addEventListener("change", () => {
+  $("settings").addEventListener("change", async () => {
     settings = readSettingsForm();
     setSettings(settings);
     renderIslandNow(); // island layout may have changed
+    // The display filter scopes analytics too, and the backend applies it on
+    // demand — so re-pull rather than leave the page stale until the 60s tick.
+    // (Limits re-arrive filtered on the scheduler's next round.)
+    if (ui.expanded && !ui.compact) await renderAnalyticsNow();
   });
 
   $("mode").addEventListener("click", async () => {
@@ -320,7 +328,7 @@ async function boot() {
   ui.compact = settings.compact;
   document.body.classList.toggle("compact", ui.compact);
   renderModeBtn();
-  fitWindow(); // collapsed width depends on island_mode
+  fitWindow(); // collapsed width depends on the display filter
 
   lastSnap = await getSnapshot();
   renderIslandNow();

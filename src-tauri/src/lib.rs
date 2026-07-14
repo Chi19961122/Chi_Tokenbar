@@ -45,8 +45,17 @@ fn refresh_now(data: State<'_, AppData>) {
 }
 
 #[tauri::command]
-fn get_analytics(range: String) -> analytics::Analytics {
-    analytics::compute(&range)
+fn get_analytics(data: State<'_, AppData>, range: String) -> analytics::Analytics {
+    // Read the live in-memory setting, not config::load(): set_settings updates
+    // this immediately, so switching the filter reflects on the next fetch
+    // instead of waiting for a disk round-trip.
+    let filter = data
+        .settings
+        .lock()
+        .ok()
+        .map(|s| s.providers.clone())
+        .unwrap_or_else(|| "both".into());
+    analytics::compute_with(&range, &filter)
 }
 
 #[tauri::command]
@@ -225,28 +234,55 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
         loop {
             let now = chrono::Utc::now().timestamp();
 
-            // Read live settings once per round so both toggles apply without restart.
-            let (codex_source, allow_refresh) = app
+            // Read live settings once per round so every toggle applies without restart.
+            let (codex_source, allow_refresh, providers_filter) = app
                 .try_state::<AppData>()
                 .and_then(|data| {
-                    data.settings
-                        .lock()
-                        .ok()
-                        .map(|s| (s.codex_usage_source.clone(), s.allow_token_refresh))
+                    data.settings.lock().ok().map(|s| {
+                        (
+                            s.codex_usage_source.clone(),
+                            s.allow_token_refresh,
+                            s.providers.clone(),
+                        )
+                    })
                 })
-                .unwrap_or_else(|| ("local".into(), false));
-            let live = if matches!(codex_source.as_str(), "live" | "auto") {
+                .unwrap_or_else(|| ("local".into(), false, "both".into()));
+
+            // Skip the polls a hidden provider does not need. Only an exact
+            // "claude"/"codex" narrows anything: an unknown value must keep
+            // polling both, to stay consistent with apply_provider_filter's
+            // "unknown shows everything".
+            let want_codex = providers_filter != "claude";
+            let want_claude = providers_filter != "codex";
+
+            let live = if want_codex && matches!(codex_source.as_str(), "live" | "auto") {
                 codex_live.poll(now, force)
             } else {
                 None
             };
-            let local = if matches!(codex_source.as_str(), "local" | "auto") {
+            let local = if want_codex && matches!(codex_source.as_str(), "local" | "auto") {
                 providers::codex::read_limits()
             } else {
                 Vec::new()
             };
-            let mut limits = providers::codex_live::choose_limits(&codex_source, live, local);
-            limits.extend(anthropic.poll(now, force, allow_refresh));
+            // Guarded: with source="live", choose_limits falls back to
+            // degraded_limits() when `live` is None — which would fabricate
+            // two "SourceFailed" Codex rows out of a poll we skipped on
+            // purpose. apply_provider_filter would drop them anyway; not
+            // building them keeps the intent obvious.
+            let mut limits = if want_codex {
+                providers::codex_live::choose_limits(&codex_source, live, local)
+            } else {
+                Vec::new()
+            };
+            if want_claude {
+                limits.extend(anthropic.poll(now, force, allow_refresh));
+            }
+            // The single filter node for the whole app (§ see apply_provider_filter).
+            // Skipping polls above is an optimisation; this is the correctness
+            // guarantee — it still runs so a future third provider cannot leak
+            // through by being absent from the skip logic.
+            let limits = apply_provider_filter(&providers_filter, limits);
             let snapshot = engine.ingest(limits, now);
 
             if debug {
@@ -257,7 +293,7 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
                     );
                 }
                 if first {
-                    let a = analytics::compute("today");
+                    let a = analytics::compute_with("today", &providers_filter);
                     eprintln!(
                         "[tb] analytics today: total_tokens={} by_agent={:?} sessions={} tok/min={}",
                         a.total_tokens, a.by_agent, a.sessions_this_week, a.tok_per_min
@@ -290,6 +326,32 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             };
         }
     });
+}
+
+/// Apply the "display platform" setting (`Settings::providers`). Any unknown
+/// value shows everything — this must never return empty for a value it does
+/// not recognise.
+///
+/// This is the single filter node for the whole app: it runs in the scheduler
+/// between merging the providers' limits and `engine.ingest()`, so the island,
+/// panel, tray tooltip, notifications and ranking all inherit it. Do not add a
+/// second filter at any consumer.
+pub fn apply_provider_filter(filter: &str, limits: Vec<Limit>) -> Vec<Limit> {
+    match filter {
+        "claude" => limits
+            .into_iter()
+            .filter(|l| l.provider == model::Provider::Anthropic)
+            .collect(),
+        "codex" => limits
+            .into_iter()
+            .filter(|l| l.provider == model::Provider::Codex)
+            .collect(),
+        // "both" plus every unknown / legacy / typo'd value. `serde(default)`
+        // only fills in *missing* fields — it never validated this string, so a
+        // stale "worst" can still reach us. Blanking the whole app would be far
+        // worse than showing an extra provider, hence the catch-all.
+        _ => limits,
+    }
 }
 
 fn worst<'a>(snap: &'a Snapshot) -> Option<&'a Limit> {
@@ -360,5 +422,71 @@ fn fire_notifications(
             format!("{} 已用 {:.0}%（{}）。{}", l.label, l.util, level, tip)
         };
         let _ = app.notification().builder().title("TokenBar").body(body).show();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use model::Provider;
+
+    fn limit(id: &str, provider: Provider) -> Limit {
+        Limit {
+            id: id.into(),
+            provider,
+            label: id.into(),
+            util: 50.0,
+            resets_at: 0,
+            window_secs: 0,
+            status: LimitStatus::Normal,
+            absolute: None,
+            pace: None,
+            runway_secs: None,
+        }
+    }
+
+    fn both_providers() -> Vec<Limit> {
+        vec![
+            limit("codex.5h", Provider::Codex),
+            limit("cc.5h", Provider::Anthropic),
+        ]
+    }
+
+    /// Unknown values (the legacy "worst", or a hand-edited typo in
+    /// settings.json) must show everything. Never empty — an empty filter
+    /// result blanks out the entire app.
+    #[test]
+    fn unknown_filter_value_shows_everything() {
+        assert_eq!(apply_provider_filter("worst", both_providers()).len(), 2);
+        assert_eq!(apply_provider_filter("", both_providers()).len(), 2);
+        // wrong case must not silently become a single-provider filter either
+        assert_eq!(apply_provider_filter("CLAUDE", both_providers()).len(), 2);
+    }
+
+    #[test]
+    fn claude_filter_drops_codex() {
+        let out = apply_provider_filter("claude", both_providers());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].provider, Provider::Anthropic);
+    }
+
+    #[test]
+    fn codex_filter_drops_claude() {
+        let out = apply_provider_filter("codex", both_providers());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].provider, Provider::Codex);
+    }
+
+    #[test]
+    fn both_keeps_everything() {
+        assert_eq!(apply_provider_filter("both", both_providers()).len(), 2);
+    }
+
+    /// A filter for a provider that simply has no data yet is legitimately
+    /// empty — the filter must not invent rows to compensate.
+    #[test]
+    fn single_provider_filter_on_absent_provider_is_empty() {
+        let only_codex = vec![limit("codex.5h", Provider::Codex)];
+        assert!(apply_provider_filter("claude", only_codex).is_empty());
     }
 }

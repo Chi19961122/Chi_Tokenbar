@@ -134,16 +134,74 @@ impl Acc {
     }
 }
 
-/// Compute analytics for "today" or "week".
-pub fn compute(range: &str) -> Analytics {
+// ── display filter (Settings::providers) ─────────────────────────────────
+//
+// Analytics is the one consumer that does not read the Snapshot — it scans
+// local JSONL directly — so the scheduler's single filter node cannot reach
+// it and it has to honour the setting itself.
+//
+// Both helpers mirror lib::apply_provider_filter's contract: only an exact
+// "claude"/"codex" narrows anything, every unknown value scans everything.
+// Never let a stale setting empty the page.
+
+fn scans_codex(filter: &str) -> bool {
+    filter != "claude"
+}
+
+fn scans_claude(filter: &str) -> bool {
+    filter != "codex"
+}
+
+fn filter_accounts(filter: &str, accounts: Vec<Account>) -> Vec<Account> {
+    accounts
+        .into_iter()
+        .filter(|a| match a.provider.as_str() {
+            "anthropic" => scans_claude(filter),
+            "codex" => scans_codex(filter),
+            _ => true,
+        })
+        .collect()
+}
+
+/// Compute analytics for "today" or "week", scoped to the display filter.
+///
+/// Skips the scan outright rather than scanning then discarding: `scan_*`
+/// walks a whole directory tree, and a hidden provider's files are pure waste.
+pub fn compute_with(range: &str, filter: &str) -> Analytics {
+    compute_routed(range, filter, scan_codex, scan_claude, detect_accounts())
+}
+
+/// The real body of `compute_with`, with every source of ambient state
+/// (the two directory scans and account detection) passed in.
+///
+/// This split exists purely so the filter routing below is testable: the
+/// scanners read the real home dir, so a test that cannot replace them can
+/// only re-assert `scans_*`, which proves nothing about which branch runs.
+fn compute_routed<C, L>(
+    range: &str,
+    filter: &str,
+    scan_codex_fn: C,
+    scan_claude_fn: L,
+    accounts: Vec<Account>,
+) -> Analytics
+where
+    C: FnOnce(&mut Acc, i64) -> u32,
+    L: FnOnce(&mut Acc, i64),
+{
     let now = chrono::Utc::now().timestamp();
     let days_back: i64 = if range == "today" { 0 } else { 6 };
     let utc_midnight = now - now.rem_euclid(86400);
     let start = utc_midnight - days_back * 86400;
 
     let mut acc = Acc::new(now);
-    let sessions = scan_codex(&mut acc, start);
-    scan_claude(&mut acc, start);
+    let sessions = if scans_codex(filter) {
+        scan_codex_fn(&mut acc, start)
+    } else {
+        0
+    };
+    if scans_claude(filter) {
+        scan_claude_fn(&mut acc, start);
+    }
 
     let mut daily: Vec<DayPoint> = Vec::new();
     let mut by_model: HashMap<String, u64> = HashMap::new();
@@ -192,7 +250,7 @@ pub fn compute(range: &str) -> Analytics {
         breakdown: acc.breakdown,
         sessions_this_week: sessions,
         tok_per_min: (acc.recent_tokens as f64 / 10.0) as u64,
-        accounts: detect_accounts(),
+        accounts: filter_accounts(filter, accounts),
     }
 }
 
@@ -319,6 +377,139 @@ fn scan_claude(acc: &mut Acc, start: i64) {
                 + usage.get("cache_creation_input_tokens").and_then(|x| x.as_u64()).unwrap_or(0);
             acc.add(ts, model, "Claude Code", input, cached, output, 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The scan helpers hit the real home dir, so these assert on the pure
+    /// routing decision instead: which scans the filter authorises.
+    #[test]
+    fn claude_filter_skips_codex_scan() {
+        assert!(!scans_codex("claude"));
+        assert!(scans_claude("claude"));
+    }
+
+    #[test]
+    fn codex_filter_skips_claude_scan() {
+        assert!(scans_codex("codex"));
+        assert!(!scans_claude("codex"));
+    }
+
+    #[test]
+    fn both_scans_everything() {
+        assert!(scans_codex("both"));
+        assert!(scans_claude("both"));
+    }
+
+    /// Same catch-all rule as lib::apply_provider_filter: an unknown value
+    /// must never silently produce an empty analytics page.
+    #[test]
+    fn unknown_filter_scans_everything() {
+        for f in ["worst", "", "CLAUDE", "nonsense"] {
+            assert!(scans_codex(f), "codex scan dropped for {f:?}");
+            assert!(scans_claude(f), "claude scan dropped for {f:?}");
+        }
+    }
+
+    #[test]
+    fn accounts_follow_the_filter() {
+        let only_claude = filter_accounts(
+            "claude",
+            vec![
+                Account {
+                    client: "Claude Code".into(),
+                    provider: "anthropic".into(),
+                    account: "—".into(),
+                    plan: "Claude".into(),
+                },
+                Account {
+                    client: "Codex CLI".into(),
+                    provider: "codex".into(),
+                    account: "—".into(),
+                    plan: "—".into(),
+                },
+            ],
+        );
+        assert_eq!(only_claude.len(), 1);
+        assert_eq!(only_claude[0].provider, "anthropic");
+    }
+
+    // ── real routing: which scan `compute_routed` actually runs ──────────
+    //
+    // Stub scanners stand in for the two directory walks, so these observe
+    // the branch that ran instead of restating the predicate. No user data
+    // is touched. Each stub tags its tokens with its own agent name, and the
+    // agents present in the output name the scans that happened.
+
+    const CODEX_AGENT: &str = "Codex CLI";
+    const CLAUDE_AGENT: &str = "Claude Code";
+
+    fn stub_codex(acc: &mut Acc, _start: i64) -> u32 {
+        acc.add(acc.now, "gpt-5-codex", CODEX_AGENT, 100, 0, 0, 0);
+        7
+    }
+
+    fn stub_claude(acc: &mut Acc, _start: i64) {
+        acc.add(acc.now, "claude-opus", CLAUDE_AGENT, 200, 0, 0, 0);
+    }
+
+    /// Agents that actually got scanned, for `filter`, sorted.
+    fn scanned_agents(filter: &str) -> Vec<String> {
+        let a = compute_routed("today", filter, stub_codex, stub_claude, Vec::new());
+        let mut names: Vec<String> = a.by_agent.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn claude_filter_routes_to_claude_scan_only() {
+        assert_eq!(scanned_agents("claude"), vec![CLAUDE_AGENT.to_string()]);
+    }
+
+    #[test]
+    fn codex_filter_routes_to_codex_scan_only() {
+        assert_eq!(scanned_agents("codex"), vec![CODEX_AGENT.to_string()]);
+    }
+
+    #[test]
+    fn both_filter_routes_to_every_scan() {
+        assert_eq!(
+            scanned_agents("both"),
+            vec![CLAUDE_AGENT.to_string(), CODEX_AGENT.to_string()]
+        );
+    }
+
+    /// The core guard: a stale or unknown setting must never route to "scan
+    /// nothing" and leave the analytics page blank.
+    #[test]
+    fn unknown_filter_routes_to_every_scan() {
+        for f in ["worst", "", "CLAUDE", "nonsense"] {
+            assert_eq!(
+                scanned_agents(f),
+                vec![CLAUDE_AGENT.to_string(), CODEX_AGENT.to_string()],
+                "unknown filter {f:?} did not scan both providers"
+            );
+        }
+    }
+
+    /// Totals, not just agent names: a skipped scan must take its tokens and
+    /// its session count with it.
+    #[test]
+    fn skipped_codex_scan_drops_its_tokens_and_sessions() {
+        let claude_only = compute_routed("today", "claude", stub_codex, stub_claude, Vec::new());
+        assert_eq!(claude_only.total_tokens, 200);
+        assert_eq!(claude_only.sessions_this_week, 0);
+
+        let codex_only = compute_routed("today", "codex", stub_codex, stub_claude, Vec::new());
+        assert_eq!(codex_only.total_tokens, 100);
+        assert_eq!(codex_only.sessions_this_week, 7);
+
+        let everything = compute_routed("today", "both", stub_codex, stub_claude, Vec::new());
+        assert_eq!(everything.total_tokens, 300);
+        assert_eq!(everything.sessions_this_week, 7);
     }
 }
 

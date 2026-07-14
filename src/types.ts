@@ -35,8 +35,12 @@ export interface Snapshot {
   updated_at: number;
 }
 
-/** Island layout: both providers side-by-side, or a single provider. */
-export type IslandMode = "both" | "claude" | "codex";
+/**
+ * Global display filter: both providers, or only one. Applied once in the
+ * backend scheduler, so it scopes the island, panel, tray, notifications and
+ * analytics together.
+ */
+export type ProviderFilter = "both" | "claude" | "codex";
 export type CodexUsageSource = "live" | "auto" | "local";
 
 export interface Settings {
@@ -45,7 +49,7 @@ export interface Settings {
   warn_pct: number;
   crit_pct: number;
   compact: boolean;
-  island_mode: IslandMode;
+  providers: ProviderFilter;
   codex_usage_source: CodexUsageSource;
 }
 

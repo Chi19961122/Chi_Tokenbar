@@ -1,4 +1,14 @@
-# HANDOFF — 進度快照(2026-07-13)
+# HANDOFF — 進度快照(2026-07-14)
+
+## 2026-07-14:全域「顯示平台」過濾(island_mode → providers)
+
+- **做了什麼**:原本只作用於島嶼的 `island_mode` 升級為**全域**設定 `providers`(`both`/`claude`/`codex`)。選定平台後**島嶼、面板、系統匣 tooltip、通知、排名、分析頁全部只呈現該平台**;被關掉的平台連 poll(codex_live/codex 本機/anthropic)與分析頁的目錄掃描都跳過。設定 UI 標籤「島嶼顯示」→「**顯示平台**」。行為約束寫入 UX Spec §13.10 與 §8。
+- **架構(勿回退)**:**只在排程器過濾一次** —— `lib.rs` 合併兩家 limits 之後、`engine.ingest()` 之前呼叫 `apply_provider_filter`。下游(panel.ts 空分組自動跳過、tray tooltip 與 `fire_notifications` 直接遍歷 `snap.limits`、`ranking.rs` 只從傳入 limits 挑)全部自動一致,**不得在各消費點各寫一份過濾**(必漏一處)。**分析頁是唯一例外**:它不吃 Snapshot、直接掃 `~/.codex/sessions/**` 與 `~/.claude/projects/**`,所以 `analytics::compute_with(range, filter)` 自行依同一設定跳過掃描;`compute(range)` 保留為「顯示全部」的薄包裝。
+- **⚠️ 更正舊記載(本檔原第 28 行,「舊存檔值 worst 一律 fallback 成並排」的成因寫錯了)**:那**不是 serde 做的**。`#[serde(default)]` 是**容器層級**屬性 —— 它只在欄位**缺失**時套用 `impl Default`,**完全不驗證值的內容**,`island_mode: String` 會原封不動吃下 `"worst"` 或任何字串。真正在兜底的是 `island.ts` 的 else 分支(非 `claude`/`codex` 一律當並排),**後端從未驗證過這個值**。把過濾搬到後端後那層意外保護就消失了 —— 若 `match` 少了 catch-all,殘留的 `"worst"` 會把兩個平台都濾掉、**整個 app 變空白**。故 `apply_provider_filter` 與 analytics 的 `scans_*` 都有明確 catch-all:**只有完全相符的 `claude`/`codex` 才縮限,未知值(`worst`/空字串/大小寫不符如 `CLAUDE`)一律顯示全部,永不回空**。已有專門的回歸測試擋這件事。
+- **舊設定遷移**:`config::load_from_str()`(自 `load()` 抽出的純函式,可測)先解析成 `Value`,遇「有 `island_mode` 但無 `providers`」時把值搬過去再反序列化 —— 舊使用者的偏好不會無聲退回預設;`providers` 存在時以它為準。`island_mode` 保留為 deprecated 欄位但 `skip_serializing`(只讀一次做遷移,不再寫回、執行期不讀)。
+- **順手修的兩個地雷**:①`codex_usage_source="live"` + `providers="claude"` 時,跳過 live poll 會讓 `choose_limits` 走 `_ =>` 分支呼叫 `degraded_limits()`,**憑空生出兩條假的 SourceFailed Codex 列**(過濾雖會濾掉,仍已改為不建構);②`main.ts` 的 `collapsedW()` 原為 `=== "both" ? 340 : 270`,未知值會給 270 卻仍渲染並排 → 改為只有完全相符的 `claude`/`codex` 才用 270,與 island.ts 分支一致。
+- **測試**:`cargo test` **47/47 通過**(原 33 + 新增 14:config 遷移 4、`apply_provider_filter` 5、analytics 過濾路由 5)。`npm run build` exit 0。
+- **⚠️ 已知問題(已量測,尚未修,待使用者決定)**:`Engine.history` 依 limit id 保存且**只以筆數封頂(`HISTORY_CAP=60`)、不以時間封頂**。平台被過濾掉期間該 provider 停止取樣,但舊樣本仍留著;切回來後 `compute_runway` 的 front 仍是空窗前的樣本,**斜率被長基線稀釋 → 燃速嚴重低估、runway 過度樂觀**,且要等 60 筆新樣本(約 15 分鐘)才會被推出去。實測:空窗 2h 後真實 5 分鐘燒 40→50%,**回報 runway 37650s(~10.5h)vs 真值 1500s(~25min),差 25 倍**。修法選項:切換時清掉該 provider 的歷史(比留半截誠實),或給 history 加時間上限。
 
 ## 2026-07-13:單一實例鎖(v0.1.3)
 - **問題**:重複點啟動會疊出多個常駐實例。**修正**:加 `tauri-plugin-single-instance`(v2),註冊為 **builder 第一個 plugin**(官方要求);callback 在既有實例裡 `show()+set_focus()` main 視窗,第二個實例自動退出。純 Rust 外掛、不需改 capabilities。
@@ -25,9 +35,9 @@
 - **手動更新完成**(2026-07-10):面板 header 新增 ⟳ 按鈕(Tauri 指令 `refresh_now` → mpsc channel 喚醒排程器,Claude 快取視同過期、5s 防連打下限)與「X 前更新」標籤(每秒刷新)。參數總表新增 `docs/CONFIG.md`。
 - **視窗改造完成**(2026-07-10):預設停靠右下角(work area,避開工作列);展開面板高度自動符合內容(右下角錨點向上長,fitWindow + resizeAnchored);吸邊新增底邊;header 新增 ⊟/⊞ 精簡模式切換(settings.json `compact`,只顯示額度列表)。
 - **推上 GitHub + 首個 Release**(2026-07-10):公開 repo `Chi19961122/Chi_Tokenbar`(origin/main),MIT LICENSE(版權人 Chi19961122)+ 重寫 README(電池比喻、實機截圖在 docs/screenshots/)。Release `v0.1.0` 已發佈,含 NSIS setup.exe(2.8MB)+ MSI(3.9MB)。註:工作目錄有一份壞掉的 `AGENTS.md`(Claude→Codex 誤植,未追蹤、未推),待決定修/刪。
-- **git 版控啟用**(2026-07-10):main 分支,初始 commit e043b2e(116 檔);島嶼顯示選項移除「自動(最危險)」,僅剩並排/僅 Claude/僅 Codex(舊存檔值 worst 一律 fallback 成並排)。
+- **git 版控啟用**(2026-07-10):main 分支,初始 commit e043b2e(116 檔);島嶼顯示選項移除「自動(最危險)」,僅剩並排/僅 Claude/僅 Codex(舊存檔值 worst 一律 fallback 成並排)。**⚠️ 2026-07-14 更正**:此處當時把 fallback 成因記成 serde 的行為,是錯的 —— `#[serde(default)]` 只補**缺失**欄位、不驗證值,兜底的其實是 `island.ts` 的 else 分支;詳見本檔 2026-07-14 條目。另 `island_mode` 已於 2026-07-14 被全域設定 `providers` 取代。
 - **島嶼第三輪微調**(2026-07-10):右側輔助改為今日燒速 tok/min(移除 ↻ 倒數與總量);供應商識別改用品牌 icon,島嶼與面板分組標題都套用;Claude 主題色從綠改為品牌橘 `--claude` #d97757。icon 改用 lobehub/lobe-icons v1.91.0 官方 SVG(claude-color/codex-color),vendor 在 src/assets/ 本地打包、Codex 白底板移除(手繪版已淘汰)。**陷阱已修**:SVG 漸層 id 是文件全域,隱藏的島嶼副本會搶走 id 且 display:none 內的 defs 不生效 → 面板 Codex 雲朵無填色;icons.ts 現在每個實例注入唯一 id 後綴。
-- **高度鎖定 + 島嶼強化**(2026-07-10 第二輪回饋):自動縮放改為「進入模式時量一次後鎖定」(展開/切精簡/開關設定才重算),點分頁與每秒 tick 不再 resize → 消除卡頓;#analytics 固定 300px 讓所有分頁同高;移除捲軸(overflow hidden)。島嶼改為可配置(settings `island_mode`,預設 both):Claude/Codex 並排膠囊(各取該供應商最危險一條)+ ↻重置倒數 + 今日總 tokens(60s 更新);視窗 collapsed 寬 340(並排)/270(單一)。
+- **高度鎖定 + 島嶼強化**(2026-07-10 第二輪回饋):自動縮放改為「進入模式時量一次後鎖定」(展開/切精簡/開關設定才重算),點分頁與每秒 tick 不再 resize → 消除卡頓;#analytics 固定 300px 讓所有分頁同高;移除捲軸(overflow hidden)。島嶼改為可配置(settings `island_mode`,預設 both;**2026-07-14 起改為全域設定 `providers`**):Claude/Codex 並排膠囊(各取該供應商最危險一條)+ ↻重置倒數 + 今日總 tokens(60s 更新);視窗 collapsed 寬 340(並排)/270(單一)。
 - **usage API 已改版 + Fable 顯示完成**(2026-07-10):API 新增結構化 `limits` 陣列(session/weekly_all/weekly_scoped),`parse_limits_array` 通用解析(Opus 沿用 `cc.opus`,其他模型 scoped 週限制 → `cc.w.<slug>`,如 Fable → `cc.w.fable`「Weekly · Fable」),舊欄位當 fallback。dev 實測 API 回傳 Fable 6% 正常顯示。23/23 cargo 測試通過(新增 4 個解析測試)。schema 詳見 data-sources-findings.md。
 - Release 產物(2026-07-10 打包,`npm run build:release` 自動集中到 `C:\Coding\TokenBar\TokenBar-release\`):
   - `TokenBar_0.1.0_x64-setup.exe`(推薦安裝)

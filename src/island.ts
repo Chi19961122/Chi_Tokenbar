@@ -1,14 +1,15 @@
 // Island (collapsed) view — fuel capsule(s) + % left, per the Live Island design.
-// Layout is configurable (settings.island_mode): both providers side-by-side
-// (default), a single provider, or the classic single most-dangerous limit.
+// Layout follows the global display filter (settings.providers): both providers
+// side-by-side (default), or a single provider. The backend already filtered the
+// snapshot, so `mode` only decides the layout, never what data exists.
 // Right side: today's burn rate (tok/min).
 
-import type { IslandMode, Limit, Snapshot } from "./types";
+import type { Limit, ProviderFilter, Snapshot } from "./types";
 import { fmtTokens, pctLeft } from "./format";
 import { providerIcon } from "./icons";
 
 export interface IslandOpts {
-  mode: IslandMode;
+  mode: ProviderFilter;
   /** Today's average tokens/minute, for the right-side readout. */
   tokPerMin: number | null;
 }
