@@ -103,6 +103,28 @@
 ## 6. 除錯
 
 - `TOKENBAR_DEBUG=1` 環境變數：stderr 每輪印 `[tb]` 各 limit 的 util/status/runway。
+- 啟用時，Claude 取數失敗會多印一行 `[tb] anthropic fetch failed: <stage>`，指出**精確**失敗階段。
+  面板上給使用者看的是同一階段的白話版本（`user_hint()`），兩者刻意分開：stage 精確但含術語，面板文案不含術語。
+
+  | stage 字串 | 意義 |
+  |---|---|
+  | `credentials_file` | 讀不到 `~/.claude/.credentials.json`（未登入 Claude Code，或家目錄不存在） |
+  | `credentials_shape` | 檔案在，但不是預期結構（JSON 壞掉、缺 `claudeAiOauth`、token 欄位空字串） |
+  | `refresh_disabled` | token 已過期，但 `allow_token_refresh` 為 false（預設）→ 誠實降級，不冒輪替風險 |
+  | `refresh_http_<code>` | refresh 端點回錯誤狀態碼（`401`/`403` = refresh token 已失效） |
+  | `refresh_transport_<kind>` | refresh 連不上（見下方 kind） |
+  | `refresh_json` | refresh 回應不是預期 JSON，或缺 `access_token` |
+  | `usage_http_<code>` | usage 端點回錯誤狀態碼（`401`/`403` 認證、`429` 頻率、`5xx` 伺服器） |
+  | `usage_transport_<kind>` | usage 連不上——**HTTPS 攔截／企業代理最常停在這裡** |
+  | `usage_json` | usage 回應不是合法 JSON |
+  | `usage_shape` | 連線與 JSON 都正常，但一條 limit 都解不出來 → 官方改了 schema |
+
+  `<kind>`（來自 `ureq::ErrorKind`）：`dns`／`connection_failed`／`proxy_connect`／`proxy_unauthorized`／
+  `invalid_proxy_url`／`bad_header`／`bad_status`／`io`／`invalid_url`／`unknown_scheme`／
+  `too_many_redirects`／`insecure_request`／`other`。
+
+  **機密**：stage 只帶錯誤種類與 HTTP 狀態碼。新增變體時不得放入 token、email、account id 或 response body
+  （`Error::Status(code, _)` 只取 `code`，不碰 body）。
 - 瀏覽器 preview（非 Tauri）自動進 mock 模式，devbar 可切 safe / near / locked / degraded / stale / empty 情境。
 
 ## 7. 發行版外觀一致性

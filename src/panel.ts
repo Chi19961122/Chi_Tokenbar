@@ -33,6 +33,21 @@ const displayName = (l: Limit) => {
 const isUnknown = (l: Limit) =>
   l.status === "source_failed" || l.status === "insufficient_data";
 
+/**
+ * Escape before interpolating backend strings into innerHTML.
+ * `hint` and `label` are variable-length values that originate outside this
+ * file (label is even derived from an API response), so they can't be trusted
+ * the way the hard-coded copy around them can.
+ */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /** Circular progress ring; arc = consumed (util%). */
 function ring(l: Limit): string {
   const r = 8;
@@ -48,10 +63,12 @@ function ring(l: Limit): string {
 
 function row(l: Limit): string {
   const pct = isUnknown(l) ? "—" : `${pctLeft(l.util)}%`;
-  const right = isUnknown(l) ? `<span class="badge">估算</span>` : ring(l);
-  return `<button class="lrow status-${l.status}" data-limit="${l.id}">
+  // source_failed is not an estimate (see the detail view) — say so in the list too.
+  const badge = l.status === "source_failed" ? "無法取得" : "估算";
+  const right = isUnknown(l) ? `<span class="badge">${badge}</span>` : ring(l);
+  return `<button class="lrow status-${l.status}" data-limit="${escapeHtml(l.id)}">
     <span class="lrow-pct">${pct}</span>
-    <span class="lrow-label">${displayName(l)}</span>
+    <span class="lrow-label">${escapeHtml(displayName(l))}</span>
     ${right}
   </button>`;
 }
@@ -79,7 +96,9 @@ function detail(l: Limit): string {
     const reset = l.resets_at > 0 ? ` resets ${fmtDur(l.resets_at - nowSecs())}` : "";
     sub = `<span class="lock">LOCKED</span>${reset}`;
   } else if (l.status === "source_failed") {
-    sub = `<span class="badge">估算</span> 來源失效，改用本機估算`;
+    // No "估算" badge: nothing is estimated — the backend sends 0% placeholders.
+    // Show the real reason instead of implying the 0% is a computed estimate.
+    sub = `<span class="badge">無法取得</span> ${escapeHtml(l.hint ?? "暫時取不到 Claude 用量")}`;
   } else if (l.status === "stale") {
     sub = `<span class="badge">stale</span> 上次執行時的數據，可能已變動`;
   } else if (l.status === "idle") {
@@ -108,7 +127,7 @@ function detail(l: Limit): string {
   return `<div class="detail status-${l.status}">
     <div class="detail-head">
       <button class="back" data-back title="Back">‹</button>
-      <span class="detail-title">${displayName(l)}</span>
+      <span class="detail-title">${escapeHtml(displayName(l))}</span>
     </div>
     <div class="detail-pct">${unknown ? "—" : `${left}%`}<small>left</small></div>
     <div class="dmeter"><div class="dmeter-fill" style="width:${unknown ? 0 : left}%"></div></div>

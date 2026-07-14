@@ -87,6 +87,7 @@ fn parse_window(node: &Value) -> Option<Limit> {
         absolute: None,
         pace: None,
         runway_secs: None,
+        hint: None,
     })
 }
 
@@ -125,6 +126,7 @@ fn degraded_limits() -> Vec<Limit> {
             absolute: None,
             pace: None,
             runway_secs: None,
+            hint: None,
         })
         .collect()
 }
@@ -183,6 +185,7 @@ mod tests {
             absolute: None,
             pace: None,
             runway_secs: None,
+            hint: None,
         }
     }
 

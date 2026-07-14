@@ -51,9 +51,12 @@ export const SCENARIOS: Record<string, Snapshot> = {
     limit({ id: "cc.week", label: "Claude·週", util: 63, provider: "anthropic", status: "normal", resets_at: now + 3 * 86400, window_secs: 7 * 86400 }),
   ], "codex.5h"),
 
+  // Hints mirror anthropic.rs `FailureStage::user_hint()`. cc.5h carries the
+  // longest line there is (the AV/corporate-network case) so the preview shows
+  // the worst-case wrap at the real 340px island width.
   degraded: snap([
-    limit({ id: "cc.5h", label: "Claude·5h", util: 0, provider: "anthropic", status: "source_failed", resets_at: 0, window_secs: 5 * 3600 }),
-    limit({ id: "cc.week", label: "Claude·週", util: 0, provider: "anthropic", status: "source_failed", resets_at: 0, window_secs: 7 * 86400 }),
+    limit({ id: "cc.5h", label: "Claude·5h", util: 0, provider: "anthropic", status: "source_failed", resets_at: 0, window_secs: 5 * 3600, hint: "連不上 Claude。請檢查網路；若有公司網路或防毒軟體，可能擋住了連線" }),
+    limit({ id: "cc.week", label: "Claude·週", util: 0, provider: "anthropic", status: "source_failed", resets_at: 0, window_secs: 7 * 86400, hint: "Claude 登入已失效，請重新登入 Claude Code" }),
     limit({ id: "codex.5h", label: "Codex·5h", util: 34, provider: "codex", status: "normal", resets_at: now + 3 * 3600, window_secs: 5 * 3600 }),
   ], "codex.5h"),
 

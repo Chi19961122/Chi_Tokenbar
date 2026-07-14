@@ -50,6 +50,10 @@ pub struct Limit {
     pub pace: Option<Pace>,
     /// projected seconds until empty ("~empty in X"); None when not projectable (§4.3).
     pub runway_secs: Option<i64>,
+    /// 來源失效時給使用者看的白話提示 (§7);正常狀態為 None。
+    /// SECRET: 只放固定文案,絕不放 token / email / account id / response body。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 impl Limit {

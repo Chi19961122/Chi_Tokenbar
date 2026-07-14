@@ -27,6 +27,8 @@ export interface Limit {
   absolute: [number, number] | null; // [used, cap] tokens
   pace: Pace | null;
   runway_secs: number | null;
+  /** Plain-language reason shown when status is "source_failed"; absent otherwise. */
+  hint?: string;
 }
 
 export interface Snapshot {

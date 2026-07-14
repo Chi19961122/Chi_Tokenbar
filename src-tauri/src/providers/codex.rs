@@ -135,6 +135,7 @@ fn mk_limit(id: &str, label: &str, w: Window, now: i64, age_secs: i64) -> Limit 
         absolute: None,
         pace: None,
         runway_secs: None,
+        hint: None,
     }
 }
 

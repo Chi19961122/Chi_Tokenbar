@@ -73,6 +73,7 @@ mod tests {
             absolute: None,
             pace: None,
             runway_secs: None,
+            hint: None,
         }
     }
 
