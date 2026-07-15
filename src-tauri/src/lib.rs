@@ -18,7 +18,6 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{
-    image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager, PhysicalPosition, State,
@@ -245,6 +244,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&toggle, &quit])?;
 
     TrayIconBuilder::with_id("tokenbar")
+        // The app logo (icon-source.png → bundle icons in tauri.conf.json),
+        // set once and never updated: the tray shows *who* this is, the tooltip
+        // shows how much is left. `update_tray` must not set an icon.
         .icon(app.default_window_icon().unwrap().clone())
         .tooltip("TokenBar — starting…")
         .menu(&menu)
@@ -332,56 +334,6 @@ fn apply_always_on_top(app: &AppHandle, enable: bool) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.set_always_on_top(enable);
     }
-}
-
-// ── tray fuel-capsule icon (§5.1) ────────────────────────────────────
-
-fn status_rgb(status: LimitStatus, util: f64) -> (u8, u8, u8) {
-    match status {
-        LimitStatus::Locked => (248, 113, 113),
-        LimitStatus::Near => (251, 191, 36),
-        LimitStatus::Normal if util >= 75.0 => (251, 191, 36),
-        LimitStatus::Normal => (52, 211, 153),
-        _ => (138, 146, 157),
-    }
-}
-
-/// Render a small horizontal capsule filled to `pct_left`% (fuel remaining) in `rgb`.
-fn capsule_icon(pct_left: f64, rgb: (u8, u8, u8)) -> Image<'static> {
-    const W: i32 = 32;
-    const H: i32 = 32;
-    let mut buf = vec![0u8; (W * H * 4) as usize];
-
-    let (x0, x1, y0, y1) = (3.0f64, 29.0f64, 11.0f64, 21.0f64);
-    let r = (y1 - y0) / 2.0;
-    let cy = (y0 + y1) / 2.0;
-    let fill_x = x0 + (x1 - x0) * (pct_left.clamp(0.0, 100.0) / 100.0);
-
-    for y in 0..H {
-        for x in 0..W {
-            let fx = x as f64 + 0.5;
-            let fy = y as f64 + 0.5;
-            let inside = if fx >= x0 + r && fx <= x1 - r {
-                fy >= y0 && fy <= y1
-            } else if fx < x0 + r {
-                let (dx, dy) = (fx - (x0 + r), fy - cy);
-                dx * dx + dy * dy <= r * r
-            } else {
-                let (dx, dy) = (fx - (x1 - r), fy - cy);
-                dx * dx + dy * dy <= r * r
-            };
-            if !inside {
-                continue;
-            }
-            let idx = ((y * W + x) * 4) as usize;
-            let (cr, cg, cb) = if fx <= fill_x { rgb } else { (60, 66, 74) };
-            buf[idx] = cr;
-            buf[idx + 1] = cg;
-            buf[idx + 2] = cb;
-            buf[idx + 3] = 255;
-        }
-    }
-    Image::new_owned(buf, W as u32, H as u32)
 }
 
 // ── scheduler ────────────────────────────────────────────────────────
@@ -519,36 +471,42 @@ pub fn apply_provider_filter(filter: &str, limits: Vec<Limit>) -> Vec<Limit> {
     }
 }
 
-fn worst<'a>(snap: &'a Snapshot) -> Option<&'a Limit> {
-    snap.worst_id
-        .as_ref()
-        .and_then(|id| snap.limits.iter().find(|l| &l.id == id))
+/// Rich hover text: every limit (§5 — the one tray surface not limited to the
+/// worst one). Split from `update_tray` so it can be tested: since the icon
+/// became the static app logo, this string is the *only* place the tray still
+/// carries the quota numbers, which makes it worth pinning down.
+fn tray_tooltip(snap: &Snapshot) -> String {
+    if snap.limits.is_empty() {
+        return "TokenBar — no data".to_string();
+    }
+    let mut lines = vec!["TokenBar".to_string()];
+    for l in &snap.limits {
+        let val = match l.status {
+            // A failed source's util is a 0.0 placeholder, not a reading —
+            // "0% used" here would say "plenty left" when we mean "unknown".
+            LimitStatus::SourceFailed => "估算".to_string(),
+            LimitStatus::Locked => "LOCKED".to_string(),
+            _ => format!("{:.0}% used", l.util),
+        };
+        lines.push(format!("{}  {}", l.label, val));
+    }
+    lines.join("\n")
 }
 
+/// The tray icon is the app logo, set once in `build_tray` and never touched
+/// again: it is deliberately **static**, so this only refreshes the tooltip.
+///
+/// It used to be a fuel capsule redrawn every round from the worst limit's
+/// colour. That traded a recognisable app identity in the notification area for
+/// an at-a-glance quota read; the user asked for the logo knowing it costs them
+/// that glance — the numbers live one hover away in `tray_tooltip`, and the
+/// island still carries the colour-coded capsule. Do not reintroduce a
+/// state-dependent icon here as a "compromise".
 fn update_tray(app: &AppHandle, snap: &Snapshot) {
     let Some(tray) = app.tray_by_id("tokenbar") else {
         return;
     };
-    // Icon = worst limit's fuel capsule, filled to what remains (§5.1).
-    if let Some(l) = worst(snap) {
-        let _ = tray.set_icon(Some(capsule_icon(100.0 - l.util, status_rgb(l.status, l.util))));
-    }
-    // Rich hover: list every limit (§5 — the one place not limited to one).
-    let tip = if snap.limits.is_empty() {
-        "TokenBar — no data".to_string()
-    } else {
-        let mut lines = vec!["TokenBar".to_string()];
-        for l in &snap.limits {
-            let val = match l.status {
-                LimitStatus::SourceFailed => "估算".to_string(),
-                LimitStatus::Locked => "LOCKED".to_string(),
-                _ => format!("{:.0}% used", l.util),
-            };
-            lines.push(format!("{}  {}", l.label, val));
-        }
-        lines.join("\n")
-    };
-    let _ = tray.set_tooltip(Some(&tip));
+    let _ = tray.set_tooltip(Some(&tray_tooltip(snap)));
 }
 
 /// Which source-failure notices a snapshot warrants — **at most one per
@@ -869,6 +827,52 @@ mod tests {
         let healthy = snapshot_with(vec![limit("cc.5h", Provider::Anthropic)]);
         due_source_notices(&healthy, &mut notified, T0 + 60);
         assert_eq!(notified.get("cc.5h"), Some(&T0));
+    }
+
+    // ── tray tooltip (§5.1) ──────────────────────────────────────────
+    //
+    // The icon is now the static app logo, so the tooltip is the *only* place
+    // the tray still carries numbers. It is also the only tray surface that
+    // shows every limit rather than just the worst. These assert the string the
+    // user actually hovers, not that some formatter was called.
+
+    #[test]
+    fn tooltip_lists_every_limit_not_just_the_worst() {
+        let tip = tray_tooltip(&snapshot_with(both_providers()));
+        assert!(tip.contains("codex.5h"), "少了 Codex 那條:{tip}");
+        assert!(tip.contains("cc.5h"), "少了 Claude 那條:{tip}");
+    }
+
+    #[test]
+    fn tooltip_shows_used_percentage() {
+        let tip = tray_tooltip(&snapshot_with(vec![limit("cc.5h", Provider::Anthropic)]));
+        assert!(tip.contains("50% used"), "額度數字沒進 tooltip:{tip}");
+    }
+
+    /// A SourceFailed row's util is a 0.0 placeholder — showing it as "0% used"
+    /// would read as "plenty left" when the truth is "we don't know".
+    #[test]
+    fn tooltip_never_reports_a_failed_source_as_zero_percent_used() {
+        let tip = tray_tooltip(&snapshot_with(vec![failed(
+            "cc.5h",
+            Provider::Anthropic,
+            "請重新登入",
+        )]));
+        assert!(tip.contains("估算"), "失效來源要標估算:{tip}");
+        assert!(!tip.contains("0% used"), "把佔位值當成用量報出去了:{tip}");
+    }
+
+    #[test]
+    fn tooltip_calls_a_locked_limit_locked() {
+        let mut l = limit("codex.5h", Provider::Codex);
+        l.status = LimitStatus::Locked;
+        l.util = 100.0;
+        assert!(tray_tooltip(&snapshot_with(vec![l])).contains("LOCKED"));
+    }
+
+    #[test]
+    fn tooltip_without_any_limits_still_says_something() {
+        assert_eq!(tray_tooltip(&snapshot_with(vec![])), "TokenBar — no data");
     }
 
     // ── claude launcher resolution ───────────────────────────────────

@@ -14,6 +14,43 @@ export interface IslandOpts {
   tokPerMin: number | null;
 }
 
+/** What a press on the island means. */
+export type IslandIntent = "hide" | "expand" | "none";
+
+/** Marks the hide-to-tray button; the one place this selector is written. */
+const HIDE_SEL = "[data-hide]";
+
+/**
+ * Route a press on the island: hide to tray, expand the panel, or nothing.
+ *
+ * Split out of main.ts's listeners because the island has to serve three
+ * gestures on one 340×52 pill and the interesting part is which one wins.
+ *
+ * `dragged` is checked **first**, deliberately. The pill is small, so a drag to
+ * reposition it very often ends with the pointer over the hide button; routing
+ * that to "hide" would make the window vanish when the user only meant to move
+ * it — and `skipTaskbar: true` means the tray menu is the only way back. A
+ * gesture that was a drag is never also a click.
+ */
+export function islandIntent(target: EventTarget | null, dragged: boolean): IslandIntent {
+  if (dragged) return "none";
+  const el = target instanceof Element ? target : null;
+  return el?.closest(HIDE_SEL) ? "hide" : "expand";
+}
+
+/**
+ * Hide-to-tray affordance, present in every island state — what blocks the
+ * user's view is the island itself, so requiring them to expand the panel first
+ * would defeat the purpose.
+ *
+ * Deliberately a minimise bar, not an ✕: the tray menu offers both "Show /
+ * Hide" and "Quit TokenBar", and an ✕ on a window whose only route back is that
+ * same menu would read as the latter.
+ */
+function hideBtn(): string {
+  return `<button class="ihide" data-hide type="button" aria-label="隱藏到系統匣" title="隱藏到系統匣（可從系統匣圖示叫回）"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="4.4" width="8" height="1.2" rx="0.6" fill="currentColor"/></svg></button>`;
+}
+
 /** Small battery/fuel capsule; inner fill = % left (remaining). */
 function capsuleSvg(left: number): string {
   const w = (Math.max(0, Math.min(100, left)) / 100) * 13;
@@ -56,7 +93,7 @@ export function renderIsland(root: HTMLElement, snap: Snapshot | null, opts: Isl
 
   if (!snap || limits.length === 0) {
     root.className = "island status-empty";
-    root.innerHTML = `${capsuleSvg(0)}<span class="pct">—</span>`;
+    root.innerHTML = `${capsuleSvg(0)}<span class="pct">—</span>${hideBtn()}`;
     return;
   }
 
@@ -80,5 +117,5 @@ export function renderIsland(root: HTMLElement, snap: Snapshot | null, opts: Isl
       ? `<span class="iaux">${fmtTokens(opts.tokPerMin)}/min</span>`
       : "";
 
-  root.innerHTML = body + auxHtml;
+  root.innerHTML = body + auxHtml + hideBtn();
 }

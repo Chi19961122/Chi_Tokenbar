@@ -39,6 +39,21 @@
 
 定義：`src-tauri/src/config.rs`。
 
+### 3.0 設定區的版面結構（`main.ts` `renderSettings`）
+
+六列曾經平鋪成一張清單，找任何一項都得整份讀完。現在**依「使用者想改的是什麼」分三組**，組標題沿用 `.lsec-head`（額度列表的分組標題）——面板只用一套「分組」語彙，不要再發明第二套。
+
+| 分組 | 內容 | 理由 |
+|---|---|---|
+| **啟動與視窗** | 開機自動啟動、視窗置頂 | TokenBar 何時出現、會不會被蓋住。**不叫「視窗」**：autostart 講的是啟動不是視窗，標錯正是讓設定找不到的原因 |
+| **顯示與通知** | 顯示平台、通知門檻（警戒／危險） | 「你會被告知什麼」：哪些平台要出現、滿到什麼程度才值得打斷你 |
+| **資料來源** | Claude 權杖更新、Codex 用量來源 | 數字從哪來。兩列都帶著使用者該權衡的代價（權杖輪替、網路查詢），所以讀起來是一個決定而非兩個無關的下拉 |
+
+- 說明文字階層（**只用既有 token，不引入新色**）：`.snote` = `--text-dim`，中性說明；`.warn` = `--near` 琥珀，只給**真的會咬人**的那列（目前只有 Claude 權杖更新）。全部標琥珀等於全部都不顯眼。
+- 版面：`.srow` 左邊 `.slabel`（標題 + 說明直向堆疊、`min-width:0` 讓長說明換行而非撐寬）、右邊控制項靠右。`.srow select` 上限 `max-width:170px`，否則最長的「本機 session 快照」會把列撐出 380px 被裁掉。
+- `id` 是**契約**：`readSettingsForm()` 靠 `s-autostart`／`s-always-on-top`／`s-refresh`／`s-warn`／`s-crit`／`s-providers`／`s-codex-source` 讀回表單，改版面時不得更名。
+- 實測（380px、mock preview）：設定區 310px、`scrollWidth == clientWidth == 378`、無水平捲軸、無任何元素越過面板邊界。高度預算見 §4「設定開啟」。
+
 ### 3.1 `always_on_top` 與系統匣 Show / Hide 的互動
 
 `lib::toggle_main` 的決策抽成純函式 `lib::toggle_action(visible, focused)`（可測；視窗 API 在 `cargo test` 下無法驅動）：
@@ -51,6 +66,24 @@
 
 判斷條件是「可見**且**有焦點」而不只是「可見」：置頂寫死時兩者等價，但一旦可以取消置頂，被蓋住的視窗仍然 `is_visible() == true`——只看可見會在使用者想叫回視窗時反而把它隱藏，而 `skipTaskbar: true` 表示沒有其他叫回的途徑，使用者得再點一次才看得到。`is_visible()` / `is_focused()` 查詢失敗時一律 fail toward `Show`：寧可多顯示，不可讓視窗無法救回。
 
+### 3.2 島嶼隱藏鈕（只留系統匣）
+
+島嶼右端有一個**隱藏鈕**（極簡「—」minimize 橫槓），hover 島嶼才浮現，按下 → `datasource::hideWindow()` → `getCurrentWindow().hide()`，畫面上只剩系統匣圖示。
+
+- **為何在收合狀態**：擋到畫面的就是島嶼本身，要求先展開面板才能隱藏是本末倒置。面板展開時島嶼隱藏，故此鈕只在島嶼上。
+- **叫得回來**：`hide()` 只是隱藏、**絕不可改成 `close()`**。隱藏後 `is_visible() == false` → 系統匣 Show / Hide 走 §3.1 的 `Show` + `set_focus` 分支（`tray_toggle_shows_a_hidden_window` 測試涵蓋）。`skipTaskbar: true` 讓系統匣選單成為**唯一**途徑。
+- **不走 Tauri 指令**：`core:window:allow-hide` 已在 `capabilities/default.json` 授權，加指令只是把同一個呼叫再包一層。瀏覽器 preview 無 Tauri → no-op（同 `startWindowDrag`）。
+- **與點擊展開／拖曳移動的共存**：路由集中在純函式 `island::islandIntent(target, dragged)`（`src/island.test.ts` 涵蓋）：
+
+  | 情況 | 結果 |
+  |---|---|
+  | 按在隱藏鈕（含其中的 SVG） | `hide` |
+  | 按在島嶼其他地方 | `expand` |
+  | 這次手勢是拖曳（不論放開在哪） | `none` |
+
+  **`dragged` 必須先判斷**：島嶼很小，拖曳很容易在隱藏鈕上放開；順序寫反會讓「只是想挪開島嶼」變成視窗消失，而唯一救援是系統匣選單。`pointerdown` 落在隱藏鈕時不武裝拖曳，否則 OS 拖曳會吃掉那一次 click。
+- **CSS 契約**（`.ihide`）：`opacity` 與 `pointer-events` **必須同進退**——opacity:0 卻可點的按鈕會讓瞄準島嶼的點擊變成隱藏視窗。位置永遠保留（用 opacity 而非 display/width 顯隱），避免 hover 當下島嶼在游標底下重排。實測：靜止與 hover 島嶼寬皆 262.5px（並排模式視窗 340px，餘裕 77.5px）。
+
 ## 4. 內建參數（寫死，改需重編譯）
 
 ### 狀態機門檻（engine.rs）
@@ -59,6 +92,17 @@
 | `NEAR_PCT` | 75% | util 達 75% → 狀態 Near（黃） |
 | `LOCKED_PCT` | 100% | util 達 100% → Locked（紅） |
 | `HISTORY_CAP` | 60 筆 | 每個 limit 保留的取樣數（給燃燒率估算用，約 15 分鐘） |
+
+### 系統匣圖示與 tooltip（lib.rs）
+
+| 項目 | 行為 |
+|---|---|
+| 圖示 | **app logo，靜態不變色**。`build_tray` 用 `app.default_window_icon()`（來源 `src-tauri/icon-source.png` → `tauri.conf.json` bundle icons）設定一次，之後**再也不動**；`update_tray` 只更新 tooltip |
+| tooltip | 每輪（15 秒）更新，列出**每一條** limit（系統匣唯一不只顯示最危險那條的地方）。`SourceFailed` → `估算`、`Locked` → `LOCKED`、其餘 → `X% used` |
+
+- 2026-07-15 前是 `capsule_icon(pct_left, rgb)` 每輪依最危險 limit 重畫的 32×32 燃料膠囊。改成 logo 是**刻意用「一眼看額度」換回通知區的 app 識別度**，使用者已知並接受此代價：數字退到 hover 一下的 tooltip，島嶼仍有彩色膠囊。**不要**以「折衷」為由把依狀態變色的圖示加回來。
+- 隨之刪除的死碼：`capsule_icon`、`status_rgb`（只服務膠囊配色；面板／島嶼的顏色一律來自 `src/styles.css`，與 Rust 無關）、`worst()`（只有圖示那行在用）、`tauri::image::Image` import。
+- tooltip 組字抽成純函式 `lib::tray_tooltip(snap)`：圖示靜態化後，它是系統匣**唯一**還帶數字的地方，因此值得測（`SourceFailed` 的 `util` 是 0.0 佔位值，印成 `0% used` 會讀成「還很多」）。
 
 ### 通知（lib.rs）
 | 參數 | 值 | 意義 |
@@ -108,11 +152,13 @@
 | collapsed(island) | 340 × 52(並排模式)/270 × 52(單一模式),邏輯 px |
 | expanded(面板) | 寬 380 固定;**高度在進入模式時量一次後鎖定**(展開、切精簡/完整、開關設定時才重算),點分頁與每秒更新**絕不**調整視窗;無捲軸,超出裁切 |
 | 分析區 | `#analytics` 固定 300px(實測最高分頁 stats 299px),所有分頁同高 → 切分頁零縮放 |
+| 設定開啟 | `body.settings-open` **收起分析層**(`#subtabs`/`#toggles`/`#analytics`,與 compact 隱藏的是同三個)。額度列表**刻意保留**:顯示平台與通知門檻會即時改變它,看得到自己剛做了什麼;分析頁對設定毫無反應,開著只是高度。實測(safe 情境、完整模式):設定關 753px、設定開 **692px**;若不收起分析層則為 1063px,超過 1080p 工作區預算(~1016px)會被裁掉 |
 | 預設停靠 | **右下角**(工作區右下、工作列上方,邊距 8px) |
 | 展開方向 | 以視窗右下角為錨點,**向上/向左長**,並夾在工作區內 |
 | 拖曳吸邊 | 靠近上/下/左/右邊 40px 內放開即吸附(邊距 8px);以工作區為準,不會蓋到工作列 |
 | 精簡切換 | header ⊟(切精簡)/⊞(切完整);精簡 = 隱藏 subtabs/toggles/analytics/tok-min rate |
 | 島嶼內容 | 依 `providers`:並排時 Claude/Codex 各取該供應商最危險一條(鎖定>警戒>util 高者),品牌 icon + 膠囊 + %左;右側輔助 = 今日燒速 tok/min(每 60 秒更新)。單一平台時視窗 collapsed 寬 270,否則 340(未知值走並排 → 維持 340) |
+| 島嶼隱藏鈕 | 最右端「—」,hover 島嶼才浮現(位置永遠保留,不重排),按下 → 只留系統匣圖示。詳見 §3.2;無資料的空島嶼也有(一樣擋畫面)。島嶼 hover 時整顆不再半透明(`.island:hover { opacity: 1 }`)——淡化是為了沒人在看它的時候 |
 | 品牌配色 | Claude = `--claude` 橘 #d97757(星芒 icon、面板分組標題);Codex = `--accent` 紫 #a78bfa + 藍紫漸層雲朵 icon。icon 來源:lobehub/lobe-icons v1.91.0(MIT)官方 SVG,vendor 在 `src/assets/*.svg` 本地打包(不走 CDN,離線可用;Codex 白色底板已移除) |
 
 ## 5. 資料來源路徑

@@ -126,8 +126,43 @@ body.expanded #island {
 }
 /* When the whole pill is locked (red bg, dark text), groups follow the pill. */
 .island.status-locked .igroup,
-.island.status-locked .iaux {
+.island.status-locked .iaux,
+.island.status-locked .ihide {
   color: inherit;
+}
+
+/* Hide-to-tray button: only on hover. The island's whole job is an
+   at-a-glance readout on a 340px pill, so a permanently lit button would
+   compete with the numbers. Its slot is reserved at all times (revealed with
+   opacity, never display/width) so the pill cannot reflow under the pointer
+   the moment it appears.
+   pointer-events tracks opacity: an invisible-but-clickable button would hide
+   the window on a click the user aimed at the pill to expand it. */
+.island .ihide {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--island-text-dim);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.island:hover .ihide {
+  opacity: 0.8;
+  pointer-events: auto;
+}
+.island .ihide:hover {
+  opacity: 1;
+  color: var(--island-text);
+  background: rgba(255, 255, 255, 0.14);
 }
 .island .iaux {
   margin-left: auto;
@@ -169,6 +204,16 @@ body.expanded #island {
   color: var(--muted);
   border-style: dashed;
   border-color: var(--muted);
+}
+
+/* The resting pill dims itself when there is nothing to worry about — that is
+   for when nobody is looking at it. A pointer on it means someone is, and the
+   hide button has to be legible enough to aim at.
+   MUST stay below every .island.status-* rule above: those are (0,2,0) too, so
+   this only wins on source order. Moving it up silently turns it back into
+   dead CSS and the button fades to ~0.4 effective opacity on a safe island. */
+.island:hover {
+  opacity: 1;
 }
 @keyframes blink {
   0%,
@@ -242,6 +287,21 @@ body.compact #subtabs,
 body.compact #toggles,
 body.compact #analytics,
 body.compact .rate {
+  display: none;
+}
+
+/* Settings open: fold the analytics layer away, same three elements compact
+   hides. Not cosmetic — the panel's height is locked to its content and
+   clipped past the work area, and grouped settings with readable explanations
+   cost ~310px. Stacking that on top of the limits list *and* a 300px analytics
+   box measured 1063px, which overflows a 1080p work area (~1016px budget) and
+   would silently cut off the bottom rows.
+   The limits list deliberately stays: 顯示平台 and the notification thresholds
+   visibly change it, so you can see what you just did. Analytics cannot react
+   to any setting here, so while configuring it is only height. */
+body.settings-open #subtabs,
+body.settings-open #toggles,
+body.settings-open #analytics {
   display: none;
 }
 body.compact .updated {
@@ -730,26 +790,73 @@ body.compact .updated {
 
 /* ── Settings ─────────────────────────────────────────────────────── */
 
+/* Grouped by what the user is trying to change (see renderSettings). Headings
+   reuse .lsec-head so the panel has one section vocabulary, not two.
+   The panel is a fixed 380px with overflow clipped — every rule here has to
+   hold its width rather than push a scrollbar that cannot exist. */
 #settings {
-  padding: 8px 14px 10px;
+  padding: 4px 12px 8px;
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 #settings[hidden] {
   display: none;
+}
+.sgroup {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 4px;
 }
 .srow {
   font-size: 12px;
   color: var(--text);
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px;
+  border-radius: 8px;
+  cursor: pointer;
 }
+.srow:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+/* Label + its explanation stack; the control keeps the right edge. min-width:0
+   lets long notes wrap instead of widening the row past the panel. */
+.slabel {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.snote {
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text-dim);
+}
+/* Amber is for a row that can actually bite (token rotation), not for every
+   explanation — otherwise nothing stands out. */
 .srow .warn {
   color: var(--near);
   font-size: 10px;
+  line-height: 1.35;
+}
+.sfields {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.sfields .sdot {
+  opacity: 0.5;
+}
+.srow input[type="checkbox"] {
+  flex: none;
 }
 .srow input[type="number"] {
   width: 44px;
@@ -761,12 +868,17 @@ body.compact .updated {
   font-family: var(--mono);
 }
 .srow select {
+  flex: none;
+  /* Capped so the longest option ("本機 session 快照") cannot widen the row
+     past the fixed 380px panel and get clipped. */
+  max-width: 170px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
   padding: 2px 4px;
   font-size: 12px;
+  font-family: var(--sans);
 }
 .srow select option {
   background: #16181c;

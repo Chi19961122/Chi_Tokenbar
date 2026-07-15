@@ -134,6 +134,24 @@ export async function startWindowDrag(): Promise<void> {
   await getCurrentWindow().startDragging();
 }
 
+/**
+ * Hide the island, leaving only the tray icon (§ island hide button).
+ *
+ * Done from the frontend rather than through a new Tauri command: the
+ * `core:window:allow-hide` capability is already granted, and a command would
+ * only wrap the same one call. The window stays *hidden*, not closed, so the
+ * tray's "Show / Hide" brings it back — `toggle_action(visible=false, …)`
+ * returns Show, and `skipTaskbar: true` makes that the only way back, so
+ * nothing here may ever `close()`.
+ *
+ * No-op in the browser preview (no window to hide), like startWindowDrag.
+ */
+export async function hideWindow(): Promise<void> {
+  if (!isTauri()) return;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().hide();
+}
+
 /** Work area (excludes taskbar) with a fallback for older tauri-api versions. */
 function workAreaOf(mon: any): { position: { x: number; y: number }; size: { width: number; height: number } } {
   return mon.workArea ?? { position: mon.position, size: mon.size };

@@ -9,6 +9,7 @@ import {
   getAnalytics,
   getSettings,
   getSnapshot,
+  hideWindow,
   isTauri,
   mockScenarioNames,
   onSnapshot,
@@ -21,7 +22,7 @@ import {
   SIZE,
   startWindowDrag,
 } from "./datasource";
-import { renderIsland } from "./island";
+import { islandIntent, renderIsland } from "./island";
 import { renderPanel } from "./panel";
 import { renderAnalytics } from "./analytics";
 import { fmtDur, fmtTokens, nowSecs } from "./format";
@@ -169,26 +170,82 @@ async function applyCompact() {
   fitWindow();
 }
 
+/**
+ * Settings, grouped by the question each answer belongs to.
+ *
+ * The six rows used to sit in one flat list, so finding anything meant reading
+ * all of it. They are grouped by *what the user is trying to change*, and the
+ * headings reuse `.lsec-head` — the same section marker the limits list uses,
+ * so the panel has one vocabulary for "group of things" rather than two.
+ *
+ * Grouping rationale:
+ *  - 啟動與視窗 — when TokenBar appears and whether it stays on top. (Not just
+ *    「視窗」: autostart is about launching, not the window, and mislabelling it
+ *    is exactly the kind of thing that makes a setting unfindable.)
+ *  - 顯示與通知 — what you get told about: which platforms show at all, and how
+ *    full is full enough to interrupt you.
+ *  - 資料來源 — where the numbers come from. Both rows carry a cost the user
+ *    should weigh (token rotation, network queries), which is why they read as
+ *    one decision rather than two unrelated dropdowns.
+ *
+ * Note hierarchy, existing tokens only: `.snote` (dim) explains, `.warn`
+ * (amber) is for a row that can bite — currently only token refresh.
+ *
+ * The `id`s are load-bearing: readSettingsForm() reads the form back by id.
+ */
 async function renderSettings() {
   const s = await getSettings();
   $("settings").innerHTML = `
-    <label class="srow"><input type="checkbox" id="s-autostart" ${s.autostart ? "checked" : ""}/> 開機自動啟動</label>
-    <label class="srow"><input type="checkbox" id="s-always-on-top" ${s.always_on_top ? "checked" : ""}/> 視窗置頂<span class="warn">關閉後會被其他視窗蓋住，可從系統匣叫回</span></label>
-    <div class="srow">Claude 權杖更新 <select id="s-refresh">
-      <option value="off" ${s.allow_token_refresh ? "" : "selected"}>關閉（過期時顯示估算）</option>
-      <option value="on" ${s.allow_token_refresh ? "selected" : ""}>開啟（過期自動換新）</option>
-    </select><span class="warn">可能影響 Claude Code 登入</span></div>
-    <div class="srow">警戒 <input type="number" id="s-warn" value="${s.warn_pct}" min="1" max="100"/>% · 危險 <input type="number" id="s-crit" value="${s.crit_pct}" min="1" max="100"/>%</div>
-    <div class="srow">顯示平台 <select id="s-providers">
-      <option value="both" ${s.providers !== "claude" && s.providers !== "codex" ? "selected" : ""}>兩個都顯示</option>
-      <option value="claude" ${s.providers === "claude" ? "selected" : ""}>只顯示 Claude</option>
-      <option value="codex" ${s.providers === "codex" ? "selected" : ""}>只顯示 Codex</option>
-    </select></div>
-    <div class="srow">Codex 用量來源 <select id="s-codex-source">
-      <option value="live" ${s.codex_usage_source === "live" ? "selected" : ""}>即時帳號用量</option>
-      <option value="auto" ${s.codex_usage_source === "auto" ? "selected" : ""}>自動（即時優先）</option>
-      <option value="local" ${s.codex_usage_source !== "live" && s.codex_usage_source !== "auto" ? "selected" : ""}>本機 session 快照</option>
-    </select></div>`;
+    <div class="sgroup">
+      <div class="lsec-head">啟動與視窗</div>
+      <label class="srow">
+        <span class="slabel">開機自動啟動</span>
+        <input type="checkbox" id="s-autostart" ${s.autostart ? "checked" : ""}/>
+      </label>
+      <label class="srow">
+        <span class="slabel">視窗置頂<span class="snote">關閉後會被其他視窗蓋住，可從系統匣叫回</span></span>
+        <input type="checkbox" id="s-always-on-top" ${s.always_on_top ? "checked" : ""}/>
+      </label>
+    </div>
+
+    <div class="sgroup">
+      <div class="lsec-head">顯示與通知</div>
+      <label class="srow">
+        <span class="slabel">顯示平台</span>
+        <select id="s-providers">
+          <option value="both" ${s.providers !== "claude" && s.providers !== "codex" ? "selected" : ""}>兩個都顯示</option>
+          <option value="claude" ${s.providers === "claude" ? "selected" : ""}>只顯示 Claude</option>
+          <option value="codex" ${s.providers === "codex" ? "selected" : ""}>只顯示 Codex</option>
+        </select>
+      </label>
+      <div class="srow">
+        <span class="slabel">通知門檻<span class="snote">用量達到即發系統通知</span></span>
+        <span class="sfields">
+          警戒 <input type="number" id="s-warn" value="${s.warn_pct}" min="1" max="100"/>%
+          <span class="sdot">·</span>
+          危險 <input type="number" id="s-crit" value="${s.crit_pct}" min="1" max="100"/>%
+        </span>
+      </div>
+    </div>
+
+    <div class="sgroup">
+      <div class="lsec-head">資料來源</div>
+      <label class="srow">
+        <span class="slabel">Claude 權杖更新<span class="warn">可能影響 Claude Code 登入</span></span>
+        <select id="s-refresh">
+          <option value="off" ${s.allow_token_refresh ? "" : "selected"}>關閉（顯示估算）</option>
+          <option value="on" ${s.allow_token_refresh ? "selected" : ""}>開啟（自動換新）</option>
+        </select>
+      </label>
+      <label class="srow">
+        <span class="slabel">Codex 用量來源<span class="snote">即時／自動會對已登入帳號做唯讀查詢</span></span>
+        <select id="s-codex-source">
+          <option value="live" ${s.codex_usage_source === "live" ? "selected" : ""}>即時帳號用量</option>
+          <option value="auto" ${s.codex_usage_source === "auto" ? "selected" : ""}>自動（即時優先）</option>
+          <option value="local" ${s.codex_usage_source !== "live" && s.codex_usage_source !== "auto" ? "selected" : ""}>本機 session 快照</option>
+        </select>
+      </label>
+    </div>`;
 }
 
 function readSettingsForm(): Settings {
@@ -228,13 +285,18 @@ async function setExpanded(on: boolean) {
 // ── events ───────────────────────────────────────────────────────────
 
 function wireEvents() {
-  // Island: drag to move the window, click (no drag) to expand.
+  // Island: drag to move the window, click (no drag) to expand, hide button to
+  // send it to the tray. Routing lives in islandIntent (island.ts) — listeners
+  // are delegated because renderIsland rewrites this subtree every second, so
+  // anything bound to the button itself would not survive the next tick.
   const island = $("island");
   let downAt: { x: number; y: number } | null = null;
   let dragged = false;
   island.addEventListener("pointerdown", (e) => {
-    downAt = { x: e.clientX, y: e.clientY };
     dragged = false;
+    // Arm the drag everywhere except on the hide button: an OS-level drag takes
+    // over the pointer and would swallow the click that button exists for.
+    downAt = islandIntent(e.target, false) === "hide" ? null : { x: e.clientX, y: e.clientY };
   });
   island.addEventListener("pointermove", (e) => {
     if (!downAt || !(e.buttons & 1) || dragged) return;
@@ -243,8 +305,10 @@ function wireEvents() {
       startWindowDrag();
     }
   });
-  island.addEventListener("click", () => {
-    if (!dragged) setExpanded(true);
+  island.addEventListener("click", (e) => {
+    const intent = islandIntent(e.target, dragged);
+    if (intent === "hide") hideWindow();
+    else if (intent === "expand") setExpanded(true);
   });
 
   $("collapse").addEventListener("click", () => setExpanded(false));
@@ -256,14 +320,20 @@ function wireEvents() {
     refreshNow();
   });
 
+  // Settings is a mode, not just another band: opening it folds the analytics
+  // layer away (see .settings-open in styles.css — the panel is height-locked
+  // and clipped, and settings + limits + analytics together overflow a 1080p
+  // work area). fitWindow() then re-measures, as it already does per mode.
   $("gear").addEventListener("click", async () => {
     const el = $("settings");
-    if (el.hasAttribute("hidden")) {
+    const opening = el.hasAttribute("hidden");
+    if (opening) {
       await renderSettings();
       el.removeAttribute("hidden");
     } else {
       el.setAttribute("hidden", "");
     }
+    document.body.classList.toggle("settings-open", opening);
     fitWindow();
   });
   $("settings").addEventListener("change", async () => {
