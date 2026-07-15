@@ -14,11 +14,13 @@
       <!-- expanded panel -->
       <div id="panel">
         <header class="phead" data-tauri-drag-region>
-          <span class="brand">Limits</span>
+          <div class="ptabs">
+            <button id="tab-limits" data-tab="limits" type="button">Limits</button>
+            <button id="tab-analytics" data-tab="analytics" type="button">Analytics</button>
+          </div>
           <span class="rate" id="rate"></span>
-          <span class="updated" id="updated" title="上次更新"></span>
-          <button id="refresh" title="立即更新">⟳</button>
-          <button id="mode" title="精簡模式">⊟</button>
+          <span class="resets" id="resets"></span>
+          <button id="refresh" title="Refresh">⟳</button>
           <button id="gear" title="Settings">⚙</button>
           <button id="collapse" title="Collapse">▾</button>
         </header>

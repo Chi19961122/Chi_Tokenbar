@@ -48,16 +48,17 @@ export function islandIntent(target: EventTarget | null, dragged: boolean): Isla
  * same menu would read as the latter.
  */
 function hideBtn(): string {
-  return `<button class="ihide" data-hide type="button" aria-label="隱藏到系統匣" title="隱藏到系統匣（可從系統匣圖示叫回）"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="4.4" width="8" height="1.2" rx="0.6" fill="currentColor"/></svg></button>`;
+  return `<button class="ihide" data-hide type="button" aria-label="Hide to tray" title="Hide to tray (restore from the tray icon)"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="4.4" width="8" height="1.2" rx="0.6" fill="currentColor"/></svg></button>`;
 }
 
-/** Small battery/fuel capsule; inner fill = % left (remaining). */
+/** Battery capsule: white frame + electrode nub; inner fill = % left, in the
+ *  current color (family / amber / red set by the enclosing .igroup). */
 function capsuleSvg(left: number): string {
-  const w = (Math.max(0, Math.min(100, left)) / 100) * 13;
-  return `<svg class="cap" width="21" height="12" viewBox="0 0 21 12" aria-hidden="true">
-    <rect x="0.75" y="0.75" width="17" height="10.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.85"/>
-    <rect x="19" y="3.75" width="1.6" height="4.5" rx="0.8" fill="currentColor" opacity="0.85"/>
-    <rect x="2.75" y="2.75" width="${w.toFixed(1)}" height="6.5" rx="1.5" fill="currentColor"/>
+  const w = (Math.max(0, Math.min(100, left)) / 100) * 16;
+  return `<svg class="cap" width="24" height="12" viewBox="0 0 24 12" aria-hidden="true">
+    <rect x="0.75" y="1" width="19.5" height="10" rx="2.5" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+    <rect x="21" y="3.8" width="1.8" height="4.4" rx="0.9" fill="rgba(255,255,255,0.35)"/>
+    <rect x="2.5" y="2.75" width="${w.toFixed(1)}" height="6.5" rx="1.5" fill="currentColor"/>
   </svg>`;
 }
 

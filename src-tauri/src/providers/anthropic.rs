@@ -70,26 +70,26 @@ impl FailureStage {
     /// clearly that it retries by itself and needs no action.
     fn user_hint(&self) -> &'static str {
         match self {
-            FailureStage::CredentialsFile => "找不到 Claude 的登入資料，請先登入 Claude Code",
-            FailureStage::CredentialsShape => "Claude 的登入資料讀不出來，請重新登入 Claude Code",
-            FailureStage::RefreshDisabled => "Claude 登入已過期，請重新登入（或在設定開啟自動更新）",
+            FailureStage::CredentialsFile => "Can't find your Claude login. Sign in to Claude Code first.",
+            FailureStage::CredentialsShape => "Can't read your Claude login. Sign in to Claude Code again.",
+            FailureStage::RefreshDisabled => "Your Claude login has expired. Sign in again (or enable auto-renew in settings).",
             FailureStage::RefreshHttp(401) | FailureStage::RefreshHttp(403) => {
-                "Claude 登入已失效，請重新登入 Claude Code"
+                "Your Claude login is no longer valid. Sign in to Claude Code again."
             }
-            FailureStage::RefreshHttp(_) => "Claude 登入更新失敗，稍後會自動再試",
-            FailureStage::RefreshTransport(_) => "連不上 Claude，請檢查網路連線",
+            FailureStage::RefreshHttp(_) => "Couldn't refresh Claude access. It will retry automatically.",
+            FailureStage::RefreshTransport(_) => "Can't reach Claude. Check your network connection.",
             FailureStage::UsageHttp(401) | FailureStage::UsageHttp(403) => {
-                "Claude 不接受這個帳號的查詢，請重新登入 Claude Code"
+                "Claude won't accept this account. Sign in to Claude Code again."
             }
-            FailureStage::UsageHttp(429) => "查詢太頻繁，稍後會自動再試",
-            FailureStage::UsageHttp(c) if *c >= 500 => "Claude 伺服器暫時有狀況，稍後會自動再試",
-            FailureStage::UsageHttp(_) => "Claude 無法回應這次查詢，稍後會自動再試",
+            FailureStage::UsageHttp(429) => "Too many requests. It will retry automatically.",
+            FailureStage::UsageHttp(c) if *c >= 500 => "Claude is having temporary issues. It will retry automatically.",
+            FailureStage::UsageHttp(_) => "Claude couldn't answer this query. It will retry automatically.",
             // The case the other machine actually hit: certificate interception
             // by AV/corporate network. Pointing at /login here would waste the
             // user's time, so this one names the real suspects instead.
-            FailureStage::UsageTransport(_) => "連不上 Claude。請檢查網路；若有公司網路或防毒軟體，可能擋住了連線",
+            FailureStage::UsageTransport(_) => "Can't reach Claude. Check your network; a corporate network or antivirus may be blocking the connection.",
             FailureStage::RefreshJson | FailureStage::UsageJson | FailureStage::UsageShape => {
-                "Claude 回應的格式不認得，可能需要更新 TokenBar"
+                "Claude's response wasn't recognized; TokenBar may need an update."
             }
         }
     }
@@ -367,7 +367,7 @@ fn parse_usage(v: &Value) -> Vec<Limit> {
             out.push(Limit {
                 id: "cc.extra".into(),
                 provider: Provider::Anthropic,
-                label: "Claude·額度".into(),
+                label: "Claude·Credits".into(),
                 util,
                 resets_at: 0,
                 window_secs: 30 * 86400,
@@ -402,7 +402,7 @@ fn parse_limits_array(v: &Value) -> Option<Vec<Limit>> {
 
         let (id, label) = match (kind, scope_name) {
             ("session", _) => ("cc.5h".to_string(), "Claude·5h".to_string()),
-            ("weekly_all", _) => ("cc.week".to_string(), "Claude·週".to_string()),
+            ("weekly_all", _) => ("cc.week".to_string(), "Claude·Weekly".to_string()),
             // Model-scoped weekly windows appear/disappear per plan; keep the
             // historical id for Opus, derive ids for anything else (Fable, …).
             ("weekly_scoped", Some(name)) if name.eq_ignore_ascii_case("opus") => {
@@ -451,7 +451,7 @@ fn parse_legacy(v: &Value) -> Vec<Limit> {
     if let Some(l) = v.get("five_hour").and_then(|n| window("cc.5h", "Claude·5h", n, 5 * 3600)) {
         out.push(l);
     }
-    if let Some(l) = v.get("seven_day").and_then(|n| window("cc.week", "Claude·週", n, 7 * 86400)) {
+    if let Some(l) = v.get("seven_day").and_then(|n| window("cc.week", "Claude·Weekly", n, 7 * 86400)) {
         out.push(l);
     }
     if let Some(l) = v
@@ -631,8 +631,8 @@ mod tests {
             // scan so the case-insensitive "token" check stays meaningful.
             let scan = h.replace("TokenBar", "").to_lowercase();
             for jargon in [
-                "tls", "http", "oauth", "token", "transport", "json", "proxy", "憑證", "傳輸層",
-                "逾時", "伺服器錯誤",
+                "tls", "http", "oauth", "token", "transport", "json", "proxy", "certificate",
+                "socket", "timeout", "server error",
             ] {
                 assert!(!scan.contains(jargon), "{:?} 的提示含術語 {}", s, jargon);
             }
@@ -644,7 +644,7 @@ mod tests {
     fn label_and_hint_are_distinct_outputs() {
         let s = FailureStage::UsageHttp(429);
         assert_eq!(s.label(), "usage_http_429");
-        assert!(s.user_hint().contains("再試"));
+        assert!(s.user_hint().to_lowercase().contains("retry"));
     }
 
     /// 認證類與連線類的提示必須不同 —— 這正是這個 Task 的重點。
@@ -653,9 +653,9 @@ mod tests {
         let auth = FailureStage::UsageHttp(403).user_hint();
         let net = FailureStage::UsageTransport("connection_failed").user_hint();
         assert_ne!(auth, net);
-        assert!(auth.contains("登入"), "認證失敗應該叫使用者重新登入");
-        assert!(net.contains("網路"), "連線失敗應該叫使用者查網路");
-        assert!(!net.contains("登入"), "連線失敗不該誤導使用者去重新登入");
+        assert!(auth.to_lowercase().contains("sign in"), "認證失敗應該叫使用者重新登入");
+        assert!(net.to_lowercase().contains("network"), "連線失敗應該叫使用者查網路");
+        assert!(!net.to_lowercase().contains("sign in"), "連線失敗不該誤導使用者去重新登入");
     }
 
     /// 只有「重新登入真的會修好」的階段才可以帶 relogin。
@@ -717,7 +717,7 @@ mod tests {
             FailureStage::UsageShape,
         ] {
             let h = s.user_hint();
-            let asks_user_to_log_in = h.contains("請重新登入") || h.contains("請先登入");
+            let asks_user_to_log_in = h.to_lowercase().contains("sign in");
             assert_eq!(
                 s.action().is_some(),
                 asks_user_to_log_in,
@@ -815,7 +815,7 @@ mod tests {
 fn degraded_limits(stage: &FailureStage) -> Vec<Limit> {
     ["cc.5h", "cc.week"]
         .iter()
-        .zip(["Claude·5h", "Claude·週"])
+        .zip(["Claude·5h", "Claude·Weekly"])
         .map(|(id, label)| Limit {
             id: (*id).into(),
             provider: Provider::Anthropic,

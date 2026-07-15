@@ -84,7 +84,7 @@ pub(crate) fn classify(window_minutes: i64) -> (String, String) {
     if (250..=360).contains(&window_minutes) {
         ("codex.5h".into(), "Codex·5h".into())
     } else if (9000..=11000).contains(&window_minutes) {
-        ("codex.week".into(), "Codex·週".into())
+        ("codex.week".into(), "Codex·Weekly".into())
     } else if window_minutes < 24 * 60 {
         let h = ((window_minutes as f64) / 60.0).round() as i64;
         (format!("codex.min{window_minutes}"), format!("Codex·{h}h"))

@@ -31,24 +31,24 @@ const now = nowSecs();
 export const SCENARIOS: Record<string, Snapshot> = {
   safe: snap([
     limit({ id: "codex.5h", label: "Codex·5h", util: 12, provider: "codex", status: "normal", resets_at: now + 4 * 3600, window_secs: 5 * 3600, absolute: [120_000, 1_000_000] }),
-    limit({ id: "codex.week", label: "Codex·週", util: 22, provider: "codex", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400, absolute: [4_400_000, 20_000_000] }),
+    limit({ id: "codex.week", label: "Codex·Weekly", util: 22, provider: "codex", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400, absolute: [4_400_000, 20_000_000] }),
     limit({ id: "cc.5h", label: "Claude·5h", util: 30, provider: "anthropic", status: "normal", resets_at: now + 2 * 3600, window_secs: 5 * 3600 }),
-    limit({ id: "cc.week", label: "Claude·週", util: 41, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
+    limit({ id: "cc.week", label: "Claude·Weekly", util: 41, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
     limit({ id: "cc.w.fable", label: "Claude·Fable", util: 5, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
     limit({ id: "cc.opus", label: "Claude·Opus", util: 18, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
   ], "cc.week"),
 
   near: snap([
     limit({ id: "codex.5h", label: "Codex·5h", util: 88, provider: "codex", status: "near", resets_at: now + 25 * 60, window_secs: 5 * 3600, runway_secs: 22 * 60, pace: { deficit: 38, in_deficit: true }, absolute: [880_000, 1_000_000] }),
-    limit({ id: "codex.week", label: "Codex·週", util: 61, provider: "codex", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400, pace: { deficit: 24, in_deficit: true }, runway_secs: 38 * 3600 }),
+    limit({ id: "codex.week", label: "Codex·Weekly", util: 61, provider: "codex", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400, pace: { deficit: 24, in_deficit: true }, runway_secs: 38 * 3600 }),
     limit({ id: "cc.5h", label: "Claude·5h", util: 55, provider: "anthropic", status: "normal", resets_at: now + 2 * 3600, window_secs: 5 * 3600 }),
-    limit({ id: "cc.week", label: "Claude·週", util: 47, provider: "anthropic", status: "normal", resets_at: now + 3 * 86400, window_secs: 7 * 86400 }),
+    limit({ id: "cc.week", label: "Claude·Weekly", util: 47, provider: "anthropic", status: "normal", resets_at: now + 3 * 86400, window_secs: 7 * 86400 }),
   ], "codex.5h"),
 
   locked: snap([
     limit({ id: "codex.5h", label: "Codex·5h", util: 100, provider: "codex", status: "locked", resets_at: now + 80 * 60, window_secs: 5 * 3600, absolute: [1_000_000, 1_000_000] }),
-    limit({ id: "codex.week", label: "Codex·週", util: 72, provider: "codex", status: "normal", resets_at: now + 2 * 86400, window_secs: 7 * 86400 }),
-    limit({ id: "cc.week", label: "Claude·週", util: 63, provider: "anthropic", status: "normal", resets_at: now + 3 * 86400, window_secs: 7 * 86400 }),
+    limit({ id: "codex.week", label: "Codex·Weekly", util: 72, provider: "codex", status: "normal", resets_at: now + 2 * 86400, window_secs: 7 * 86400 }),
+    limit({ id: "cc.week", label: "Claude·Weekly", util: 63, provider: "anthropic", status: "normal", resets_at: now + 3 * 86400, window_secs: 7 * 86400 }),
   ], "codex.5h"),
 
   // Hints and actions mirror anthropic.rs `FailureStage::{user_hint, action}`.
@@ -59,15 +59,15 @@ export const SCENARIOS: Record<string, Snapshot> = {
   // Real Claude failures hit both windows at once, but splitting them lets the
   // preview show both branches side by side at the real 380px panel width.
   degraded: snap([
-    limit({ id: "cc.5h", label: "Claude·5h", util: 0, provider: "anthropic", status: "source_failed", resets_at: 0, window_secs: 5 * 3600, hint: "連不上 Claude。請檢查網路；若有公司網路或防毒軟體，可能擋住了連線" }),
-    limit({ id: "cc.week", label: "Claude·週", util: 0, provider: "anthropic", status: "source_failed", resets_at: 0, window_secs: 7 * 86400, hint: "Claude 登入已失效，請重新登入 Claude Code", action: "relogin" }),
+    limit({ id: "cc.5h", label: "Claude·5h", util: 0, provider: "anthropic", status: "source_failed", resets_at: 0, window_secs: 5 * 3600, hint: "Can't reach Claude. Check your network; a corporate network or antivirus may be blocking the connection." }),
+    limit({ id: "cc.week", label: "Claude·Weekly", util: 0, provider: "anthropic", status: "source_failed", resets_at: 0, window_secs: 7 * 86400, hint: "Your Claude login is no longer valid. Sign in to Claude Code again.", action: "relogin" }),
     limit({ id: "codex.5h", label: "Codex·5h", util: 34, provider: "codex", status: "normal", resets_at: now + 3 * 3600, window_secs: 5 * 3600 }),
   ], "codex.5h"),
 
   stale: snap([
     limit({ id: "codex.5h", label: "Codex·5h", util: 0, provider: "codex", status: "idle", resets_at: 0, window_secs: 5 * 3600 }),
-    limit({ id: "codex.week", label: "Codex·週", util: 34, provider: "codex", status: "stale", resets_at: now + 2 * 86400, window_secs: 7 * 86400 }),
-    limit({ id: "cc.week", label: "Claude·週", util: 41, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
+    limit({ id: "codex.week", label: "Codex·Weekly", util: 34, provider: "codex", status: "stale", resets_at: now + 2 * 86400, window_secs: 7 * 86400 }),
+    limit({ id: "cc.week", label: "Claude·Weekly", util: 41, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
   ], "cc.week"),
 
   empty: snap([], undefined),

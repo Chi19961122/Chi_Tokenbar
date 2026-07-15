@@ -114,7 +114,7 @@ pub fn choose_limits(source: &str, live: Option<Vec<Limit>>, local: Vec<Limit>) 
 }
 
 fn degraded_limits() -> Vec<Limit> {
-    [("codex.5h", "Codex·5h", 5 * 3600), ("codex.week", "Codex·週", 7 * 86400)]
+    [("codex.5h", "Codex·5h", 5 * 3600), ("codex.week", "Codex·Weekly", 7 * 86400)]
         .iter()
         .map(|(id, label, window_secs)| Limit {
             id: (*id).into(),

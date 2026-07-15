@@ -3,7 +3,7 @@
 
 import type { Analytics, DayPoint } from "./types";
 import { fmtTokens, fmtUsd } from "./format";
-import { seriesColor } from "./colors";
+import { keyColor, seriesColor } from "./colors";
 
 export type SubTab = "overview" | "daily" | "hourly" | "models" | "agents" | "stats";
 export type Metric = "tokens" | "price";
@@ -19,8 +19,8 @@ function tiles(a: Analytics): string {
   return `
     <div class="tiles">
       <div class="tile"><b>${fmtTokens(a.totalTokens)}</b><span>tokens</span></div>
-      <div class="tile"><b>${fmtUsd(a.totalCostUsd)}</b><span>估算 · 訂閱已含</span></div>
-      <div class="tile"><b>${fmtUsd(a.bestDay.costUsd)}</b><span>best · ${a.bestDay.date.slice(5)}</span></div>
+      <div class="tile"><b>${fmtUsd(a.totalCostUsd)}</b><span>est. cost</span></div>
+      <div class="tile"><b>${fmtUsd(a.bestDay.costUsd)}</b><span>peak · ${a.bestDay.date.slice(5)}</span></div>
       <div class="tile"><b>${a.activeDays}</b><span>active days</span></div>
     </div>`;
 }
@@ -56,13 +56,21 @@ function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
         return `<rect x="${cx - bw / 2}" y="${H - padB - h}" width="${bw}" height="${h}" rx="1.5" fill="${seriesColor(1)}"/>`;
       }
       const rec = opts.group === "model" ? d.byModel : d.byAgent;
+      // Topmost non-empty segment gets a rounded top (C1 dome). rx on a <rect>
+      // rounds all four corners; since this is the last segment drawn and the
+      // ones below it are square-topped, the visible result reads as a dome.
+      let topKi = -1;
+      keys.forEach((k, ki) => {
+        if ((rec[k] || 0) > 0) topKi = ki;
+      });
       let y = H - padB;
       let segs = "";
       keys.forEach((k, ki) => {
         const v = rec[k] || 0;
         const h = v * scale;
         y -= h;
-        segs += `<rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${h}" fill="${seriesColor(ki)}"/>`;
+        const dome = ki === topKi ? ` rx="2"` : "";
+        segs += `<rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${h}"${dome} fill="${keyColor(k, ki)}"/>`;
       });
       return segs;
     })
@@ -78,7 +86,7 @@ function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
     opts.metric === "price"
       ? ""
       : `<div class="legend">${keys
-          .map((k, ki) => `<span><i style="background:${seriesColor(ki)}"></i>${k}</span>`)
+          .map((k, ki) => `<span><i style="background:${keyColor(k, ki)}"></i>${k}</span>`)
           .join("")}</div>`;
 
   return `<svg viewBox="0 0 ${W} ${H}" class="chart">${bars}${xlabels}</svg>${legend}`;
@@ -109,7 +117,7 @@ function shareBars(rec: Record<string, number>): string {
       ([k, v], i) => `
       <div class="bar-row">
         <span class="bar-label">${k}</span>
-        <div class="bar-track"><div class="bar-fill" style="width:${(v / max) * 100}%;background:${seriesColor(i)}"></div></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${(v / max) * 100}%;background:${keyColor(k, i)}"></div></div>
         <span class="bar-val">${fmtTokens(v)}</span>
       </div>`,
     )

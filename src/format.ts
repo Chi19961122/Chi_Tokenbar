@@ -22,6 +22,12 @@ export function fmtClock(epochSecs: number): string {
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+/** 24h "HH:MM" for the header Resets readout. */
+export function fmtHM(epochSecs: number): string {
+  const d = new Date(epochSecs * 1000);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 /** 1_234_567 -> "1.2M", 12_300 -> "12.3K". */
 export function fmtTokens(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;

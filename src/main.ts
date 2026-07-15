@@ -25,7 +25,7 @@ import {
 import { islandIntent, renderIsland } from "./island";
 import { renderPanel } from "./panel";
 import { renderAnalytics } from "./analytics";
-import { fmtDur, fmtTokens, nowSecs } from "./format";
+import { fmtHM, fmtTokens } from "./format";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -104,15 +104,13 @@ function setView(view: PanelView) {
   renderCards();
 }
 
-/** "X 前更新" in the panel header, from the snapshot's updated_at. */
-function renderUpdated() {
-  const el = $("updated");
-  if (!lastSnap) {
-    el.textContent = "";
-    return;
-  }
-  const secs = Math.max(0, nowSecs() - lastSnap.updated_at);
-  el.textContent = `${fmtDur(secs)} 前更新`;
+/** "Resets HH:MM" in the header — the soonest reset among the shown limits. */
+function renderResets() {
+  const el = $("resets");
+  const times = (lastSnap?.limits ?? [])
+    .map((l) => l.resets_at)
+    .filter((t) => t > 0);
+  el.textContent = times.length ? `Resets ${fmtHM(Math.min(...times))}` : "";
 }
 
 async function renderAnalyticsNow() {
@@ -152,16 +150,28 @@ function fitWindow() {
   resizeAnchored(w, h);
 }
 
-/** ⊟/⊞ toggle between compact (limits only) and full (with analytics). */
-function renderModeBtn() {
-  const btn = $("mode");
-  btn.textContent = ui.compact ? "⊞" : "⊟";
-  btn.title = ui.compact ? "顯示分析" : "精簡模式";
+/** Header tabs are the display switch: "Limits" = compact (limits only),
+ *  "Analytics" = full (with the analytics layer). Selected state mirrors the
+ *  seg controls (§ compact toggle — behavior unchanged, only the affordance). */
+function renderTabs() {
+  $("tab-limits").classList.toggle("on", ui.compact);
+  $("tab-analytics").classList.toggle("on", !ui.compact);
+}
+
+/** Switch the display mode from the header tabs, persisting the choice. */
+async function setCompact(compact: boolean) {
+  if (ui.compact === compact) return;
+  ui.compact = compact;
+  await applyCompact();
+  if (settings) {
+    settings.compact = ui.compact;
+    setSettings(settings);
+  }
 }
 
 async function applyCompact() {
   document.body.classList.toggle("compact", ui.compact);
-  renderModeBtn();
+  renderTabs();
   if (ui.expanded && !ui.compact) {
     renderSubtabs();
     renderToggles();
@@ -197,52 +207,52 @@ async function renderSettings() {
   const s = await getSettings();
   $("settings").innerHTML = `
     <div class="sgroup">
-      <div class="lsec-head">啟動與視窗</div>
+      <div class="lsec-head">Startup &amp; Window</div>
       <label class="srow">
-        <span class="slabel">開機自動啟動</span>
+        <span class="slabel">Launch at startup</span>
         <input type="checkbox" id="s-autostart" ${s.autostart ? "checked" : ""}/>
       </label>
       <label class="srow">
-        <span class="slabel">視窗置頂<span class="snote">關閉後會被其他視窗蓋住，可從系統匣叫回</span></span>
+        <span class="slabel">Always on top<span class="snote">When off, other windows can cover it. Restore from the tray.</span></span>
         <input type="checkbox" id="s-always-on-top" ${s.always_on_top ? "checked" : ""}/>
       </label>
     </div>
 
     <div class="sgroup">
-      <div class="lsec-head">顯示與通知</div>
+      <div class="lsec-head">Display &amp; Notifications</div>
       <label class="srow">
-        <span class="slabel">顯示平台</span>
+        <span class="slabel">Providers</span>
         <select id="s-providers">
-          <option value="both" ${s.providers !== "claude" && s.providers !== "codex" ? "selected" : ""}>兩個都顯示</option>
-          <option value="claude" ${s.providers === "claude" ? "selected" : ""}>只顯示 Claude</option>
-          <option value="codex" ${s.providers === "codex" ? "selected" : ""}>只顯示 Codex</option>
+          <option value="both" ${s.providers !== "claude" && s.providers !== "codex" ? "selected" : ""}>Both</option>
+          <option value="claude" ${s.providers === "claude" ? "selected" : ""}>Claude only</option>
+          <option value="codex" ${s.providers === "codex" ? "selected" : ""}>Codex only</option>
         </select>
       </label>
       <div class="srow">
-        <span class="slabel">通知門檻<span class="snote">用量達到即發系統通知</span></span>
+        <span class="slabel">Notify at<span class="snote">Sends a system notification when usage crosses the threshold.</span></span>
         <span class="sfields">
-          警戒 <input type="number" id="s-warn" value="${s.warn_pct}" min="1" max="100"/>%
+          warn <input type="number" id="s-warn" value="${s.warn_pct}" min="1" max="100"/>%
           <span class="sdot">·</span>
-          危險 <input type="number" id="s-crit" value="${s.crit_pct}" min="1" max="100"/>%
+          crit <input type="number" id="s-crit" value="${s.crit_pct}" min="1" max="100"/>%
         </span>
       </div>
     </div>
 
     <div class="sgroup">
-      <div class="lsec-head">資料來源</div>
+      <div class="lsec-head">Data Sources</div>
       <label class="srow">
-        <span class="slabel">Claude 權杖更新<span class="warn">可能影響 Claude Code 登入</span></span>
+        <span class="slabel">Claude token refresh<span class="warn">May affect Claude Code login.</span></span>
         <select id="s-refresh">
-          <option value="off" ${s.allow_token_refresh ? "" : "selected"}>關閉（顯示估算）</option>
-          <option value="on" ${s.allow_token_refresh ? "selected" : ""}>開啟（自動換新）</option>
+          <option value="off" ${s.allow_token_refresh ? "" : "selected"}>Off (estimates)</option>
+          <option value="on" ${s.allow_token_refresh ? "selected" : ""}>On (auto-renew)</option>
         </select>
       </label>
       <label class="srow">
-        <span class="slabel">Codex 用量來源<span class="snote">即時／自動會對已登入帳號做唯讀查詢</span></span>
+        <span class="slabel">Codex usage source<span class="snote">Live and Auto run read-only queries on the signed-in account.</span></span>
         <select id="s-codex-source">
-          <option value="live" ${s.codex_usage_source === "live" ? "selected" : ""}>即時帳號用量</option>
-          <option value="auto" ${s.codex_usage_source === "auto" ? "selected" : ""}>自動（即時優先）</option>
-          <option value="local" ${s.codex_usage_source !== "live" && s.codex_usage_source !== "auto" ? "selected" : ""}>本機 session 快照</option>
+          <option value="live" ${s.codex_usage_source === "live" ? "selected" : ""}>Live</option>
+          <option value="auto" ${s.codex_usage_source === "auto" ? "selected" : ""}>Auto (live first)</option>
+          <option value="local" ${s.codex_usage_source !== "live" && s.codex_usage_source !== "auto" ? "selected" : ""}>Local session snapshot</option>
         </select>
       </label>
     </div>`;
@@ -270,9 +280,9 @@ async function setExpanded(on: boolean) {
     ui.view = { kind: "list" };
     ui.relogin = "idle";
     ui.copied = false;
-    renderModeBtn();
+    renderTabs();
     renderCards();
-    renderUpdated();
+    renderResets();
     if (!ui.compact) {
       renderSubtabs();
       renderToggles();
@@ -346,14 +356,9 @@ function wireEvents() {
     if (ui.expanded && !ui.compact) await renderAnalyticsNow();
   });
 
-  $("mode").addEventListener("click", async () => {
-    ui.compact = !ui.compact;
-    await applyCompact();
-    if (settings) {
-      settings.compact = ui.compact;
-      setSettings(settings);
-    }
-  });
+  // Header tabs = the compact/analytics display switch (was the ⊟/⊞ button).
+  $("tab-limits").addEventListener("click", () => setCompact(true));
+  $("tab-analytics").addEventListener("click", () => setCompact(false));
 
   // Limits list ↔ per-limit detail drill-down, plus the re-login affordance.
   $("cards").addEventListener("click", (e) => {
@@ -451,7 +456,7 @@ async function boot() {
   settings = await getSettings();
   ui.compact = settings.compact;
   document.body.classList.toggle("compact", ui.compact);
-  renderModeBtn();
+  renderTabs();
   fitWindow(); // collapsed width depends on the display filter
 
   lastSnap = await getSnapshot();
@@ -463,7 +468,7 @@ async function boot() {
     renderIslandNow();
     if (ui.expanded) {
       renderCards();
-      renderUpdated();
+      renderResets();
     }
   });
 
@@ -473,7 +478,7 @@ async function boot() {
     renderIslandNow();
     if (ui.expanded) {
       renderCards();
-      renderUpdated();
+      renderResets();
     }
   }, 1000);
 

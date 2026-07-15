@@ -1,8 +1,8 @@
-// Expanded panel — grouped "Limits" list with progress rings, plus a
-// per-limit detail view (drill-down), matching the Live Island design.
+// Expanded panel — grouped "Limits" list with battery gauges, plus a
+// per-limit detail view (drill-down), matching the v8 visual.
 
 import type { Limit, Provider, Snapshot } from "./types";
-import { fmtClock, fmtDur, fmtTokens, nowSecs, pctLeft } from "./format";
+import { fmtDur, fmtHM, fmtTokens, nowSecs, pctLeft } from "./format";
 import { providerIcon } from "./icons";
 
 export type PanelView = { kind: "list" } | { kind: "detail"; id: string };
@@ -19,11 +19,12 @@ const PROVIDER_META: Record<Provider, { name: string; cls: string }> = {
   anthropic: { name: "Claude Code", cls: "prov-claude" },
   codex: { name: "Codex", cls: "prov-codex" },
 };
+const provClass = (l: Limit) => PROVIDER_META[l.provider].cls;
 const PROVIDER_ORDER: Provider[] = ["anthropic", "codex"];
 
 /** Display names per the prototype (provider context comes from the group). */
 const LIMIT_NAMES: Record<string, string> = {
-  "cc.5h": "5h Session",
+  "cc.5h": "5h session",
   "cc.week": "Weekly · all models",
   "cc.opus": "Weekly · Opus",
   "cc.extra": "Extra usage",
@@ -56,28 +57,29 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Circular progress ring; arc = consumed (util%). */
-function ring(l: Limit): string {
-  const r = 8;
-  const c = 2 * Math.PI * r;
-  const used = Math.min(100, Math.max(0, l.util)) / 100;
-  return `<svg class="ring" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
-    <circle cx="11" cy="11" r="${r}" fill="none" stroke="var(--track)" stroke-width="3"/>
-    <circle cx="11" cy="11" r="${r}" fill="none" stroke="currentColor" stroke-width="3"
-      stroke-linecap="round" stroke-dasharray="${(used * c).toFixed(1)} ${c.toFixed(1)}"
-      transform="rotate(-90 11 11)"/>
+/** Battery gauge (46×22): white frame + electrode nub; inner fill = % left,
+ *  drawn in the row's current color and framed by the row's --frame var. */
+function battery(left: number): string {
+  const w = (Math.min(100, Math.max(0, left)) / 100) * 34;
+  return `<svg class="pcap" width="46" height="22" viewBox="0 0 46 22" aria-hidden="true">
+    <rect x="1" y="1" width="40" height="20" rx="6" fill="none" stroke="var(--frame)" stroke-width="2"/>
+    <rect x="42.5" y="7" width="2.5" height="8" rx="1.25" fill="var(--frame)"/>
+    <rect x="4" y="4" width="${w.toFixed(1)}" height="14" rx="3" fill="currentColor"/>
   </svg>`;
 }
 
 function row(l: Limit): string {
-  const pct = isUnknown(l) ? "—" : `${pctLeft(l.util)}%`;
+  const unknown = isUnknown(l);
+  const left = pctLeft(l.util);
+  const pct = unknown ? "—" : `${left}%`;
   // source_failed is not an estimate (see the detail view) — say so in the list too.
-  const badge = l.status === "source_failed" ? "無法取得" : "估算";
-  const right = isUnknown(l) ? `<span class="badge">${badge}</span>` : ring(l);
-  return `<button class="lrow status-${l.status}" data-limit="${escapeHtml(l.id)}">
+  const badge = unknown
+    ? `<span class="badge">${l.status === "source_failed" ? "Unavailable" : "Estimate"}</span>`
+    : "";
+  return `<button class="lrow status-${l.status} ${provClass(l)}" data-limit="${escapeHtml(l.id)}">
+    ${battery(unknown ? 0 : left)}
+    <span class="lrow-label">${escapeHtml(displayName(l))}${badge}</span>
     <span class="lrow-pct">${pct}</span>
-    <span class="lrow-label">${escapeHtml(displayName(l))}</span>
-    ${right}
   </button>`;
 }
 
@@ -91,7 +93,7 @@ function list(limits: Limit[]): string {
       ${items.map(row).join("")}
     </div>`;
   }).join("");
-  return groups || `<div class="empty-note">工具目前未在執行</div>`;
+  return groups || `<div class="empty-note">No tools running</div>`;
 }
 
 /**
@@ -106,19 +108,19 @@ function list(limits: Limit[]): string {
 function reloginBlock(state: ReloginState, copied: boolean): string {
   if (state === "failed") {
     return `<div class="relogin-manual">
-      <div>TokenBar 叫不動 claude。請在終端機自己執行：</div>
+      <div>TokenBar can't launch claude. Run this in your terminal:</div>
       <div class="relogin-cmd">
         <code>${escapeHtml(MANUAL_LOGIN_CMD)}</code>
-        <button class="relogin-copy" data-relogin-copy>${copied ? "已複製" : "複製"}</button>
+        <button class="relogin-copy" data-relogin-copy>${copied ? "Copied" : "Copy"}</button>
       </div>
     </div>`;
   }
   if (state === "ok") {
-    return `<div class="relogin-note">已開啟登入視窗。完成後按上方 ⟳ 重新整理。</div>`;
+    return `<div class="relogin-note">Login window opened. Refresh with ⟳ above when done.</div>`;
   }
   const busy = state === "launching";
   return `<button class="relogin" data-relogin ${busy ? "disabled" : ""}>${
-    busy ? "開啟中…" : "重新登入 Claude"
+    busy ? "Opening…" : "Re-login to Claude"
   }</button>`;
 }
 
@@ -126,31 +128,31 @@ function detail(l: Limit, opts: PanelOpts): string {
   const unknown = isUnknown(l);
   const left = pctLeft(l.util);
 
-  // Status line: LOCKED / 估算 / pace + runway.
+  // Status line: LOCKED / Unavailable / pace + runway.
   let sub = "";
   if (l.status === "locked") {
-    const reset = l.resets_at > 0 ? ` resets ${fmtDur(l.resets_at - nowSecs())}` : "";
+    const reset = l.resets_at > 0 ? ` resets in ${fmtDur(l.resets_at - nowSecs())}` : "";
     sub = `<span class="lock">LOCKED</span>${reset}`;
   } else if (l.status === "source_failed") {
-    // No "估算" badge: nothing is estimated — the backend sends 0% placeholders.
+    // No "Estimate" badge: nothing is estimated — the backend sends 0% placeholders.
     // Show the real reason instead of implying the 0% is a computed estimate.
     // The fallback stays provider-neutral: Codex's live degradation carries no
     // hint, and naming Claude there would just be a different lie.
-    sub = `<span class="badge">無法取得</span> ${escapeHtml(l.hint ?? "暫時取不到用量資料")}`;
+    sub = `<span class="badge">Unavailable</span> ${escapeHtml(l.hint ?? "Usage data temporarily unavailable")}`;
   } else if (l.status === "stale") {
-    sub = `<span class="badge">stale</span> 上次執行時的數據，可能已變動`;
+    sub = `<span class="badge">Stale</span> From the last run; may have changed`;
   } else if (l.status === "idle") {
-    sub = `視窗已重置 · 工具目前未在執行`;
+    sub = `Window reset · tool not running`;
   } else {
     const parts: string[] = [];
     if (l.pace) {
       parts.push(
         l.pace.in_deficit
-          ? `<span class="deficit">${Math.round(l.pace.deficit)}% in deficit</span>`
+          ? `<span class="deficit">${Math.round(l.pace.deficit)}% over pace</span>`
           : `<span class="onpace">On pace</span>`,
       );
     }
-    if (l.runway_secs != null) parts.push(`empty in ~${fmtDur(l.runway_secs)}`);
+    if (l.runway_secs != null) parts.push(`~${fmtDur(l.runway_secs)} left`);
     sub = parts.join(" · ");
   }
 
@@ -165,20 +167,28 @@ function detail(l: Limit, opts: PanelOpts): string {
     : "";
   const reset =
     l.resets_at > 0 && l.status !== "locked"
-      ? `resets ~${fmtClock(l.resets_at)} · ${fmtDur(l.resets_at - nowSecs())}`
+      ? `resets ${fmtHM(l.resets_at)} · ${fmtDur(l.resets_at - nowSecs())}`
       : "";
 
-  return `<div class="detail status-${l.status}">
+  return `<div class="detail status-${l.status} ${provClass(l)}">
     <div class="detail-head">
       <button class="back" data-back title="Back">‹</button>
       <span class="detail-title">${escapeHtml(displayName(l))}</span>
     </div>
-    <div class="detail-pct">${unknown ? "—" : `${left}%`}<small>left</small></div>
-    <div class="dmeter"><div class="dmeter-fill" style="width:${unknown ? 0 : left}%"></div></div>
-    ${sub ? `<div class="detail-sub">${sub}</div>` : ""}
-    ${action}
-    ${absLine}
-    ${reset ? `<div class="detail-reset">${reset}</div>` : ""}
+    <div class="dcard">
+      <div class="detail-pct">${unknown ? "—" : `${left}%`}<small>left</small></div>
+      <div class="dscale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+      <div class="dmeter">
+        <div class="dmeter-fill" style="width:${unknown ? 0 : left}%"></div>
+        <div class="dtick" style="left:25%"></div>
+        <div class="dtick" style="left:50%"></div>
+        <div class="dtick" style="left:75%"></div>
+      </div>
+      ${sub ? `<div class="detail-sub">${sub}</div>` : ""}
+      ${action}
+      ${absLine}
+      ${reset ? `<div class="detail-reset">${reset}</div>` : ""}
+    </div>
   </div>`;
 }
 

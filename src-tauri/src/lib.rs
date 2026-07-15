@@ -484,7 +484,7 @@ fn tray_tooltip(snap: &Snapshot) -> String {
         let val = match l.status {
             // A failed source's util is a 0.0 placeholder, not a reading —
             // "0% used" here would say "plenty left" when we mean "unknown".
-            LimitStatus::SourceFailed => "估算".to_string(),
+            LimitStatus::SourceFailed => "n/a".to_string(),
             LimitStatus::Locked => "LOCKED".to_string(),
             _ => format!("{:.0}% used", l.util),
         };
@@ -533,7 +533,7 @@ fn source_failed_notices(snap: &Snapshot) -> Vec<(String, String)> {
         let body = l
             .hint
             .clone()
-            .unwrap_or_else(|| format!("{} 目前無法取得用量", l.label));
+            .unwrap_or_else(|| format!("{} usage unavailable", l.label));
         out.push((key, body));
     }
     out
@@ -616,13 +616,13 @@ fn fire_notifications(
         notified.insert(l.id.clone(), now);
 
         let tip = match l.provider {
-            model::Provider::Codex => "可切 mini 模型延長額度",
-            model::Provider::Anthropic => "可 /compact 或改用 Sonnet",
+            model::Provider::Codex => "Switch to a mini model to stretch your quota.",
+            model::Provider::Anthropic => "Try /compact or switch to Sonnet.",
         };
         let body = if matches!(l.status, LimitStatus::Locked) {
-            format!("{} 已鎖定。{}", l.label, tip)
+            format!("{} is locked. {}", l.label, tip)
         } else {
-            format!("{} 已用 {:.0}%（{}）。{}", l.label, l.util, level, tip)
+            format!("{} at {:.0}% ({}). {}", l.label, l.util, level, tip)
         };
         let _ = app.notification().builder().title("TokenBar").body(body).show();
     }
@@ -858,7 +858,7 @@ mod tests {
             Provider::Anthropic,
             "請重新登入",
         )]));
-        assert!(tip.contains("估算"), "失效來源要標估算:{tip}");
+        assert!(tip.contains("n/a"), "失效來源要標 n/a:{tip}");
         assert!(!tip.contains("0% used"), "把佔位值當成用量報出去了:{tip}");
     }
 

@@ -1,35 +1,55 @@
-/* TokenBar — Live Island skin (aligned to the design prototype).
-   Island (collapsed) + expanded panel (grouped limits, drill-down) + analytics. */
+/* TokenBar — v8 visual (gem-toned glass gauges, battery metaphor).
+   Island (collapsed) + expanded panel (battery limits, drill-down) + analytics. */
 
 :root {
-  /* Palette aligned to the Live Island prototype bundle. */
-  --safe: #34d399;
-  --safe-lt: #6ee7b7;
-  --near: #fbbf24;
-  --locked: #f87171;
-  --accent: #a78bfa;
-  --muted: #7d8695;
-  --claude: #d97757; /* Claude brand orange (starburst mark) */
+  /* Global alert colors (override provider family on near/locked). */
+  --near: #e0a63a;
+  --locked: #e05e58;
 
-  --bg: #0a0c0f;
-  --panel-bg: rgba(14, 19, 26, 0.97);
-  --card-bg: rgba(255, 255, 255, 0.035);
-  --border: rgba(255, 255, 255, 0.07);
-  --text: #e6edf3;
-  --text-dim: #9aa4b0;
-  --pill-bg: rgba(10, 12, 15, 0.9);
-  --track: rgba(255, 255, 255, 0.08);
+  /* Provider family colors — gem palette. Value colors for gauges/numbers. */
+  --prov-claude: #2fa87e; /* emerald */
+  --prov-codex: #5b62d4; /* tanzanite */
+  --prov-claude-hdr: #5cc39f; /* section-header tint */
+  --prov-codex-hdr: #8d93e8;
 
-  /* Island is intentionally theme-invariant: portable, NSIS, and MSI all
-     use this opaque dark capsule with the same contrast as the reference. */
-  --island-bg: #090b0e;
-  --island-border: rgba(255, 255, 255, 0.16);
-  --island-text: #e8edf5;
-  --island-text-dim: #a4adba;
+  /* Interaction accent — primary buttons, focus ring. Never used for gauges. */
+  --accent: #3d82d9;
+  --seg-on-bg: #1c3450; /* selected tab / seg background */
+  --seg-on-fg: #7cb5f2; /* selected tab / seg text */
+
+  /* Brand orange: icon-only (providerIcon). Never text/gauges/charts. */
+  --claude: #d97757;
+
+  /* Panel glass. */
+  --panel-bg: rgba(18, 21, 27, 0.72);
+  --panel-blur: 14px;
+  --border: rgba(255, 255, 255, 0.1); /* panel + generic borders */
+  --hairline: rgba(255, 255, 255, 0.09); /* row separators */
+  --card-bg: rgba(255, 255, 255, 0.045);
+  --track: rgba(0, 0, 0, 0.35); /* recessed groove */
+
+  --text: #dfe3e8;
+  --text-dim: #8b939e;
+  --muted: #6f7883;
+
+  /* Island stays opaque and theme-invariant. */
+  --island-bg: #14171c;
+  --island-border: #2a2f37;
+  --island-text: #dfe3e8;
+  --island-text-dim: #8b939e;
 
   --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo,
     Consolas, monospace;
   --sans: "Geist", -apple-system, system-ui, "Segoe UI", sans-serif;
+}
+
+/* Provider family variable — set once per element carrying a provider class,
+   consumed wherever a "safe" value takes its provider's color. */
+.prov-claude {
+  --fam: var(--prov-claude);
+}
+.prov-codex {
+  --fam: var(--prov-codex);
 }
 
 * {
@@ -51,6 +71,11 @@ body {
   overflow: hidden;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -64,9 +89,9 @@ body.expanded #island {
   display: none;
 }
 
-/* ── Island (collapsed): fuel capsule + % left ────────────────────── */
-/* Release invariant: portable, NSIS, and MSI all package this same Vite CSS.
-   Reference skin: opaque #090b0e pill, amber near border/glow, high-contrast text. */
+/* ── Island (collapsed): battery capsule(s) + % left ──────────────────
+   Release invariant: portable, NSIS, and MSI all package this same Vite CSS.
+   Opaque #14171c pill; amber near border, red breathing border when locked. */
 
 .island {
   display: flex;
@@ -77,13 +102,14 @@ body.expanded #island {
   padding: 0 13px;
   width: max-content;
   max-width: calc(100vw - 8px);
-  border-radius: 999px;
+  border-radius: 14px;
   background: var(--island-bg);
   border: 1px solid var(--island-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   color: var(--island-text);
   white-space: nowrap;
   cursor: pointer;
-  transition: opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  transition: opacity 0.25s ease, border-color 0.25s ease;
 }
 .island .cap {
   flex: none;
@@ -95,21 +121,17 @@ body.expanded #island {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-.island .runway {
-  font-family: var(--mono);
-  font-size: 11px;
-  opacity: 0.85;
-}
 
-/* Capsule group (dual / single-provider layouts): dot + capsule + %. */
+/* Capsule group (dual / single-provider layouts): icon + battery + %. */
 .island .igroup {
   display: flex;
   align-items: center;
   gap: 5px;
   white-space: nowrap;
+  color: var(--island-text-dim);
 }
 .island .igroup.status-normal {
-  color: var(--safe);
+  color: var(--fam);
 }
 .island .igroup.status-near {
   color: var(--near);
@@ -123,12 +145,6 @@ body.expanded #island {
 .island .igroup.status-insufficient_data,
 .island .igroup.status-source_failed {
   color: var(--muted);
-}
-/* When the whole pill is locked (red bg, dark text), groups follow the pill. */
-.island.status-locked .igroup,
-.island.status-locked .iaux,
-.island.status-locked .ihide {
-  color: inherit;
 }
 
 /* Hide-to-tray button: only on hover. The island's whole job is an
@@ -172,56 +188,53 @@ body.expanded #island {
   white-space: nowrap;
 }
 
+/* Whole-pill status: dim when nothing needs attention; amber/red border when
+   it does. The pill itself never changes fill — the batteries carry color. */
 .island.status-normal {
   opacity: 0.5;
-  color: var(--safe);
 }
 .island.status-empty {
   opacity: 0.4;
-  color: var(--muted);
 }
 .island.status-near {
   opacity: 1;
-  color: var(--near);
-  border-color: rgba(251, 191, 36, 0.72);
-  box-shadow: 0 2px 14px rgba(251, 191, 36, 0.28);
+  border-color: #4a4030;
 }
 .island.status-locked {
   opacity: 1;
-  color: #1a0d0d;
-  background: var(--locked);
-  border-color: var(--locked);
-  animation: blink 1.6s ease-in-out infinite;
+  animation: island-breathe 2s ease-in-out infinite;
 }
 .island.status-stale,
 .island.status-idle,
 .island.status-insufficient_data {
   opacity: 0.55;
-  color: var(--muted);
 }
 .island.status-source_failed {
   opacity: 0.7;
-  color: var(--muted);
   border-style: dashed;
   border-color: var(--muted);
 }
 
-/* The resting pill dims itself when there is nothing to worry about — that is
-   for when nobody is looking at it. A pointer on it means someone is, and the
-   hide button has to be legible enough to aim at.
-   MUST stay below every .island.status-* rule above: those are (0,2,0) too, so
-   this only wins on source order. Moving it up silently turns it back into
-   dead CSS and the button fades to ~0.4 effective opacity on a safe island. */
+/* MUST stay below every .island.status-* rule above (all (0,2,0), so this only
+   wins on source order): a pointer on the pill means someone is looking, so
+   restore full opacity and make the hide button legible. */
 .island:hover {
   opacity: 1;
 }
-@keyframes blink {
+
+@keyframes island-breathe {
   0%,
   100% {
-    box-shadow: 0 2px 18px rgba(248, 113, 113, 0.55);
+    border-color: #e05e58;
   }
   50% {
-    box-shadow: 0 2px 6px rgba(248, 113, 113, 0.2);
+    border-color: #5a3230;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .island.status-locked {
+    animation: none;
+    border-color: #e05e58;
   }
 }
 
@@ -238,51 +251,75 @@ body.expanded #island {
   border: 1px solid var(--border);
   border-radius: 16px;
   margin-top: 6px;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--panel-blur));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
+
+/* ── Header: tabs + Resets + icon buttons ─────────────────────────── */
 
 .phead {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px 8px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--hairline);
 }
-.phead .brand {
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: 0.02em;
+.ptabs {
+  display: inline-flex;
+  gap: 2px;
 }
-.phead .rate {
+.ptabs button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.ptabs button:hover {
+  color: var(--text);
+}
+.ptabs button.on {
+  background: var(--seg-on-bg);
+  color: var(--seg-on-fg);
+}
+.phead .resets {
   margin-left: auto;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-dim);
-}
-.phead .updated {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-dim);
   white-space: nowrap;
+}
+/* The tok/min readout is retained for data flow but folded out of the header —
+   the number lives in the island aux and the Stats page. */
+.phead .rate {
+  display: none;
 }
 #collapse,
 #gear,
-#refresh,
-#mode {
+#refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: var(--text-dim);
-  font-size: 15px;
+  font-size: 14px;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 3px;
+  border-radius: 7px;
 }
 #collapse:hover,
 #gear:hover,
-#refresh:hover,
-#mode:hover {
+#refresh:hover {
   color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
 }
 
-/* Compact mode: limits only — hide the analytics layer (§ compact). */
+/* Compact mode ("Limits" tab): hide the analytics layer (§ compact). */
 body.compact #subtabs,
 body.compact #toggles,
 body.compact #analytics,
@@ -294,18 +331,13 @@ body.compact .rate {
    hides. Not cosmetic — the panel's height is locked to its content and
    clipped past the work area, and grouped settings with readable explanations
    cost ~310px. Stacking that on top of the limits list *and* a 300px analytics
-   box measured 1063px, which overflows a 1080p work area (~1016px budget) and
-   would silently cut off the bottom rows.
-   The limits list deliberately stays: 顯示平台 and the notification thresholds
-   visibly change it, so you can see what you just did. Analytics cannot react
-   to any setting here, so while configuring it is only height. */
+   box overflows a 1080p work area and would silently cut off the bottom rows.
+   The limits list deliberately stays: Providers and the notification thresholds
+   visibly change it, so you can see what you just did. */
 body.settings-open #subtabs,
 body.settings-open #toggles,
 body.settings-open #analytics {
   display: none;
-}
-body.compact .updated {
-  margin-left: auto;
 }
 #refresh.busy {
   animation: tb-spin 0.8s linear infinite;
@@ -317,7 +349,7 @@ body.compact .updated {
   }
 }
 
-/* ── Limits list (grouped by provider) ────────────────────────────── */
+/* ── Limits list: battery rows, grouped by provider ───────────────── */
 
 #cards {
   display: flex;
@@ -328,7 +360,6 @@ body.compact .updated {
 .lsec {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   margin-bottom: 6px;
 }
 .lsec-head {
@@ -336,91 +367,102 @@ body.compact .updated {
   align-items: center;
   gap: 6px;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-dim);
   padding: 8px 4px 4px;
 }
-/* Provider brand icons (island + panel section headers). */
+.lsec-head.prov-claude {
+  color: var(--prov-claude-hdr);
+}
+.lsec-head.prov-codex {
+  color: var(--prov-codex-hdr);
+}
+/* Provider brand icons (island + panel section headers) — the one place the
+   brand colors live; the icon SVGs carry their own fills. */
 .picon {
   flex: none;
   display: inline-block;
   vertical-align: -2px;
 }
-.prov-claude {
-  color: var(--claude);
-}
-.prov-codex {
-  color: var(--accent);
-}
 
 .lrow {
+  --frame: rgba(255, 255, 255, 0.35);
+  position: relative;
   display: grid;
-  grid-template-columns: 52px 1fr auto;
+  grid-template-columns: 46px 1fr auto;
   align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
+  gap: 11px;
+  padding: 9px 8px;
   border: none;
-  border-radius: 10px;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
   background: transparent;
-  color: var(--text);
+  color: var(--fam);
   font-family: var(--sans);
   text-align: left;
   cursor: pointer;
 }
+.lsec .lrow:last-child {
+  border-bottom: none;
+}
 .lrow:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.035);
+}
+.lrow .pcap {
+  display: block;
+}
+.lrow-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  min-width: 0;
 }
 .lrow-pct {
   font-family: var(--mono);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
-}
-.lrow-label {
-  font-size: 13px;
-  color: var(--text);
-}
-.lrow .ring {
-  display: block;
+  text-align: right;
+  color: inherit;
 }
 
-/* row status coloring: pct + ring take the status color */
-.lrow.status-normal .lrow-pct,
-.lrow.status-normal .ring {
-  color: var(--safe);
-}
-.lrow.status-near,
-.lrow.status-locked {
-  background: rgba(251, 191, 36, 0.08);
-}
-.lrow.status-near .lrow-pct,
-.lrow.status-near .ring {
+/* Row status coloring drives both the battery fill (currentColor) and the %. */
+.lrow.status-near {
+  --frame: rgba(224, 166, 58, 0.6);
   color: var(--near);
 }
 .lrow.status-locked {
-  background: rgba(248, 113, 113, 0.1);
-}
-.lrow.status-locked .lrow-pct,
-.lrow.status-locked .ring {
+  --frame: rgba(224, 94, 88, 0.7);
   color: var(--locked);
+}
+.lrow.status-locked::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: #e05e58;
 }
 .lrow.status-source_failed,
 .lrow.status-insufficient_data,
 .lrow.status-stale,
 .lrow.status-idle {
-  opacity: 0.75;
-}
-.lrow.status-source_failed .lrow-pct {
   color: var(--muted);
+  opacity: 0.85;
 }
 
 .badge {
-  border: 1px dashed var(--muted);
+  border: 1px solid var(--muted);
   color: var(--muted);
   padding: 0 5px;
   border-radius: 4px;
   font-size: 10px;
+  font-family: var(--sans);
 }
 .empty-note {
   padding: 20px 12px;
@@ -438,7 +480,7 @@ body.compact .updated {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .back {
   width: 24px;
@@ -458,12 +500,18 @@ body.compact .updated {
   font-size: 13px;
   font-weight: 700;
 }
+.dcard {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 12px 11px;
+}
 .detail-pct {
   font-family: var(--mono);
-  font-size: 40px;
+  font-size: 38px;
   font-weight: 700;
   line-height: 1.05;
-  color: var(--safe);
+  color: var(--fam);
 }
 .detail-pct small {
   font-size: 13px;
@@ -471,18 +519,35 @@ body.compact .updated {
   color: var(--text-dim);
   margin-left: 5px;
 }
+.dscale {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  margin: 10px 1px 3px;
+}
 .dmeter {
+  position: relative;
   height: 9px;
-  border-radius: 6px;
+  border-radius: 5px;
   background: var(--track);
-  margin: 10px 0 9px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  margin: 0 0 10px;
   overflow: hidden;
 }
 .dmeter-fill {
   height: 100%;
-  border-radius: 6px;
-  background: var(--safe);
+  border-radius: 5px;
+  background: var(--fam);
   transition: width 0.4s ease;
+}
+.dtick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.5);
 }
 .detail-sub {
   font-family: var(--mono);
@@ -493,7 +558,7 @@ body.compact .updated {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-dim);
-  margin-top: 4px;
+  margin-top: 6px;
 }
 .detail-reset {
   font-family: var(--mono);
@@ -501,6 +566,7 @@ body.compact .updated {
   color: var(--muted);
   margin-top: 4px;
 }
+
 /* ── Re-login (source failure remedy) ─────────────────────────────── */
 
 .relogin {
@@ -568,7 +634,7 @@ body.compact .updated {
 }
 
 .detail-sub .onpace {
-  color: var(--safe);
+  color: var(--fam);
 }
 .detail-sub .deficit {
   color: var(--near);
@@ -582,7 +648,7 @@ body.compact .updated {
   font-size: 11px;
 }
 
-/* detail status tints */
+/* Detail status tints (override the provider family on near/locked). */
 .detail.status-near .detail-pct,
 .detail.status-near .dmeter-fill {
   color: var(--near);
@@ -599,7 +665,8 @@ body.compact .updated {
 .detail.status-locked .detail-pct {
   background: none;
 }
-.detail.status-source_failed .detail-pct {
+.detail.status-source_failed .detail-pct,
+.detail.status-insufficient_data .detail-pct {
   color: var(--muted);
 }
 
@@ -610,7 +677,7 @@ body.compact .updated {
   gap: 4px;
   padding: 10px 12px 4px;
   flex-wrap: wrap;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--hairline);
   margin-top: 6px;
 }
 .subtabs button {
@@ -623,9 +690,12 @@ body.compact .updated {
   cursor: pointer;
   font-family: var(--sans);
 }
-.subtabs button.on {
+.subtabs button:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
+}
+.subtabs button.on {
+  color: var(--seg-on-fg);
+  background: var(--seg-on-bg);
 }
 
 .toggles {
@@ -636,7 +706,7 @@ body.compact .updated {
 }
 .seg {
   display: inline-flex;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--track);
   border-radius: 8px;
   padding: 2px;
 }
@@ -650,15 +720,14 @@ body.compact .updated {
   cursor: pointer;
 }
 .seg button.on {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text);
+  background: var(--seg-on-bg);
+  color: var(--seg-on-fg);
 }
 
 #analytics {
   padding: 4px 12px 14px;
   /* Fixed box so every subtab renders at the same height → window never
-     resizes on page switches (mode-locked height policy). Tallest page
-     measured at 299px (stats). */
+     resizes on page switches (mode-locked height policy). */
   height: 300px;
   overflow: hidden;
 }
@@ -741,6 +810,7 @@ body.compact .updated {
   height: 10px;
   background: var(--track);
   border-radius: 6px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
   overflow: hidden;
 }
 .bar-fill {
@@ -796,7 +866,7 @@ body.compact .updated {
    hold its width rather than push a scrollbar that cannot exist. */
 #settings {
   padding: 4px 12px 8px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--hairline);
   display: flex;
   flex-direction: column;
 }
@@ -806,7 +876,7 @@ body.compact .updated {
 .sgroup {
   display: flex;
   flex-direction: column;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .srow {
   font-size: 12px;
@@ -815,12 +885,12 @@ body.compact .updated {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 4px;
+  padding: 5px 4px;
   border-radius: 8px;
   cursor: pointer;
 }
 .srow:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.045);
 }
 /* Label + its explanation stack; the control keeps the right edge. min-width:0
    lets long notes wrap instead of widening the row past the panel. */
@@ -855,28 +925,60 @@ body.compact .updated {
 .sfields .sdot {
   opacity: 0.5;
 }
+
+/* Pill switch: the input stays a real checkbox; only its box is restyled. */
 .srow input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
   flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--track);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
+.srow input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #dfe3e8;
+  transition: transform 0.15s ease;
+}
+.srow input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.srow input[type="checkbox"]:checked::after {
+  transform: translateX(14px);
+}
+
+/* Glass fields for numbers and selects. */
 .srow input[type="number"] {
-  width: 44px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  width: 46px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
   color: var(--text);
-  padding: 2px 4px;
+  padding: 3px 5px;
   font-family: var(--mono);
 }
 .srow select {
   flex: none;
-  /* Capped so the longest option ("本機 session 快照") cannot widen the row
-     past the fixed 380px panel and get clipped. */
-  max-width: 170px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  /* Capped so the longest option ("Local session snapshot") cannot widen the
+     row past the fixed 380px panel and get clipped. */
+  max-width: 180px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
   color: var(--text);
-  padding: 2px 4px;
+  padding: 4px 6px;
   font-size: 12px;
   font-family: var(--sans);
 }
@@ -910,17 +1012,4 @@ body.compact .updated {
   border-radius: 6px;
   padding: 3px 8px;
   cursor: pointer;
-}
-
-/* Light theme fallback */
-@media (prefers-color-scheme: light) {
-  :root {
-    --panel-bg: rgba(250, 250, 252, 0.97);
-    --card-bg: rgba(0, 0, 0, 0.03);
-    --border: rgba(0, 0, 0, 0.1);
-    --text: #16181d;
-    --text-dim: #5c6470;
-    --pill-bg: rgba(255, 255, 255, 0.9);
-    --track: rgba(0, 0, 0, 0.08);
-  }
 }
