@@ -345,6 +345,17 @@ body.compact .rate {
   display: none;
 }
 
+/* Header denoise (階段 C): the compact "Limits" view is meant to be minimal, so
+   drop the secondary "Refresh in Ns" readout there. The essential controls
+   (refresh / settings / collapse) stay; #refresh takes over the right-push the
+   hidden countdown was providing. */
+body.compact .refresh-in {
+  display: none;
+}
+body.compact #refresh {
+  margin-left: auto;
+}
+
 /* Settings open: fold the analytics layer away, same three elements compact
    hides. Not cosmetic — the panel's height is locked to its content and
    clipped past the work area, and grouped settings with readable explanations
@@ -375,6 +386,72 @@ body.settings-open #analytics {
   gap: 2px;
   padding: 4px 12px 8px;
 }
+
+/* ── Usage-tab quota summary (階段 C): one-line digest, click to expand ─── */
+.quota-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 7px 10px;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  cursor: pointer;
+  text-align: left;
+}
+.quota-summary:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.quota-summary.on {
+  border-color: var(--hairline);
+}
+.qs-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.qs-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+}
+.qs-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fam);
+  flex: none;
+}
+.qs-name {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.qs-seg {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.qs-mid {
+  color: var(--text-dim);
+  margin: 0 3px;
+}
+.qs-empty {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.qs-chev {
+  color: var(--text-dim);
+  font-size: 10px;
+  flex: none;
+}
+
 .lsec {
   display: flex;
   flex-direction: column;
@@ -668,6 +745,12 @@ body.settings-open #analytics {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px;
+}
+/* "from {date}" note when a month's local logs are shorter than 30 days. */
+.chart-note {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin: -2px 0 6px 2px;
 }
 
 /* Analytics loading skeleton (§ expand speed): reuses .tiles/.tile/.chart-wrap

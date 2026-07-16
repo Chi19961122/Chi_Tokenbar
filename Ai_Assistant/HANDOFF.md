@@ -1,5 +1,14 @@
 # HANDOFF — 進度快照(2026-07-17)
 
+## 2026-07-17:三樣態優化 階段 C — Usage 詳細模式(v0.3.1,程式碼完成、未打包)
+
+- **額度單行摘要**:Usage 頂部 `buildQuotaSummary` 純函式產出(provider 色點+英文短標+% left,pctLeft 與列表同源),點擊展開完整列表;session 記憶不持久化。**設定開啟時強制完整列表**(設定改動要即時反映在額度列表,v0.1.5 驗收行為)。
+- **month range**:後端 `range=="month"` → days_back=29(30 個 UTC 日桶),新欄位 `range_start_day`=首個有活動日;前端 `monthStartNote` 僅在起始日≠視窗首日時標「自 {MM-DD} 起」,stackedDaily 裁前導空日。**不新增 command/快取層**,沿用 compute_with(providers 過濾天然生效)。
+- **subtab 收斂**:daily→overview(主圖即日堆疊)、models+agents→單一 Breakdown(group toggle 切 Model/Agent);最終 overview/Breakdown/hourly/stats,進 Usage 第一眼=累計總覽。
+- **圖表可讀性**:Breakdown 橫條 `512.4M · 65%`(分母=區間總量,`sharePct` 除零安全);日堆疊 hover title(30 根不擠爆)。header 降噪:compact 隱藏 Refresh 倒數。
+- **測試 113 Rust + 51 前端**;驗證 CONFIRMED;mock preview 目視過(摘要展開/Breakdown 標籤/Month 30 柱)。
+- 尚未真人驗證:380px 真視窗的摘要換行、真本機 log 不足 30 天的起始日註記、展開收合的 fitWindow 高度。
+
 ## 2026-07-17:三樣態優化 階段 A+B(v0.3.0,程式碼完成、未打包)
 
 計畫:`三樣態優化計畫-執行版.md`(階段 A、B 已全勾)。分支 `feat/three-modes-v030`,commits c236702(A)/06c6e32(B)+ 驗收修正。兩階段各過 fresh-context 對抗驗證(CONFIRMED)+ mock preview 逐情境目視(safe/near/locked/degraded/stale/empty × zh/en × 倒數/時刻)。

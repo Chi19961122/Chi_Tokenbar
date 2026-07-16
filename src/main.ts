@@ -37,7 +37,10 @@ const ui = {
   subtab: "overview" as SubTab,
   metric: "tokens" as Metric,
   group: "agent" as Group,
-  range: "week" as "today" | "week",
+  range: "week" as "today" | "week" | "month",
+  // Usage-tab quota summary expanded? Session-only (not persisted): the Usage
+  // tab always re-opens onto the collapsed one-line digest.
+  quotaExpanded: false,
   // Re-login button state. Held here, not in the DOM: renderCards() runs on
   // every 1s tick and would wipe anything written straight onto the elements.
   relogin: "idle" as ReloginState,
@@ -62,10 +65,8 @@ let cachedAnalytics: { key: string; data: Analytics } | null = null;
 function renderSubtabs() {
   const subs: [SubTab, string][] = [
     ["overview", t("subtab.overview")],
-    ["daily", t("subtab.daily")],
+    ["share", t("subtab.share")],
     ["hourly", t("subtab.hourly")],
-    ["models", t("subtab.models")],
-    ["agents", t("subtab.agents")],
     ["stats", t("subtab.stats")],
   ];
   $("subtabs").innerHTML = subs
@@ -74,11 +75,14 @@ function renderSubtabs() {
 }
 
 function renderToggles() {
-  const showGroup = ui.subtab === "overview" || ui.subtab === "daily";
+  // The model/agent group toggle drives both the overview stacks and the
+  // "share" breakdown (階段 C: agents folded into this toggle).
+  const showGroup = ui.subtab === "overview" || ui.subtab === "share";
   $("toggles").innerHTML = `
     <div class="seg" data-seg="range">
       <button data-range="today" class="${ui.range === "today" ? "on" : ""}">${t("toggle.today")}</button>
       <button data-range="week" class="${ui.range === "week" ? "on" : ""}">${t("toggle.week")}</button>
+      <button data-range="month" class="${ui.range === "month" ? "on" : ""}">${t("toggle.month")}</button>
     </div>
     <div class="seg" data-seg="metric">
       <button data-metric="tokens" class="${ui.metric === "tokens" ? "on" : ""}">${t("toggle.tokens")}</button>
@@ -109,12 +113,19 @@ function renderIslandNow() {
 }
 
 function renderCards() {
+  // The Usage tab leads with a one-line quota digest (階段 C). The full list
+  // stays when in Limits (compact) or while settings is open — settings tweaks
+  // (Providers, thresholds) visibly change the list, so it must stay full there.
+  const settingsOpen = !$("settings").hasAttribute("hidden");
+  const variant: "full" | "summary" = ui.compact || settingsOpen ? "full" : "summary";
   renderPanel($("cards"), lastSnap, {
     relogin: ui.relogin,
     copied: ui.copied,
     resetDisplay: settings?.reset_display ?? "relative",
     now: nowSecs(),
     locale: getLocale(),
+    variant,
+    summaryExpanded: ui.quotaExpanded,
   });
 }
 
@@ -451,6 +462,7 @@ async function openSettingsPanel(): Promise<void> {
   await renderSettings();
   el.removeAttribute("hidden");
   document.body.classList.add("settings-open");
+  renderCards(); // settings open forces the full limits list (see renderCards)
   fitWindow();
 }
 
@@ -569,6 +581,7 @@ function wireEvents() {
     } else {
       el.setAttribute("hidden", "");
       document.body.classList.remove("settings-open");
+      renderCards(); // back to the Usage-tab summary digest
       fitWindow();
     }
   });
@@ -605,6 +618,15 @@ function wireEvents() {
   // affordance now lives inline on the failed row).
   $("cards").addEventListener("click", (e) => {
     const el = e.target as HTMLElement;
+
+    // Usage-tab quota digest: expand/collapse the full limits list. Height
+    // changes, so re-measure the window after re-rendering.
+    if (el.closest("[data-quota-toggle]")) {
+      ui.quotaExpanded = !ui.quotaExpanded;
+      renderCards();
+      fitWindow();
+      return;
+    }
 
     // Hand off to the official `claude auth login`. Any failure (usually:
     // claude isn't on TokenBar's PATH) becomes the manual-command fallback —
@@ -656,7 +678,7 @@ function wireEvents() {
     const el = e.target as HTMLElement;
     const t = el.closest("[data-range],[data-metric],[data-group]");
     if (!t) return;
-    if (t.hasAttribute("data-range")) ui.range = t.getAttribute("data-range") as "today" | "week";
+    if (t.hasAttribute("data-range")) ui.range = t.getAttribute("data-range") as "today" | "week" | "month";
     if (t.hasAttribute("data-metric")) ui.metric = t.getAttribute("data-metric") as Metric;
     if (t.hasAttribute("data-group")) ui.group = t.getAttribute("data-group") as Group;
     renderToggles();

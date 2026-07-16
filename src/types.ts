@@ -109,8 +109,13 @@ export interface Account {
   plan: string;
 }
 
+export type AnalyticsRange = "today" | "week" | "month";
+
 export interface Analytics {
-  range: "today" | "week";
+  range: AnalyticsRange;
+  /** Earliest day actually shown (backend `range_start_day`). Equals the window
+   *  start unless local logs are shorter than the requested window. */
+  rangeStartDay: string;
   totalTokens: number;
   totalCostUsd: number;
   bestDay: { date: string; costUsd: number };

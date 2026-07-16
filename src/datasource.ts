@@ -102,7 +102,7 @@ export async function onSnapshot(cb: Cb): Promise<void> {
   mockSubs.push(cb);
 }
 
-export async function getAnalytics(range: "today" | "week"): Promise<Analytics> {
+export async function getAnalytics(range: "today" | "week" | "month"): Promise<Analytics> {
   if (isTauri()) {
     const { invoke } = await import("@tauri-apps/api/core");
     try {

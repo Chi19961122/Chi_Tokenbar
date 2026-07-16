@@ -64,17 +64,17 @@ const en = {
   "settings.resetRelative": "Countdown",
   "settings.resetClock": "Clock",
 
-  // Analytics subtabs
+  // Analytics subtabs (階段 C: daily folded into overview, agents into the
+  // model/agent group toggle on the "share" breakdown)
   "subtab.overview": "Overview",
-  "subtab.daily": "Daily",
+  "subtab.share": "Breakdown",
   "subtab.hourly": "Hourly",
-  "subtab.models": "Models",
-  "subtab.agents": "Agents",
   "subtab.stats": "Stats",
 
   // Analytics toggles
   "toggle.today": "Today",
   "toggle.week": "Week",
+  "toggle.month": "Month",
   "toggle.tokens": "Tokens",
   "toggle.price": "Price",
   "toggle.model": "Model",
@@ -86,6 +86,7 @@ const en = {
   "analytics.peak": "peak",
   "analytics.activeDays": "active days",
   "analytics.tokPerMin": "tok/min",
+  "analytics.since": "from {date}",
   "analytics.sessionsThisWeek": "sessions this week",
   "analytics.input": "input",
   "analytics.cached": "cached",
@@ -190,14 +191,13 @@ const zhTW = {
   "settings.resetClock": "時刻",
 
   "subtab.overview": "總覽",
-  "subtab.daily": "每日",
+  "subtab.share": "拆分",
   "subtab.hourly": "每時",
-  "subtab.models": "模型",
-  "subtab.agents": "工具",
   "subtab.stats": "統計",
 
   "toggle.today": "今日",
   "toggle.week": "本週",
+  "toggle.month": "本月",
   "toggle.tokens": "Token",
   "toggle.price": "花費",
   "toggle.model": "模型",
@@ -208,6 +208,7 @@ const zhTW = {
   "analytics.peak": "尖峰",
   "analytics.activeDays": "使用天數",
   "analytics.tokPerMin": "tok/分",
+  "analytics.since": "自 {date} 起",
   "analytics.sessionsThisWeek": "本週工作階段",
   "analytics.input": "輸入",
   "analytics.cached": "快取",

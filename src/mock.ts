@@ -74,8 +74,8 @@ export const SCENARIOS: Record<string, Snapshot> = {
   empty: snap([], undefined),
 };
 
-export function mockAnalytics(range: "today" | "week"): Analytics {
-  const days = range === "week" ? 7 : 1;
+export function mockAnalytics(range: "today" | "week" | "month"): Analytics {
+  const days = range === "month" ? 30 : range === "week" ? 7 : 1;
   const daily = Array.from({ length: days }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (days - 1 - i));
@@ -111,6 +111,7 @@ export function mockAnalytics(range: "today" | "week"): Analytics {
 
   return {
     range,
+    rangeStartDay: daily[0].date, // mock always has full-window coverage
     totalTokens,
     totalCostUsd,
     bestDay: best,

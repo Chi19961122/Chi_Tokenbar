@@ -46,6 +46,11 @@ pub struct Account {
 #[serde(rename_all = "camelCase")]
 pub struct Analytics {
     pub range: String,
+    /// Earliest day actually shown. Normally the window start, but when local
+    /// logs are shorter than the requested window (e.g. a "month" with only a
+    /// week of history) it is the first day that has any activity — the caller
+    /// annotates "from {date}" when this is later than the nominal start.
+    pub range_start_day: String,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
     pub best_day: BestDay,
@@ -189,7 +194,11 @@ where
     L: FnOnce(&mut Acc, i64),
 {
     let now = chrono::Utc::now().timestamp();
-    let days_back: i64 = if range == "today" { 0 } else { 6 };
+    let days_back: i64 = match range {
+        "today" => 0,
+        "month" => 29, // last 30 days including today
+        _ => 6,        // "week"
+    };
     let utc_midnight = now - now.rem_euclid(86400);
     let start = utc_midnight - days_back * 86400;
 
@@ -237,8 +246,19 @@ where
 
     let active_days = daily.iter().filter(|d| !d.by_agent.is_empty()).count() as u32;
 
+    // Actual start: the first day with activity, so a "month" backed by only a
+    // few days of logs reports its true reach instead of claiming 30. Falls
+    // back to the nominal window start when nothing was recorded at all.
+    let range_start_day = daily
+        .iter()
+        .find(|d| !d.by_agent.is_empty())
+        .or_else(|| daily.first())
+        .map(|d| d.date.clone())
+        .unwrap_or_default();
+
     Analytics {
         range: range.to_string(),
+        range_start_day,
         total_tokens,
         total_cost_usd: total_cost,
         best_day: best,
@@ -510,6 +530,50 @@ mod tests {
         let everything = compute_routed("today", "both", stub_codex, stub_claude, Vec::new());
         assert_eq!(everything.total_tokens, 300);
         assert_eq!(everything.sessions_this_week, 7);
+    }
+
+    // ── month range (階段 C) ─────────────────────────────────────────────
+    //
+    // The month window is 30 daily buckets, but local logs are often shorter.
+    // These pin the two facts the frontend relies on: the bucket count, and
+    // `range_start_day` reporting the true earliest day of data.
+
+    fn no_codex(_acc: &mut Acc, _start: i64) -> u32 {
+        0
+    }
+
+    /// Claude activity only on the last `days` days (today, yesterday, …).
+    fn stub_recent(days: i64) -> impl Fn(&mut Acc, i64) {
+        move |acc: &mut Acc, _start: i64| {
+            for k in 0..days {
+                acc.add(acc.now - k * 86400, "claude-opus", CLAUDE_AGENT, 100, 0, 0, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn month_range_spans_thirty_daily_buckets() {
+        let a = compute_routed("month", "claude", no_codex, stub_recent(3), Vec::new());
+        assert_eq!(a.daily.len(), 30);
+        assert_eq!(a.total_tokens, 300); // 3 days × 100
+    }
+
+    #[test]
+    fn month_range_reports_actual_start_when_history_is_short() {
+        let a = compute_routed("month", "claude", no_codex, stub_recent(3), Vec::new());
+        // daily runs oldest→newest over 30 buckets: today is [29], so the
+        // earliest of the last three active days is [27].
+        assert_eq!(a.range_start_day, a.daily[27].date);
+        assert_ne!(
+            a.range_start_day, a.daily[0].date,
+            "a short history must not claim the full-window start day"
+        );
+    }
+
+    #[test]
+    fn range_start_day_is_window_start_when_no_activity() {
+        let a = compute_routed("month", "claude", no_codex, |_, _| {}, Vec::new());
+        assert_eq!(a.range_start_day, a.daily.first().unwrap().date);
     }
 }
 

@@ -7,6 +7,7 @@ import type { Limit, Provider, ResetDisplay, Snapshot } from "./types";
 import { fmtResetClock, fmtResetRel, pctLeft } from "./format";
 import type { Locale } from "./i18n";
 import { providerIcon } from "./icons";
+import { windowShort } from "./island";
 import { t } from "./i18n";
 
 /** Re-login button lifecycle. Lives in main.ts's `ui` rather than the DOM
@@ -21,6 +22,15 @@ export type PanelOpts = {
   now: number;
   /** Active UI locale (clock format follows it). */
   locale: Locale;
+  /**
+   * 階段 C: how the limits render.
+   *   "full"    → the grouped battery list (Limits tab, or settings open).
+   *   "summary" → a single-line quota digest that expands to the full list on
+   *               click, so the Usage tab leads with charts, not half a screen
+   *               of quota. `summaryExpanded` holds the (session-only) toggle.
+   */
+  variant?: "full" | "summary";
+  summaryExpanded?: boolean;
 };
 
 /** The exact command shown (and copied) when we can't start it ourselves. */
@@ -184,6 +194,71 @@ function list(limits: Limit[], opts: PanelOpts): string {
   return groups || `<div class="empty-note">${t("list.noTools")}</div>`;
 }
 
+// ── Usage-tab quota summary (階段 C) ──────────────────────────────────
+
+/** Fixed-English provider labels for the summary line (mirrors the island's
+ *  short labels — never localized, D1). */
+const SUMMARY_NAME: Record<Provider, string> = { anthropic: "Claude", codex: "Codex" };
+
+export interface QuotaSummarySeg {
+  /** Fixed-English window short label ("5h", "wk", model name). */
+  short: string;
+  /** "62%" left, or "—" when the reading is unavailable. */
+  pct: string;
+}
+export interface QuotaSummaryGroup {
+  provider: Provider;
+  name: string;
+  segs: QuotaSummarySeg[];
+}
+
+/**
+ * Condense the limits into a per-provider digest for the one-line summary, e.g.
+ * Claude → [5h 62%, wk 18%], Codex → [wk 0%]. Pure so the digest (which windows,
+ * what %, unavailable → "—") is unit-testable. Data comes straight from the
+ * snapshot — no extra backend call.
+ */
+export function buildQuotaSummary(limits: Limit[]): QuotaSummaryGroup[] {
+  return PROVIDER_ORDER.flatMap((p) => {
+    const items = limits.filter((l) => l.provider === p);
+    if (items.length === 0) return [];
+    const segs = items.map((l) => ({
+      short: windowShort(l) || l.id,
+      pct: isUnknown(l) ? "—" : `${pctLeft(l.util)}%`,
+    }));
+    return [{ provider: p, name: SUMMARY_NAME[p], segs }];
+  });
+}
+
+/** The collapsed summary row: a full-width toggle showing every provider's
+ *  quota on one line; clicking it (main.ts) expands the full list beneath. */
+function summaryBar(limits: Limit[], expanded: boolean): string {
+  const groups = buildQuotaSummary(limits);
+  const inner = groups.length
+    ? groups
+        .map(
+          (g) =>
+            `<span class="qs-group ${PROVIDER_META[g.provider].cls}">` +
+            `<span class="qs-dot"></span><span class="qs-name">${g.name}</span>` +
+            g.segs
+              .map((s) => `<span class="qs-seg">${escapeHtml(s.short)} ${s.pct}</span>`)
+              .join(`<span class="qs-mid">·</span>`) +
+            `</span>`,
+        )
+        .join("")
+    : `<span class="qs-empty">${t("list.noTools")}</span>`;
+  return `<button class="quota-summary${expanded ? " on" : ""}" data-quota-toggle type="button" aria-expanded="${expanded}">
+    <span class="qs-line">${inner}</span>
+    <span class="qs-chev">${expanded ? "▾" : "▸"}</span>
+  </button>`;
+}
+
 export function renderPanel(container: HTMLElement, snap: Snapshot | null, opts: PanelOpts): void {
-  container.innerHTML = list(snap?.limits ?? [], opts);
+  const limits = snap?.limits ?? [];
+  if (opts.variant === "summary") {
+    const expanded = opts.summaryExpanded ?? false;
+    container.innerHTML = summaryBar(limits, expanded) + (expanded ? list(limits, opts) : "");
+    return;
+  }
+  container.innerHTML = list(limits, opts);
 }
