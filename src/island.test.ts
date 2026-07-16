@@ -174,10 +174,10 @@ describe("islandText — normal/near/locked × relative/clock", () => {
     expect(islandText(l, "clock", now, "zh-TW")).toBe("5h 12% · 14:30");
   });
 
-  it("locked: 0% · {reset}", () => {
+  it("locked: {short} 0% · {reset}(短標指出鎖住的是哪個視窗)", () => {
     const l = lim({ id: "codex.5h", provider: "codex", util: 100, status: "locked", resets_at: at(11, 20) });
-    expect(islandText(l, "relative", now, "en")).toBe("0% · 1h 20m");
-    expect(islandText(l, "clock", now, "en")).toBe("0% · 11:20 AM");
+    expect(islandText(l, "relative", now, "en")).toBe("5h 0% · 1h 20m");
+    expect(islandText(l, "clock", now, "en")).toBe("5h 0% · 11:20 AM");
   });
 
   it("estimate/stale 帶 est. 標;source_failed 顯示 —", () => {

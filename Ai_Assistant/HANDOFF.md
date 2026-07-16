@@ -1,4 +1,14 @@
-# HANDOFF — 進度快照(2026-07-15)
+# HANDOFF — 進度快照(2026-07-17)
+
+## 2026-07-17:三樣態優化 階段 A+B(v0.3.0,程式碼完成、未打包)
+
+計畫:`三樣態優化計畫-執行版.md`(階段 A、B 已全勾)。分支 `feat/three-modes-v030`,commits c236702(A)/06c6e32(B)+ 驗收修正。兩階段各過 fresh-context 對抗驗證(CONFIRMED)+ mock preview 逐情境目視(safe/near/locked/degraded/stale/empty × zh/en × 倒數/時刻)。
+
+- **階段 A(i18n 雙語回歸,推翻 v0.2.0 全英文)**:`src/i18n.ts` en+zh-TW 各 ~99 key,`satisfies` 編譯期強制等集;`resolveLocale`(system 看 navigator.language,zh* → zh-TW);切語系全量重繪(render 冪等 + 1s tick)。**Noto Sans TC 是精準子集不是全字型**:`scripts/gen-noto-subset.mjs` 從 zh 字典抽實際用到的 CJK(~178 字)+ 日期字,`subset-font`(wasm,免 python)產 54KB woff2;`fonts.css` 以 `unicode-range` 限 CJK → en 模式瀏覽器根本不下載。**改字典後要重跑 `npm run gen:noto`**。後端通知只認 `locale=="zh-TW"` 給中文(Rust 不可靠讀 OS 語系,"system" 一律英文,註解有寫)。島嶼短標(5h/wk/模型短名)固定英文不進字典(D1)。
+- **階段 B(島嶼矩陣 + Limits 精簡)**:settings +5 欄位(`expand_default`/`island_pin_claude`/`island_pin_codex`/`island_aux`/`reset_display`,個別 serde default 缺欄不炸)。島嶼決策抽純函式:`pickIslandLimit`(auto=worst;**釘了無資料→null→「—」,絕不靜默退 auto**)、`islandText`(normal=`{left}%` 無短標;near/locked=`{short} {left|0}% · {reset}` —— locked 也帶短標,不然不知道鎖的是哪個視窗)、`fmtResetRel`/`fmtResetClock`(手工雙語日字表、固定 locale;**順手刪了 v0.2.1 洩漏的 fmtClock/fmtReset/fmtHM**)。detail view 與 pace 文案全刪、relogin 留列表列。右鍵選單 `contextmenu.ts`:Tauri 原生(`core:menu:default` 權限)+ DOM fallback(preview 可驗;Escape/外點/失焦都會關)。aux cost_today 走 analytics today、60s 快取、失敗不出 0。
+- **測試 110 Rust + 37 前端**;`tsc`/`build` 綠。
+- **尚未真人驗證**(mock 驗不到,需 `npm run tauri dev` 或裝新版):① 原生右鍵選單實機行為(DOM fallback 已驗);② zh 通知實際文案;③ Noto 子集在真視窗的渲染;④ 安裝版設定檔從 0.2.1 遷移(缺欄填預設有測試,但真檔案沒跑過)。
+- **未打包**:版號已推 0.3.0(package.json/tauri.conf.json/Cargo.toml),`npm run build:release` 未跑(會 taskkill 使用者正在跑的 tokenbar.exe,留給使用者決定時機)。
 
 ## 2026-07-15:視窗與外觀四項(v0.1.5 已發佈)
 

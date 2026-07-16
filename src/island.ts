@@ -163,7 +163,7 @@ function resetFrag(l: Limit, resetDisplay: ResetDisplay, now: number, locale: Lo
  * The text a single provider group shows next to its capsule (階段 B matrix):
  *   normal        → "{left}%"
  *   near          → "{short} {left}% · {reset}"   (short = 5h / wk / model name)
- *   locked        → "0% · {reset}"
+ *   locked        → "{short} 0% · {reset}"        (short says *which* window locked)
  *   estimate/idle → "{left}%" or "—", with an " est." tag when the number is
  *                   inferred (stale / insufficient_data)
  *
@@ -176,12 +176,10 @@ export function islandText(
   now: number,
   locale: Locale,
 ): string {
-  if (l.status === "locked") {
-    return `0% · ${resetFrag(l, resetDisplay, now, locale)}`;
-  }
-  if (l.status === "near") {
+  if (l.status === "locked" || l.status === "near") {
     const short = windowShort(l);
-    return `${short ? short + " " : ""}${pctLeft(l.util)}% · ${resetFrag(l, resetDisplay, now, locale)}`;
+    const pct = l.status === "locked" ? 0 : pctLeft(l.util);
+    return `${short ? short + " " : ""}${pct}% · ${resetFrag(l, resetDisplay, now, locale)}`;
   }
   const est = l.status === "stale" || l.status === "insufficient_data" ? " est." : "";
   const pct = isUnknown(l) ? "—" : `${pctLeft(l.util)}%`;

@@ -142,10 +142,14 @@ function closeDom(): void {
   openDom?.remove();
   openDom = null;
   document.removeEventListener("pointerdown", onOutside, true);
+  document.removeEventListener("keydown", onKey, true);
   window.removeEventListener("blur", closeDom);
 }
 function onOutside(e: PointerEvent): void {
   if (openDom && !openDom.contains(e.target as Node)) closeDom();
+}
+function onKey(e: KeyboardEvent): void {
+  if (e.key === "Escape") closeDom();
 }
 
 function showDom(ctx: MenuCtx): void {
@@ -190,6 +194,7 @@ function showDom(ctx: MenuCtx): void {
 
   openDom = menu;
   document.addEventListener("pointerdown", onOutside, true);
+  document.addEventListener("keydown", onKey, true);
   window.addEventListener("blur", closeDom);
 }
 
