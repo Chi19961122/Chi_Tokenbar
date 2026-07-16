@@ -60,6 +60,15 @@ export interface Snapshot {
 export type ProviderFilter = "both" | "claude" | "codex";
 export type CodexUsageSource = "live" | "auto" | "local";
 
+/** Which tab a press on the island opens (settings.expand_default). */
+export type ExpandDefault = "compact" | "usage";
+/** Island right-side aux readout (settings.island_aux). */
+export type IslandAux = "off" | "tok_per_min" | "cost_today";
+/** How reset times render (settings.reset_display). */
+export type ResetDisplay = "relative" | "clock";
+/** Island quota pin per provider: "auto" | "5h" | "week" | "model:<id>". */
+export type IslandPin = string;
+
 export interface Settings {
   allow_token_refresh: boolean;
   autostart: boolean;
@@ -73,6 +82,15 @@ export interface Settings {
   /** UI language: "system" (follow navigator.language), "en", or "zh-TW".
    *  Defaults to "system" (matches config.rs `Settings::default()`). */
   locale: string;
+  /** Which tab a press on the island opens. Defaults to "compact". */
+  expand_default: ExpandDefault;
+  /** Island quota pin for Claude / Codex. Defaults to "auto". */
+  island_pin_claude: IslandPin;
+  island_pin_codex: IslandPin;
+  /** Island right-side aux readout. Defaults to "tok_per_min". */
+  island_aux: IslandAux;
+  /** Reset-time display style. Defaults to "relative". */
+  reset_display: ResetDisplay;
 }
 
 // ── Layer ③ analytics (UX Spec v3 §11) ──────────────────────────────

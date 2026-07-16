@@ -21,7 +21,9 @@ const SAMPLE_KEYS = [
   "limit.cc5h",
   "badge.unavailable",
   "note.locked",
-  "detail.leftLabel",
+  "note.lockedResets",
+  "settings.resetDisplay",
+  "menu.hide",
   "relogin.button",
   "list.noTools",
   "island.hideAria",
@@ -103,10 +105,12 @@ describe("t() 佔位插值", () => {
     expect(t("limit.weeklyModel", { name: "Opus" })).toBe("每週 · Opus");
   });
 
-  it("插入多個佔位符與數字", () => {
+  it("插入佔位符與數字", () => {
     setLocale("en");
-    expect(t("detail.tokens", { a: "1.2K", b: "5K" })).toBe("1.2K / 5K tokens");
-    expect(t("note.overPace", { n: 12 })).toBe("12% over pace");
+    expect(t("note.resetsIn", { d: "3h 12m" })).toBe("Resets in 3h 12m");
+    expect(t("note.lockedResetsIn", { d: "45m" })).toBe("Locked · resets in 45m");
+    setLocale("zh-TW");
+    expect(t("note.resets", { r: "14:30" })).toBe("14:30 重置");
   });
 
   it("同一佔位符出現多次全部替換", () => {

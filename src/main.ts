@@ -1,7 +1,7 @@
 import "./fonts.css";
 import "./styles.css";
 import type { Analytics, Snapshot } from "./types";
-import type { PanelView, ReloginState } from "./panel";
+import type { ReloginState } from "./panel";
 import { MANUAL_LOGIN_CMD } from "./panel";
 import type { AnalyticsOpts, Group, Metric, SubTab } from "./analytics";
 import type { Settings } from "./types";
@@ -22,8 +22,9 @@ import {
   SIZE,
   startWindowDrag,
 } from "./datasource";
-import { islandIntent, renderIsland } from "./island";
+import { islandIntent, renderIsland, windowShort } from "./island";
 import { renderPanel } from "./panel";
+import { showIslandMenu } from "./contextmenu";
 import { renderAnalytics } from "./analytics";
 import { fmtTokens, nowSecs } from "./format";
 import { getLocale, resolveLocale, setLocale, t } from "./i18n";
@@ -33,7 +34,6 @@ const $ = (id: string) => document.getElementById(id)!;
 const ui = {
   expanded: false,
   compact: false,
-  view: { kind: "list" } as PanelView,
   subtab: "overview" as SubTab,
   metric: "tokens" as Metric,
   group: "agent" as Group,
@@ -47,6 +47,7 @@ const ui = {
 let lastSnap: Snapshot | null = null;
 let settings: Settings | null = null; // cached; compact toggle persists through it
 let todayRate: number | null = null; // today's tok/min for the island (refreshed every 60s)
+let todayCost: number | null = null; // today's est. cost for the island aux (60s cache)
 
 // Last Analytics payload, keyed so an expand can paint from it instantly instead
 // of blocking on the get_analytics IPC (100-500ms). The key captures everything
@@ -96,21 +97,25 @@ function renderToggles() {
 function renderIslandNow() {
   renderIsland($("island"), lastSnap, {
     mode: settings?.providers ?? "both",
+    pinClaude: settings?.island_pin_claude ?? "auto",
+    pinCodex: settings?.island_pin_codex ?? "auto",
+    resetDisplay: settings?.reset_display ?? "relative",
+    aux: settings?.island_aux ?? "tok_per_min",
     tokPerMin: todayRate,
+    costToday: todayCost,
+    now: nowSecs(),
+    locale: getLocale(),
   });
 }
 
 function renderCards() {
-  renderPanel($("cards"), lastSnap, ui.view, { relogin: ui.relogin, copied: ui.copied });
-}
-
-/** Leaving a limit's detail view drops any re-login state with it, so the
- *  button never re-appears mid-flow on an unrelated limit. */
-function setView(view: PanelView) {
-  ui.view = view;
-  ui.relogin = "idle";
-  ui.copied = false;
-  renderCards();
+  renderPanel($("cards"), lastSnap, {
+    relogin: ui.relogin,
+    copied: ui.copied,
+    resetDisplay: settings?.reset_display ?? "relative",
+    now: nowSecs(),
+    locale: getLocale(),
+  });
 }
 
 /** "Refresh in Ns" in the header — a live countdown to the next backend data
@@ -289,6 +294,37 @@ async function applyCompact() {
  *
  * The `id`s are load-bearing: readSettingsForm() reads the form back by id.
  */
+/** Minimal escape for text interpolated into settings <option> labels. */
+function escAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Island-pin <option>s for one provider: Auto / 5h / Week + any model windows
+ *  present in the current snapshot. A stored `model:<id>` whose limit has since
+ *  vanished is still listed (selected) so opening settings never silently drops
+ *  the pin — it matches the "pinned but no data → —" island behaviour. */
+function pinOptionsHtml(provider: "anthropic" | "codex", current: string): string {
+  const base: [string, string][] = [
+    ["auto", t("settings.pinAuto")],
+    ["5h", t("settings.pin5h")],
+    ["week", t("settings.pinWeek")],
+  ];
+  const models = (lastSnap?.limits ?? []).filter(
+    (l) => l.provider === provider && !l.id.endsWith(".5h") && !l.id.endsWith(".week"),
+  );
+  let html = base
+    .map(([v, label]) => `<option value="${v}" ${current === v ? "selected" : ""}>${label}</option>`)
+    .join("");
+  for (const l of models) {
+    const v = `model:${l.id}`;
+    html += `<option value="${escAttr(v)}" ${current === v ? "selected" : ""}>${escAttr(windowShort(l) || l.label)}</option>`;
+  }
+  if (current.startsWith("model:") && !models.some((l) => `model:${l.id}` === current)) {
+    html += `<option value="${escAttr(current)}" selected>${escAttr(current.slice("model:".length))}</option>`;
+  }
+  return html;
+}
+
 async function renderSettings() {
   const s = await getSettings();
   $("settings").innerHTML = `
@@ -333,6 +369,40 @@ async function renderSettings() {
     </div>
 
     <div class="sgroup">
+      <div class="lsec-head">${t("settings.island")}</div>
+      <label class="srow">
+        <span class="slabel">${t("settings.expandDefault")}</span>
+        <select id="s-expand">
+          <option value="compact" ${s.expand_default !== "usage" ? "selected" : ""}>${t("settings.expandCompact")}</option>
+          <option value="usage" ${s.expand_default === "usage" ? "selected" : ""}>${t("settings.expandUsage")}</option>
+        </select>
+      </label>
+      <label class="srow">
+        <span class="slabel">${t("settings.pinClaude")}</span>
+        <select id="s-pin-claude">${pinOptionsHtml("anthropic", s.island_pin_claude)}</select>
+      </label>
+      <label class="srow">
+        <span class="slabel">${t("settings.pinCodex")}</span>
+        <select id="s-pin-codex">${pinOptionsHtml("codex", s.island_pin_codex)}</select>
+      </label>
+      <label class="srow">
+        <span class="slabel">${t("settings.islandAux")}</span>
+        <select id="s-aux">
+          <option value="off" ${s.island_aux === "off" ? "selected" : ""}>${t("settings.auxOff")}</option>
+          <option value="tok_per_min" ${s.island_aux !== "off" && s.island_aux !== "cost_today" ? "selected" : ""}>${t("settings.auxTokPerMin")}</option>
+          <option value="cost_today" ${s.island_aux === "cost_today" ? "selected" : ""}>${t("settings.auxCostToday")}</option>
+        </select>
+      </label>
+      <label class="srow">
+        <span class="slabel">${t("settings.resetDisplay")}</span>
+        <select id="s-reset">
+          <option value="relative" ${s.reset_display !== "clock" ? "selected" : ""}>${t("settings.resetRelative")}</option>
+          <option value="clock" ${s.reset_display === "clock" ? "selected" : ""}>${t("settings.resetClock")}</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="sgroup">
       <div class="lsec-head">${t("settings.dataSources")}</div>
       <label class="srow">
         <span class="slabel">${t("settings.claudeRefresh")}<span class="warn">${t("settings.claudeRefreshWarn")}</span></span>
@@ -364,7 +434,24 @@ function readSettingsForm(): Settings {
     providers: (($("s-providers") as HTMLSelectElement).value || "both") as Settings["providers"],
     codex_usage_source: (($("s-codex-source") as HTMLSelectElement).value || "local") as Settings["codex_usage_source"],
     locale: ($("s-locale") as HTMLSelectElement).value || "system",
+    expand_default: (($("s-expand") as HTMLSelectElement).value || "compact") as Settings["expand_default"],
+    island_pin_claude: ($("s-pin-claude") as HTMLSelectElement).value || "auto",
+    island_pin_codex: ($("s-pin-codex") as HTMLSelectElement).value || "auto",
+    island_aux: (($("s-aux") as HTMLSelectElement).value || "tok_per_min") as Settings["island_aux"],
+    reset_display: (($("s-reset") as HTMLSelectElement).value || "relative") as Settings["reset_display"],
   };
+}
+
+/** Open the settings panel, expanding the window first if it is collapsed.
+ *  Shared by the gear button and the island context menu's "Settings" item. */
+async function openSettingsPanel(): Promise<void> {
+  const el = $("settings");
+  if (!el.hasAttribute("hidden")) return; // already open
+  if (!ui.expanded) setExpanded(true);
+  await renderSettings();
+  el.removeAttribute("hidden");
+  document.body.classList.add("settings-open");
+  fitWindow();
 }
 
 /** Hold the panel's backdrop blur off the first paint. WebView2 rasterizes a
@@ -387,7 +474,6 @@ function setExpanded(on: boolean): void {
   document.body.classList.toggle("collapsed", !on);
   if (on) {
     deferPanelBlur();
-    ui.view = { kind: "list" };
     ui.relogin = "idle";
     ui.copied = false;
     renderTabs();
@@ -433,7 +519,34 @@ function wireEvents() {
   island.addEventListener("click", (e) => {
     const intent = islandIntent(e.target, dragged);
     if (intent === "hide") hideWindow();
-    else if (intent === "expand") setExpanded(true);
+    else if (intent === "expand") {
+      // expand_default picks the entry tab: Limits (compact) or Usage.
+      if (settings) {
+        ui.compact = settings.expand_default !== "usage";
+        document.body.classList.toggle("compact", ui.compact);
+      }
+      setExpanded(true);
+    }
+  });
+
+  // Right-click (D4): pin a limit, switch provider, open settings, hide.
+  island.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    if (!settings) return;
+    void showIslandMenu({
+      settings,
+      snap: lastSnap,
+      x: e.clientX,
+      y: e.clientY,
+      apply: (patch) => {
+        settings = { ...settings!, ...patch };
+        void setSettings(settings);
+        renderIslandNow();
+        if (ui.expanded) renderCards();
+      },
+      openSettings: () => void openSettingsPanel(),
+      hide: () => void hideWindow(),
+    });
   });
 
   $("collapse").addEventListener("click", () => setExpanded(false));
@@ -451,15 +564,13 @@ function wireEvents() {
   // work area). fitWindow() then re-measures, as it already does per mode.
   $("gear").addEventListener("click", async () => {
     const el = $("settings");
-    const opening = el.hasAttribute("hidden");
-    if (opening) {
-      await renderSettings();
-      el.removeAttribute("hidden");
+    if (el.hasAttribute("hidden")) {
+      await openSettingsPanel();
     } else {
       el.setAttribute("hidden", "");
+      document.body.classList.remove("settings-open");
+      fitWindow();
     }
-    document.body.classList.toggle("settings-open", opening);
-    fitWindow();
   });
   $("settings").addEventListener("change", async () => {
     const prevLocale = getLocale();
@@ -490,13 +601,10 @@ function wireEvents() {
   $("tab-limits").addEventListener("click", () => setCompact(true));
   $("tab-analytics").addEventListener("click", () => setCompact(false));
 
-  // Limits list ↔ per-limit detail drill-down, plus the re-login affordance.
+  // Limits list re-login affordance (階段 B removed the detail drill-down; the
+  // affordance now lives inline on the failed row).
   $("cards").addEventListener("click", (e) => {
     const el = e.target as HTMLElement;
-    if (el.closest("[data-back]")) {
-      setView({ kind: "list" });
-      return;
-    }
 
     // Hand off to the official `claude auth login`. Any failure (usually:
     // claude isn't on TokenBar's PATH) becomes the manual-command fallback —
@@ -532,11 +640,6 @@ function wireEvents() {
         () => {},
       );
       return;
-    }
-
-    const rowEl = el.closest("[data-limit]");
-    if (rowEl) {
-      setView({ kind: "detail", id: rowEl.getAttribute("data-limit")! });
     }
   });
 
@@ -614,12 +717,16 @@ async function boot() {
     }
   }, 1000);
 
-  // Today's burn rate for the island aux readout.
+  // Today's burn rate + est. cost for the island aux readout (60s cache). On a
+  // fetch failure both go null so the aux shows nothing rather than a fake 0.
   const refreshToday = async () => {
     try {
-      todayRate = (await getAnalytics("today")).tokPerMin;
+      const a = await getAnalytics("today");
+      todayRate = a.tokPerMin;
+      todayCost = a.totalCostUsd;
     } catch {
       todayRate = null;
+      todayCost = null;
     }
   };
   await refreshToday();

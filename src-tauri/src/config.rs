@@ -47,10 +47,47 @@ pub struct Settings {
     /// side. See `lib::fire_notifications`.
     #[serde(default = "default_locale")]
     pub locale: String,
+    /// Which tab a press on the island opens: "compact" (Limits list) or
+    /// "usage" (the Usage analytics tab). Defaults to "compact". Distinct from
+    /// `compact` (the panel density switch) — this only picks the entry tab.
+    #[serde(default = "default_expand")]
+    pub expand_default: String,
+    /// Island quota pin per provider: "auto" (worst-ranked, current behaviour),
+    /// "5h", "week", or "model:<limit-id>". A pin with no matching data shows
+    /// "—" rather than silently falling back to auto. Defaults to "auto".
+    #[serde(default = "default_pin")]
+    pub island_pin_claude: String,
+    #[serde(default = "default_pin")]
+    pub island_pin_codex: String,
+    /// Island right-side aux readout: "off", "tok_per_min" (today's burn rate,
+    /// the current behaviour), or "cost_today" (today's est. cost). Defaults to
+    /// "tok_per_min".
+    #[serde(default = "default_island_aux")]
+    pub island_aux: String,
+    /// How reset times render: "relative" (a countdown to reset) or "clock"
+    /// (the absolute wall-clock time). Defaults to "relative".
+    #[serde(default = "default_reset_display")]
+    pub reset_display: String,
 }
 
 fn default_locale() -> String {
     "system".into()
+}
+
+fn default_expand() -> String {
+    "compact".into()
+}
+
+fn default_pin() -> String {
+    "auto".into()
+}
+
+fn default_island_aux() -> String {
+    "tok_per_min".into()
+}
+
+fn default_reset_display() -> String {
+    "relative".into()
 }
 
 impl Default for Settings {
@@ -66,6 +103,11 @@ impl Default for Settings {
             codex_usage_source: "local".into(),
             always_on_top: true,
             locale: default_locale(),
+            expand_default: default_expand(),
+            island_pin_claude: default_pin(),
+            island_pin_codex: default_pin(),
+            island_aux: default_island_aux(),
+            reset_display: default_reset_display(),
         }
     }
 }
@@ -202,6 +244,51 @@ mod tests {
         };
         let json = serde_json::to_string(&s).unwrap();
         assert_eq!(load_from_str(&json).locale, "zh-TW");
+    }
+
+    // ── 階段 B fields (expand_default / island pins / aux / reset_display) ─
+    //
+    // Every settings.json written before 階段 B lacks these keys; `#[serde(default
+    // = ...)]` must fill each one so an old file loads without error and keeps
+    // today's behaviour.
+
+    #[test]
+    fn defaults_for_stage_b_fields() {
+        let d = Settings::default();
+        assert_eq!(d.expand_default, "compact");
+        assert_eq!(d.island_pin_claude, "auto");
+        assert_eq!(d.island_pin_codex, "auto");
+        assert_eq!(d.island_aux, "tok_per_min");
+        assert_eq!(d.reset_display, "relative");
+    }
+
+    #[test]
+    fn missing_stage_b_fields_deserialize_to_defaults() {
+        let s = load_from_str(r#"{ "autostart": true }"#);
+        assert_eq!(s.expand_default, "compact");
+        assert_eq!(s.island_pin_claude, "auto");
+        assert_eq!(s.island_pin_codex, "auto");
+        assert_eq!(s.island_aux, "tok_per_min");
+        assert_eq!(s.reset_display, "relative");
+    }
+
+    #[test]
+    fn explicit_stage_b_fields_survive_a_save_load_round_trip() {
+        let s = Settings {
+            expand_default: "usage".into(),
+            island_pin_claude: "5h".into(),
+            island_pin_codex: "model:codex.credits".into(),
+            island_aux: "cost_today".into(),
+            reset_display: "clock".into(),
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back = load_from_str(&json);
+        assert_eq!(back.expand_default, "usage");
+        assert_eq!(back.island_pin_claude, "5h");
+        assert_eq!(back.island_pin_codex, "model:codex.credits");
+        assert_eq!(back.island_aux, "cost_today");
+        assert_eq!(back.reset_display, "clock");
     }
 
     /// The whole point of the feature: an explicit opt-out must survive a

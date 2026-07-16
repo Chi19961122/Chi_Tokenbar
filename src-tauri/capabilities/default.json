@@ -10,6 +10,7 @@
     "core:window:allow-set-position",
     "core:window:allow-show",
     "core:window:allow-hide",
+    "core:menu:default",
     "notification:default",
     "autostart:default"
   ]

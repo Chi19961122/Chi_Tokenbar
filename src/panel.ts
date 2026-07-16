@@ -1,17 +1,27 @@
-// Expanded panel — grouped "Limits" list with battery gauges, plus a
-// per-limit detail view (drill-down), matching the v8 visual.
+// Expanded panel — grouped "Limits" list with battery gauges. 階段 B removed the
+// per-limit detail drill-down: the list row now carries everything (reset time,
+// est./unavailable badges, and the re-login affordance for a login-class
+// failure), so there is no second screen to route to.
 
-import type { Limit, Provider, Snapshot } from "./types";
-import { fmtDur, fmtHM, fmtReset, fmtTokens, nowSecs, pctLeft } from "./format";
+import type { Limit, Provider, ResetDisplay, Snapshot } from "./types";
+import { fmtResetClock, fmtResetRel, pctLeft } from "./format";
+import type { Locale } from "./i18n";
 import { providerIcon } from "./icons";
 import { t } from "./i18n";
-
-export type PanelView = { kind: "list" } | { kind: "detail"; id: string };
 
 /** Re-login button lifecycle. Lives in main.ts's `ui` rather than the DOM
  *  because the 1s countdown tick re-renders this whole subtree. */
 export type ReloginState = "idle" | "launching" | "ok" | "failed";
-export type PanelOpts = { relogin?: ReloginState; copied?: boolean };
+export type PanelOpts = {
+  relogin?: ReloginState;
+  copied?: boolean;
+  /** Reset-time rendering (settings.reset_display); must match the island. */
+  resetDisplay: ResetDisplay;
+  /** Epoch seconds "now", so the countdown ticks and tests stay deterministic. */
+  now: number;
+  /** Active UI locale (clock format follows it). */
+  locale: Locale;
+};
 
 /** The exact command shown (and copied) when we can't start it ourselves. */
 export const MANUAL_LOGIN_CMD = "claude auth login";
@@ -71,65 +81,38 @@ function battery(left: number): string {
   </svg>`;
 }
 
+/** The reset instant as either a countdown or a clock, following reset_display —
+ *  kept identical to the island so both surfaces read the same. */
+function resetValue(l: Limit, opts: PanelOpts): string {
+  return opts.resetDisplay === "clock"
+    ? fmtResetClock(l.resets_at, opts.now, opts.locale)
+    : fmtResetRel(l.resets_at, opts.now);
+}
+
 /**
- * The row's note line — always carries the reset, so the user reads it without
- * drilling into the detail view. Content is fixed copy plus formatted
- * numbers/times (no backend free-text), so it needs no escaping.
+ * The row's note line — reset time only (階段 B dropped the pace copy). Content
+ * is fixed copy plus formatted times, except the source_failed hint, which is
+ * backend free-text and is escaped.
  *
- *   safe + pace   → "On pace · resets 14:00"
- *   over pace     → "12% over pace · resets Thu 09:00"
- *   locked        → "Locked · resets in 3h 12m"   (countdown; window releasing)
- *   no pace       → "Resets 16:30"
- *   no reset info → whatever pace/status word we have, or "" (e.g. source_failed)
+ *   locked        → "Locked · resets in 3h 12m"  / "Locked · resets 14:00"
+ *   has reset     → "Resets in 16:30" (relative)  / "Resets 16:30" (clock)
+ *   source_failed → the backend hint (why it's unavailable)
+ *   otherwise     → ""
  */
-function rowNote(l: Limit): string {
+function rowNote(l: Limit, opts: PanelOpts): string {
+  if (l.status === "source_failed") return l.hint ? escapeHtml(l.hint) : "";
   if (l.status === "locked") {
-    return l.resets_at > 0
-      ? t("note.lockedResetsIn", { d: fmtDur(l.resets_at - nowSecs()) })
-      : t("note.locked");
+    if (l.resets_at <= 0) return t("note.locked");
+    return opts.resetDisplay === "clock"
+      ? t("note.lockedResets", { r: resetValue(l, opts) })
+      : t("note.lockedResetsIn", { d: resetValue(l, opts) });
   }
-  const pace = l.pace
-    ? l.pace.in_deficit
-      ? t("note.overPace", { n: Math.round(l.pace.deficit) })
-      : t("note.onPace")
-    : "";
   if (l.resets_at > 0) {
-    const reset = fmtReset(l.resets_at);
-    return pace ? t("note.pacedResets", { pace, r: reset }) : t("note.resets", { r: reset });
+    return opts.resetDisplay === "clock"
+      ? t("note.resets", { r: resetValue(l, opts) })
+      : t("note.resetsIn", { d: resetValue(l, opts) });
   }
-  return pace;
-}
-
-function row(l: Limit): string {
-  const unknown = isUnknown(l);
-  const left = pctLeft(l.util);
-  const pct = unknown ? "—" : `${left}%`;
-  // source_failed is not an estimate (see the detail view) — say so in the list too.
-  const badge = unknown
-    ? `<span class="badge">${l.status === "source_failed" ? t("badge.unavailable") : t("badge.estimate")}</span>`
-    : "";
-  const note = rowNote(l);
-  return `<button class="lrow status-${l.status} ${provClass(l)}" data-limit="${escapeHtml(l.id)}">
-    ${battery(unknown ? 0 : left)}
-    <span class="lrow-mid">
-      <span class="lrow-label">${escapeHtml(displayName(l))}${badge}</span>
-      ${note ? `<span class="lrow-note">${note}</span>` : ""}
-    </span>
-    <span class="lrow-pct">${pct}</span>
-  </button>`;
-}
-
-function list(limits: Limit[]): string {
-  const groups = PROVIDER_ORDER.map((p) => {
-    const items = limits.filter((l) => l.provider === p);
-    if (items.length === 0) return "";
-    const meta = PROVIDER_META[p];
-    return `<div class="lsec">
-      <div class="lsec-head ${meta.cls}">${providerIcon(p, 12)}${meta.name}</div>
-      ${items.map(row).join("")}
-    </div>`;
-  }).join("");
-  return groups || `<div class="empty-note">${t("list.noTools")}</div>`;
+  return "";
 }
 
 /**
@@ -160,88 +143,47 @@ function reloginBlock(state: ReloginState, copied: boolean): string {
   }</button>`;
 }
 
-function detail(l: Limit, opts: PanelOpts): string {
+function row(l: Limit, opts: PanelOpts): string {
   const unknown = isUnknown(l);
   const left = pctLeft(l.util);
-
-  // Status line: LOCKED / Unavailable / pace + runway.
-  let sub = "";
-  if (l.status === "locked") {
-    const reset = l.resets_at > 0 ? ` ${t("detail.resetsIn", { d: fmtDur(l.resets_at - nowSecs()) })}` : "";
-    sub = `<span class="lock">${t("detail.locked")}</span>${reset}`;
-  } else if (l.status === "source_failed") {
-    // No "Estimate" badge: nothing is estimated — the backend sends 0% placeholders.
-    // Show the real reason instead of implying the 0% is a computed estimate.
-    // The fallback stays provider-neutral: Codex's live degradation carries no
-    // hint, and naming Claude there would just be a different lie.
-    sub = `<span class="badge">${t("badge.unavailable")}</span> ${escapeHtml(l.hint ?? t("detail.unavailableFallback"))}`;
-  } else if (l.status === "stale") {
-    sub = `<span class="badge">${t("badge.stale")}</span> ${t("detail.staleNote")}`;
-  } else if (l.status === "idle") {
-    sub = t("detail.idle");
-  } else {
-    const parts: string[] = [];
-    if (l.pace) {
-      parts.push(
-        l.pace.in_deficit
-          ? `<span class="deficit">${t("note.overPace", { n: Math.round(l.pace.deficit) })}</span>`
-          : `<span class="onpace">${t("note.onPace")}</span>`,
-      );
-    }
-    if (l.runway_secs != null) parts.push(t("detail.left", { d: fmtDur(l.runway_secs) }));
-    sub = parts.join(" · ");
-  }
-
-  // Gated on the backend's decision, never on what `hint` happens to say.
+  const pct = unknown ? "—" : `${left}%`;
+  // source_failed is not an estimate (the backend sends 0% placeholders) — say
+  // "Unavailable"; insufficient_data is a real estimate; stale flags "从上次".
+  const badge = unknown
+    ? `<span class="badge">${l.status === "source_failed" ? t("badge.unavailable") : t("badge.estimate")}</span>`
+    : l.status === "stale"
+      ? `<span class="badge">${t("badge.stale")}</span>`
+      : "";
+  const note = rowNote(l, opts);
+  // The re-login affordance now lives inline in the list (there is no detail
+  // view to host it). Gated on the backend's decision, never on hint text.
   const action =
     l.status === "source_failed" && l.action === "relogin"
-      ? reloginBlock(opts.relogin ?? "idle", opts.copied ?? false)
+      ? `<div class="lrow-action">${reloginBlock(opts.relogin ?? "idle", opts.copied ?? false)}</div>`
       : "";
-
-  const absLine = l.absolute
-    ? `<div class="detail-abs">${t("detail.tokens", { a: fmtTokens(l.absolute[0]), b: fmtTokens(l.absolute[1]) })}</div>`
-    : "";
-  const reset =
-    l.resets_at > 0 && l.status !== "locked"
-      ? t("detail.resetsAt", { t: fmtHM(l.resets_at), d: fmtDur(l.resets_at - nowSecs()) })
-      : "";
-
-  return `<div class="detail status-${l.status} ${provClass(l)}">
-    <div class="detail-head">
-      <button class="back" data-back title="${t("detail.back")}">‹</button>
-      <span class="detail-title">${escapeHtml(displayName(l))}</span>
-    </div>
-    <div class="dcard">
-      <div class="detail-pct">${unknown ? "—" : `${left}%`}<small>${t("detail.leftLabel")}</small></div>
-      <div class="dscale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-      <div class="dmeter">
-        <div class="dmeter-fill" style="width:${unknown ? 0 : left}%"></div>
-        <div class="dtick" style="left:25%"></div>
-        <div class="dtick" style="left:50%"></div>
-        <div class="dtick" style="left:75%"></div>
-      </div>
-      ${sub ? `<div class="detail-sub">${sub}</div>` : ""}
-      ${action}
-      ${absLine}
-      ${reset ? `<div class="detail-reset">${reset}</div>` : ""}
-    </div>
-  </div>`;
+  return `<div class="lrow status-${l.status} ${provClass(l)}">
+    ${battery(unknown ? 0 : left)}
+    <span class="lrow-mid">
+      <span class="lrow-label">${escapeHtml(displayName(l))}${badge}</span>
+      ${note ? `<span class="lrow-note">${note}</span>` : ""}
+    </span>
+    <span class="lrow-pct">${pct}</span>
+  </div>${action}`;
 }
 
-export function renderPanel(
-  container: HTMLElement,
-  snap: Snapshot | null,
-  view: PanelView,
-  opts: PanelOpts = {},
-): void {
-  const limits = snap?.limits ?? [];
-  if (view.kind === "detail") {
-    const l = limits.find((x) => x.id === view.id);
-    if (l) {
-      container.innerHTML = detail(l, opts);
-      return;
-    }
-    // limit vanished (tool stopped) — fall through to the list
-  }
-  container.innerHTML = list(limits);
+function list(limits: Limit[], opts: PanelOpts): string {
+  const groups = PROVIDER_ORDER.map((p) => {
+    const items = limits.filter((l) => l.provider === p);
+    if (items.length === 0) return "";
+    const meta = PROVIDER_META[p];
+    return `<div class="lsec">
+      <div class="lsec-head ${meta.cls}">${providerIcon(p, 12)}${meta.name}</div>
+      ${items.map((l) => row(l, opts)).join("")}
+    </div>`;
+  }).join("");
+  return groups || `<div class="empty-note">${t("list.noTools")}</div>`;
+}
+
+export function renderPanel(container: HTMLElement, snap: Snapshot | null, opts: PanelOpts): void {
+  container.innerHTML = list(snap?.limits ?? [], opts);
 }

@@ -17,6 +17,12 @@ const DEFAULT_SETTINGS: Settings = {
   always_on_top: true,
   // Follow the OS language unless the user picks one explicitly.
   locale: "system",
+  // 階段 B defaults — mirror config.rs `Settings::default()`.
+  expand_default: "compact",
+  island_pin_claude: "auto",
+  island_pin_codex: "auto",
+  island_aux: "tok_per_min",
+  reset_display: "relative",
 };
 
 export const isTauri = () =>
