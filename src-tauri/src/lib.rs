@@ -600,10 +600,18 @@ fn fire_notifications(
     notified: &mut HashMap<String, i64>,
     now: i64,
 ) {
-    let (warn, crit) = app
+    // `zh` follows the same narrow rule documented on `Settings::locale`: only an
+    // explicit "zh-TW" gives Chinese copy. "system" can't be resolved backend
+    // side (no reliable cross-platform OS-locale read here), so it stays English.
+    let (warn, crit, zh) = app
         .try_state::<AppData>()
-        .and_then(|d| d.settings.lock().ok().map(|s| (s.warn_pct, s.crit_pct)))
-        .unwrap_or((75.0, 90.0));
+        .and_then(|d| {
+            d.settings
+                .lock()
+                .ok()
+                .map(|s| (s.warn_pct, s.crit_pct, s.locale == "zh-TW"))
+        })
+        .unwrap_or((75.0, 90.0, false));
 
     // Source failures first: they mean the numbers below are missing entirely,
     // which is more urgent than any of them being high. Until this existed the
@@ -635,12 +643,21 @@ fn fire_notifications(
         }
         notified.insert(l.id.clone(), now);
 
-        let tip = match l.provider {
-            model::Provider::Codex => "Switch to a mini model to stretch your quota.",
-            model::Provider::Anthropic => "Try /compact or switch to Sonnet.",
+        let tip = match (l.provider, zh) {
+            (model::Provider::Codex, false) => "Switch to a mini model to stretch your quota.",
+            (model::Provider::Codex, true) => "切換到 mini 模型以延長額度。",
+            (model::Provider::Anthropic, false) => "Try /compact or switch to Sonnet.",
+            (model::Provider::Anthropic, true) => "試試 /compact 或切換到 Sonnet。",
         };
         let body = if matches!(l.status, LimitStatus::Locked) {
-            format!("{} is locked. {}", l.label, tip)
+            if zh {
+                format!("{} 已鎖定。{}", l.label, tip)
+            } else {
+                format!("{} is locked. {}", l.label, tip)
+            }
+        } else if zh {
+            let level_zh = if level == "critical" { "嚴重" } else { "警告" };
+            format!("{} 已達 {:.0}%({})。{}", l.label, l.util, level_zh, tip)
         } else {
             format!("{} at {:.0}% ({}). {}", l.label, l.util, level, tip)
         };

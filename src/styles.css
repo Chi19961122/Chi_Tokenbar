@@ -38,9 +38,9 @@
   --island-text: #dfe3e8;
   --island-text-dim: #8b939e;
 
-  --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo,
+  --mono: "Geist Mono", "Noto Sans TC", ui-monospace, "SF Mono", "Cascadia Mono", Menlo,
     Consolas, monospace;
-  --sans: "Geist", -apple-system, system-ui, "Segoe UI", sans-serif;
+  --sans: "Geist", "Noto Sans TC", -apple-system, system-ui, "Segoe UI", sans-serif;
 }
 
 /* Provider family variable — set once per element carrying a provider class,

@@ -37,6 +37,20 @@ pub struct Settings {
     /// Turning it off changes what "visible" means for the island (it can be
     /// buried), which `lib::toggle_action` accounts for.
     pub always_on_top: bool,
+    /// UI language: "system" (follow the OS locale — resolved in the frontend
+    /// via `navigator.language`), "en", or "zh-TW". Defaults to "system".
+    ///
+    /// The backend only consults this for notification copy, and there it takes
+    /// a deliberately narrow rule: only an explicit "zh-TW" yields Chinese, and
+    /// everything else (including "system") stays English — Rust has no reliable
+    /// cross-platform OS-locale read here, so "system" can't be resolved backend
+    /// side. See `lib::fire_notifications`.
+    #[serde(default = "default_locale")]
+    pub locale: String,
+}
+
+fn default_locale() -> String {
+    "system".into()
 }
 
 impl Default for Settings {
@@ -51,6 +65,7 @@ impl Default for Settings {
             island_mode: "both".into(),
             codex_usage_source: "local".into(),
             always_on_top: true,
+            locale: default_locale(),
         }
     }
 }
@@ -158,6 +173,35 @@ mod tests {
     #[test]
     fn settings_saved_before_this_setting_existed_stay_pinned() {
         assert!(load_from_str(r#"{ "autostart": true }"#).always_on_top);
+    }
+
+    // ── locale ───────────────────────────────────────────────────────
+    //
+    // Default must be "system" so an existing settings.json (written before the
+    // field existed) follows the OS language rather than being pinned to a
+    // specific one.
+
+    #[test]
+    fn defaults_to_system_locale() {
+        assert_eq!(Settings::default().locale, "system");
+    }
+
+    /// Every settings.json written before this setting existed lacks the key.
+    #[test]
+    fn missing_locale_deserializes_to_system() {
+        let s = load_from_str(r#"{ "autostart": true }"#);
+        assert_eq!(s.locale, "system");
+    }
+
+    /// An explicit locale choice must survive a round-trip through disk.
+    #[test]
+    fn explicit_locale_survives_a_save_load_round_trip() {
+        let s = Settings {
+            locale: "zh-TW".into(),
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(load_from_str(&json).locale, "zh-TW");
     }
 
     /// The whole point of the feature: an explicit opt-out must survive a

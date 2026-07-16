@@ -7,6 +7,7 @@
 import type { Limit, ProviderFilter, Snapshot } from "./types";
 import { fmtTokens, pctLeft } from "./format";
 import { providerIcon } from "./icons";
+import { t } from "./i18n";
 
 export interface IslandOpts {
   mode: ProviderFilter;
@@ -48,7 +49,7 @@ export function islandIntent(target: EventTarget | null, dragged: boolean): Isla
  * same menu would read as the latter.
  */
 function hideBtn(): string {
-  return `<button class="ihide" data-hide type="button" aria-label="Hide to tray" title="Hide to tray (restore from the tray icon)"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="4.4" width="8" height="1.2" rx="0.6" fill="currentColor"/></svg></button>`;
+  return `<button class="ihide" data-hide type="button" aria-label="${t("island.hideAria")}" title="${t("island.hideTitle")}"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="4.4" width="8" height="1.2" rx="0.6" fill="currentColor"/></svg></button>`;
 }
 
 /** Battery capsule: white frame + electrode nub; inner fill = % left, in the

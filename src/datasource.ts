@@ -15,6 +15,8 @@ const DEFAULT_SETTINGS: Settings = {
   codex_usage_source: "local",
   // Mirrors config.rs `Settings::default()` — pinned unless the user opts out.
   always_on_top: true,
+  // Follow the OS language unless the user picks one explicitly.
+  locale: "system",
 };
 
 export const isTauri = () =>

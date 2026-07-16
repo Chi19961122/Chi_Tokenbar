@@ -70,6 +70,9 @@ export interface Settings {
   codex_usage_source: CodexUsageSource;
   /** Keep the island above other windows. Defaults to true (matches tauri.conf.json). */
   always_on_top: boolean;
+  /** UI language: "system" (follow navigator.language), "en", or "zh-TW".
+   *  Defaults to "system" (matches config.rs `Settings::default()`). */
+  locale: string;
 }
 
 // ── Layer ③ analytics (UX Spec v3 §11) ──────────────────────────────

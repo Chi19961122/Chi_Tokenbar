@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:release": "tauri build && node scripts/collect-installers.mjs",
-    "collect": "node scripts/collect-installers.mjs"
+    "collect": "node scripts/collect-installers.mjs",
+    "gen:noto": "node scripts/gen-noto-subset.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "jsdom": "^29.1.1",
+    "subset-font": "^2.5.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vitest": "^4.1.10"

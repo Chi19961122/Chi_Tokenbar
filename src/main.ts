@@ -26,6 +26,7 @@ import { islandIntent, renderIsland } from "./island";
 import { renderPanel } from "./panel";
 import { renderAnalytics } from "./analytics";
 import { fmtTokens, nowSecs } from "./format";
+import { getLocale, resolveLocale, setLocale, t } from "./i18n";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -59,12 +60,12 @@ let cachedAnalytics: { key: string; data: Analytics } | null = null;
 
 function renderSubtabs() {
   const subs: [SubTab, string][] = [
-    ["overview", "Overview"],
-    ["daily", "Daily"],
-    ["hourly", "Hourly"],
-    ["models", "Models"],
-    ["agents", "Agents"],
-    ["stats", "Stats"],
+    ["overview", t("subtab.overview")],
+    ["daily", t("subtab.daily")],
+    ["hourly", t("subtab.hourly")],
+    ["models", t("subtab.models")],
+    ["agents", t("subtab.agents")],
+    ["stats", t("subtab.stats")],
   ];
   $("subtabs").innerHTML = subs
     .map(([id, label]) => `<button data-sub="${id}" class="${ui.subtab === id ? "on" : ""}">${label}</button>`)
@@ -75,18 +76,18 @@ function renderToggles() {
   const showGroup = ui.subtab === "overview" || ui.subtab === "daily";
   $("toggles").innerHTML = `
     <div class="seg" data-seg="range">
-      <button data-range="today" class="${ui.range === "today" ? "on" : ""}">Today</button>
-      <button data-range="week" class="${ui.range === "week" ? "on" : ""}">Week</button>
+      <button data-range="today" class="${ui.range === "today" ? "on" : ""}">${t("toggle.today")}</button>
+      <button data-range="week" class="${ui.range === "week" ? "on" : ""}">${t("toggle.week")}</button>
     </div>
     <div class="seg" data-seg="metric">
-      <button data-metric="tokens" class="${ui.metric === "tokens" ? "on" : ""}">Tokens</button>
-      <button data-metric="price" class="${ui.metric === "price" ? "on" : ""}">Price</button>
+      <button data-metric="tokens" class="${ui.metric === "tokens" ? "on" : ""}">${t("toggle.tokens")}</button>
+      <button data-metric="price" class="${ui.metric === "price" ? "on" : ""}">${t("toggle.price")}</button>
     </div>
     ${
       showGroup
         ? `<div class="seg" data-seg="group">
-             <button data-group="model" class="${ui.group === "model" ? "on" : ""}">Model</button>
-             <button data-group="agent" class="${ui.group === "agent" ? "on" : ""}">Agent</button>
+             <button data-group="model" class="${ui.group === "model" ? "on" : ""}">${t("toggle.model")}</button>
+             <button data-group="agent" class="${ui.group === "agent" ? "on" : ""}">${t("toggle.agent")}</button>
            </div>`
         : ""
     }`;
@@ -123,7 +124,7 @@ function renderRefresh() {
     return;
   }
   const remaining = Math.max(0, lastSnap.next_fetch_in - (nowSecs() - lastSnap.updated_at));
-  el.innerHTML = `Refresh in <span class="num">${remaining}s</span>`;
+  el.innerHTML = t("header.refreshIn", { v: `<span class="num">${remaining}s</span>` });
 }
 
 /** Cache key for a get_analytics *fetch* — the inputs that change the payload.
@@ -134,7 +135,7 @@ function analyticsDataKey(): string {
 
 /** Paint the analytics layer from an already-fetched payload (no IPC). */
 function renderAnalyticsInto(a: Analytics): void {
-  $("rate").textContent = `${fmtTokens(a.tokPerMin)} tok/min`;
+  $("rate").textContent = `${fmtTokens(a.tokPerMin)} ${t("analytics.tokPerMin")}`;
   const opts: AnalyticsOpts = { subtab: ui.subtab, metric: ui.metric, group: ui.group };
   renderAnalytics($("analytics"), a, opts);
 }
@@ -214,6 +215,35 @@ function renderTabs() {
   $("tab-analytics").classList.toggle("on", !ui.compact);
 }
 
+/** Localize the strings that live in static index.html (header tabs + button
+ *  tooltips). Called on boot and whenever the locale changes — everything else
+ *  is re-rendered from JS templates that already call t(). */
+function applyStaticI18n() {
+  $("tab-limits").textContent = t("tab.limits");
+  $("tab-analytics").textContent = t("tab.usage");
+  $("refresh").title = t("header.refreshTitle");
+  $("gear").title = t("header.settingsTitle");
+  $("collapse").title = t("header.collapseTitle");
+}
+
+/** Full re-paint after a locale switch. Every render function is idempotent, so
+ *  this just re-runs the ones relevant to the current mode. Callers run
+ *  fitWindow() afterwards (translated text can change measured heights). */
+function rerenderAll() {
+  applyStaticI18n();
+  renderTabs();
+  renderIslandNow();
+  if (ui.expanded) {
+    renderCards();
+    renderRefresh();
+    if (!ui.compact) {
+      renderSubtabs();
+      renderToggles();
+      beginAnalytics();
+    }
+  }
+}
+
 /** Switch the display mode from the header tabs, persisting the choice. */
 async function setCompact(compact: boolean) {
   if (ui.compact === compact) return;
@@ -263,52 +293,60 @@ async function renderSettings() {
   const s = await getSettings();
   $("settings").innerHTML = `
     <div class="sgroup">
-      <div class="lsec-head">Startup &amp; Window</div>
+      <div class="lsec-head">${t("settings.startupWindow")}</div>
       <label class="srow">
-        <span class="slabel">Launch at startup</span>
+        <span class="slabel">${t("settings.launchAtStartup")}</span>
         <input type="checkbox" id="s-autostart" ${s.autostart ? "checked" : ""}/>
       </label>
       <label class="srow">
-        <span class="slabel">Always on top<span class="snote">When off, other windows can cover it. Restore from the tray.</span></span>
+        <span class="slabel">${t("settings.alwaysOnTop")}<span class="snote">${t("settings.alwaysOnTopNote")}</span></span>
         <input type="checkbox" id="s-always-on-top" ${s.always_on_top ? "checked" : ""}/>
       </label>
     </div>
 
     <div class="sgroup">
-      <div class="lsec-head">Display &amp; Notifications</div>
+      <div class="lsec-head">${t("settings.displayNotifications")}</div>
       <label class="srow">
-        <span class="slabel">Providers</span>
+        <span class="slabel">${t("settings.language")}</span>
+        <select id="s-locale">
+          <option value="system" ${s.locale !== "en" && s.locale !== "zh-TW" ? "selected" : ""}>${t("settings.localeSystem")}</option>
+          <option value="zh-TW" ${s.locale === "zh-TW" ? "selected" : ""}>中文</option>
+          <option value="en" ${s.locale === "en" ? "selected" : ""}>English</option>
+        </select>
+      </label>
+      <label class="srow">
+        <span class="slabel">${t("settings.providers")}</span>
         <select id="s-providers">
-          <option value="both" ${s.providers !== "claude" && s.providers !== "codex" ? "selected" : ""}>Both</option>
-          <option value="claude" ${s.providers === "claude" ? "selected" : ""}>Claude only</option>
-          <option value="codex" ${s.providers === "codex" ? "selected" : ""}>Codex only</option>
+          <option value="both" ${s.providers !== "claude" && s.providers !== "codex" ? "selected" : ""}>${t("settings.providersBoth")}</option>
+          <option value="claude" ${s.providers === "claude" ? "selected" : ""}>${t("settings.providersClaude")}</option>
+          <option value="codex" ${s.providers === "codex" ? "selected" : ""}>${t("settings.providersCodex")}</option>
         </select>
       </label>
       <div class="srow">
-        <span class="slabel">Notify at<span class="snote">Sends a system notification when usage crosses the threshold.</span></span>
+        <span class="slabel">${t("settings.notifyAt")}<span class="snote">${t("settings.notifyNote")}</span></span>
         <span class="sfields">
-          warn <input type="number" id="s-warn" value="${s.warn_pct}" min="1" max="100"/>%
+          ${t("settings.warn")} <input type="number" id="s-warn" value="${s.warn_pct}" min="1" max="100"/>%
           <span class="sdot">·</span>
-          crit <input type="number" id="s-crit" value="${s.crit_pct}" min="1" max="100"/>%
+          ${t("settings.crit")} <input type="number" id="s-crit" value="${s.crit_pct}" min="1" max="100"/>%
         </span>
       </div>
     </div>
 
     <div class="sgroup">
-      <div class="lsec-head">Data Sources</div>
+      <div class="lsec-head">${t("settings.dataSources")}</div>
       <label class="srow">
-        <span class="slabel">Claude token refresh<span class="warn">May affect Claude Code login.</span></span>
+        <span class="slabel">${t("settings.claudeRefresh")}<span class="warn">${t("settings.claudeRefreshWarn")}</span></span>
         <select id="s-refresh">
-          <option value="off" ${s.allow_token_refresh ? "" : "selected"}>Off (estimates)</option>
-          <option value="on" ${s.allow_token_refresh ? "selected" : ""}>On (auto-renew)</option>
+          <option value="off" ${s.allow_token_refresh ? "" : "selected"}>${t("settings.refreshOff")}</option>
+          <option value="on" ${s.allow_token_refresh ? "selected" : ""}>${t("settings.refreshOn")}</option>
         </select>
       </label>
       <label class="srow">
-        <span class="slabel">Codex usage source<span class="snote">Live and Auto run read-only queries on the signed-in account.</span></span>
+        <span class="slabel">${t("settings.codexSource")}<span class="snote">${t("settings.codexSourceNote")}</span></span>
         <select id="s-codex-source">
-          <option value="live" ${s.codex_usage_source === "live" ? "selected" : ""}>Live</option>
-          <option value="auto" ${s.codex_usage_source === "auto" ? "selected" : ""}>Auto (live first)</option>
-          <option value="local" ${s.codex_usage_source !== "live" && s.codex_usage_source !== "auto" ? "selected" : ""}>Local session snapshot</option>
+          <option value="live" ${s.codex_usage_source === "live" ? "selected" : ""}>${t("settings.codexLive")}</option>
+          <option value="auto" ${s.codex_usage_source === "auto" ? "selected" : ""}>${t("settings.codexAuto")}</option>
+          <option value="local" ${s.codex_usage_source !== "live" && s.codex_usage_source !== "auto" ? "selected" : ""}>${t("settings.codexLocal")}</option>
         </select>
       </label>
     </div>`;
@@ -325,6 +363,7 @@ function readSettingsForm(): Settings {
     compact: ui.compact,
     providers: (($("s-providers") as HTMLSelectElement).value || "both") as Settings["providers"],
     codex_usage_source: (($("s-codex-source") as HTMLSelectElement).value || "local") as Settings["codex_usage_source"],
+    locale: ($("s-locale") as HTMLSelectElement).value || "system",
   };
 }
 
@@ -423,8 +462,21 @@ function wireEvents() {
     fitWindow();
   });
   $("settings").addEventListener("change", async () => {
+    const prevLocale = getLocale();
     settings = readSettingsForm();
-    setSettings(settings);
+    await setSettings(settings);
+
+    // Locale changed → re-translate everything, including the open settings
+    // panel, then re-measure (zh/en text differ in length).
+    const nextLocale = resolveLocale(settings.locale);
+    if (nextLocale !== prevLocale) {
+      setLocale(nextLocale);
+      await renderSettings();
+      rerenderAll();
+      fitWindow();
+      return;
+    }
+
     renderIslandNow(); // island layout may have changed
     // The display filter scopes analytics too, and the backend applies it on
     // demand — so re-pull rather than leave the page stale until the 60s tick.
@@ -532,6 +584,8 @@ async function boot() {
   setupEdgeSnap();
 
   settings = await getSettings();
+  setLocale(resolveLocale(settings.locale));
+  applyStaticI18n();
   ui.compact = settings.compact;
   document.body.classList.toggle("compact", ui.compact);
   renderTabs();

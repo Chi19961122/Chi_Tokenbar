@@ -4,6 +4,7 @@
 import type { Analytics, DayPoint } from "./types";
 import { fmtTokens, fmtUsd } from "./format";
 import { keyColor, seriesColor } from "./colors";
+import { t } from "./i18n";
 
 export type SubTab = "overview" | "daily" | "hourly" | "models" | "agents" | "stats";
 export type Metric = "tokens" | "price";
@@ -18,10 +19,10 @@ export interface AnalyticsOpts {
 function tiles(a: Analytics): string {
   return `
     <div class="tiles">
-      <div class="tile"><b>${fmtTokens(a.totalTokens)}</b><span>tokens</span></div>
-      <div class="tile"><b>${fmtUsd(a.totalCostUsd)}</b><span>est. cost</span></div>
-      <div class="tile"><b>${fmtUsd(a.bestDay.costUsd)}</b><span>peak · ${a.bestDay.date.slice(5)}</span></div>
-      <div class="tile"><b>${a.activeDays}</b><span>active days</span></div>
+      <div class="tile"><b>${fmtTokens(a.totalTokens)}</b><span>${t("analytics.tokens")}</span></div>
+      <div class="tile"><b>${fmtUsd(a.totalCostUsd)}</b><span>${t("analytics.estCost")}</span></div>
+      <div class="tile"><b>${fmtUsd(a.bestDay.costUsd)}</b><span>${t("analytics.peak")} · ${a.bestDay.date.slice(5)}</span></div>
+      <div class="tile"><b>${a.activeDays}</b><span>${t("analytics.activeDays")}</span></div>
     </div>`;
 }
 
@@ -136,14 +137,14 @@ function statsView(a: Analytics): string {
     .join("");
   return `
     <div class="bars">
-      ${seg("input", b.input, 0)}
-      ${seg("cached", b.cached, 1)}
-      ${seg("output", b.output, 2)}
-      ${seg("reasoning", b.reasoning, 3)}
+      ${seg(t("analytics.input"), b.input, 0)}
+      ${seg(t("analytics.cached"), b.cached, 1)}
+      ${seg(t("analytics.output"), b.output, 2)}
+      ${seg(t("analytics.reasoning"), b.reasoning, 3)}
     </div>
     <div class="kv">
-      <div><b>${a.sessionsThisWeek}</b><span>sessions this week</span></div>
-      <div><b>${fmtTokens(a.tokPerMin)}</b><span>tok/min</span></div>
+      <div><b>${a.sessionsThisWeek}</b><span>${t("analytics.sessionsThisWeek")}</span></div>
+      <div><b>${fmtTokens(a.tokPerMin)}</b><span>${t("analytics.tokPerMin")}</span></div>
     </div>
     <div class="accounts">${accounts}</div>`;
 }
