@@ -93,6 +93,18 @@ const en = {
   "analytics.output": "output",
   "analytics.reasoning": "reasoning",
 
+  // Analytics — 階段 C+ advanced dimensions
+  "analytics.heatmapTitle": "Daily activity",
+  "analytics.activityTitle": "Activity type",
+  "analytics.projectsTitle": "Projects",
+  "analytics.projectsOther": "Other projects",
+  "analytics.kindEdit": "Edit",
+  "analytics.kindRead": "Read",
+  "analytics.kindRun": "Run",
+  "analytics.kindOther": "Other",
+  "analytics.less": "less",
+  "analytics.more": "more",
+
   // Limit display names
   "limit.cc5h": "5h session",
   "limit.ccWeek": "Weekly · all models",
@@ -214,6 +226,17 @@ const zhTW = {
   "analytics.cached": "快取",
   "analytics.output": "輸出",
   "analytics.reasoning": "推理",
+
+  "analytics.heatmapTitle": "每日活動",
+  "analytics.activityTitle": "活動類型",
+  "analytics.projectsTitle": "專案",
+  "analytics.projectsOther": "其他專案",
+  "analytics.kindEdit": "編輯",
+  "analytics.kindRead": "讀取",
+  "analytics.kindRun": "執行",
+  "analytics.kindOther": "其他",
+  "analytics.less": "少",
+  "analytics.more": "多",
 
   "limit.cc5h": "5 小時區間",
   "limit.ccWeek": "每週 · 全部模型",

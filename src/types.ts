@@ -111,6 +111,21 @@ export interface Account {
 
 export type AnalyticsRange = "today" | "week" | "month";
 
+/** Activity-type slice (階段 C+). `kind` is a stable id ("edit" | "read" | "run"
+ *  | "other") the UI localizes. Claude-only — Codex tokens aren't per-tool
+ *  attributable, so this section is absent when nothing is classifiable. */
+export interface KindCount {
+  kind: string;
+  tokens: number;
+}
+
+/** Per-project token total (階段 C+). `name === "__other__"` marks the merged
+ *  remainder beyond the top 8. */
+export interface ProjectCount {
+  name: string;
+  tokens: number;
+}
+
 export interface Analytics {
   range: AnalyticsRange;
   /** Earliest day actually shown (backend `range_start_day`). Equals the window
@@ -125,6 +140,11 @@ export interface Analytics {
   byModel: Record<string, number>;
   byAgent: Record<string, number>;
   breakdown: { input: number; cached: number; output: number; reasoning: number };
+  /** Activity-type breakdown (Claude tool usage). Empty → section omitted. */
+  byKind: KindCount[];
+  /** Per-project token totals, top 8 + "__other__". Usage-only.
+   *  不得進戰報(§0):階段 D 的 buildShareData 禁止引用此欄位。 */
+  byProject: ProjectCount[];
   sessionsThisWeek: number;
   tokPerMin: number;
   accounts: Account[];

@@ -126,6 +126,20 @@ export function mockAnalytics(range: "today" | "week" | "month"): Analytics {
       output: Math.round(totalTokens * 0.15),
       reasoning: Math.round(totalTokens * 0.05),
     },
+    // Activity types (Claude-only in reality) and per-project totals (階段 C+).
+    byKind: [
+      { kind: "edit", tokens: Math.round(totalTokens * 0.34) },
+      { kind: "read", tokens: Math.round(totalTokens * 0.28) },
+      { kind: "run", tokens: Math.round(totalTokens * 0.22) },
+      { kind: "other", tokens: Math.round(totalTokens * 0.16) },
+    ],
+    byProject: [
+      { name: "tokenbar", tokens: Math.round(totalTokens * 0.4) },
+      { name: "webapp", tokens: Math.round(totalTokens * 0.24) },
+      { name: "infra", tokens: Math.round(totalTokens * 0.14) },
+      { name: "docs-site", tokens: Math.round(totalTokens * 0.08) },
+      { name: "__other__", tokens: Math.round(totalTokens * 0.14) },
+    ],
     sessionsThisWeek: 18,
     tokPerMin: 608_000,
     accounts: [

@@ -1,10 +1,21 @@
 // Layer ③ analytics (UX Spec v3 §11): stat tiles, 2D charts, breakdown.
 // Charts are hand-rolled SVG — 2D only (§14 excludes 3D).
 
-import type { Analytics, DayPoint } from "./types";
+import type { Analytics, DayPoint, KindCount, ProjectCount } from "./types";
 import { fmtTokens, fmtUsd } from "./format";
 import { keyColor, seriesColor } from "./colors";
 import { t } from "./i18n";
+
+/** Escape before interpolating a project name (derived from a local folder
+ *  path) into innerHTML. */
+function esc(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 // 階段 C subtab convergence: "daily" folded into overview (the stacked daily
 // chart *is* the overview's main chart), and "models"/"agents" collapsed into a
@@ -40,6 +51,195 @@ export interface AnalyticsOpts {
   subtab: SubTab;
   metric: Metric;
   group: Group;
+}
+
+// ── activity heatmap (階段 C+, overview · month only) ─────────────────────
+
+export interface HeatCell {
+  date: string; // YYYY-MM-DD
+  weekdayRow: number; // Mon=0 … Sun=6
+  weekCol: number; // 0-based week column
+  intensity: number; // 0..1, day tokens ÷ busiest day (0 when the range is empty)
+}
+export interface HeatGrid {
+  cells: HeatCell[];
+  weeks: number; // number of week columns
+}
+
+/** Weekday of a YYYY-MM-DD bucket, Mon=0 … Sun=6. Parsed as UTC so it matches
+ *  the backend's UTC day bucketing and never drifts with the local timezone. */
+function weekdayMon(date: string): number {
+  const d = new Date(date + "T00:00:00Z");
+  return (d.getUTCDay() + 6) % 7; // JS Sun=0..Sat=6 → Mon=0..Sun=6
+}
+
+/**
+ * GitHub-style calendar cells from the daily buckets (§ activity heatmap).
+ * Row = weekday (Mon top), column = week index. The first day sits at its own
+ * weekday, so a month that doesn't start on Monday leaves the leading slots of
+ * column 0 empty (they simply aren't emitted). Intensity is the day's tokens as
+ * a fraction of the busiest day — 0 for an empty day, and every cell 0 when the
+ * whole range is empty. Pure, so the alignment is unit-testable.
+ */
+export function heatCells(daily: DayPoint[]): HeatGrid {
+  if (daily.length === 0) return { cells: [], weeks: 0 };
+  const totals = daily.map((d) => Object.values(d.byAgent).reduce((s, v) => s + v, 0));
+  const max = Math.max(0, ...totals);
+  const lead = weekdayMon(daily[0].date);
+  let weeks = 0;
+  const cells = daily.map((d, i) => {
+    const slot = lead + i;
+    const weekCol = Math.floor(slot / 7);
+    if (weekCol + 1 > weeks) weeks = weekCol + 1;
+    return {
+      date: d.date,
+      weekdayRow: slot % 7,
+      weekCol,
+      intensity: max > 0 ? totals[i] / max : 0,
+    };
+  });
+  return { cells, weeks };
+}
+
+/** Fixed short month labels (kept English like the island's short labels, so a
+ *  zh-TW machine can never leak a localized month into the chart axis). */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** Weekday axis: only Mon/Wed/Fri/Sun get a label (GitHub convention). */
+const WEEKDAY_AXIS = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
+
+function heatmap(a: Analytics): string {
+  const { cells, weeks } = heatCells(a.daily);
+  if (cells.length === 0) return "";
+  const totalByDate = new Map(
+    a.daily.map((d) => [d.date, Object.values(d.byAgent).reduce((s, v) => s + v, 0)]),
+  );
+
+  const cellDivs = cells
+    .map((c) => {
+      const level = c.intensity === 0 ? 0 : Math.min(4, Math.ceil(c.intensity * 4));
+      const tot = totalByDate.get(c.date) ?? 0;
+      return `<div class="hm-cell hm-l${level}" style="grid-row:${c.weekdayRow + 1};grid-column:${
+        c.weekCol + 1
+      }" title="${c.date} · ${fmtTokens(tot)}"></div>`;
+    })
+    .join("");
+
+  // Month labels along the column tops: at each column where the month of its
+  // earliest day changes.
+  const colMonth = new Map<number, string>();
+  for (const c of cells) if (!colMonth.has(c.weekCol)) colMonth.set(c.weekCol, c.date.slice(0, 7));
+  let prev = "";
+  let months = "";
+  for (let col = 0; col < weeks; col++) {
+    const ym = colMonth.get(col);
+    if (ym && ym !== prev) {
+      months += `<span class="hm-mo" style="grid-column:${col + 1}">${
+        MONTHS[Number(ym.slice(5, 7)) - 1] ?? ""
+      }</span>`;
+      prev = ym;
+    }
+  }
+
+  const wds = WEEKDAY_AXIS.map((w, r) =>
+    w ? `<span class="hm-wd" style="grid-row:${r + 1}">${w}</span>` : "",
+  ).join("");
+
+  const legend =
+    `<div class="hm-legend"><span>${t("analytics.less")}</span>` +
+    [0, 1, 2, 3, 4].map((l) => `<i class="hm-cell hm-l${l}"></i>`).join("") +
+    `<span>${t("analytics.more")}</span></div>`;
+
+  return `<div class="hm" style="--hm-weeks:${weeks}">
+    <div class="hm-months">${months}</div>
+    <div class="hm-wds">${wds}</div>
+    <div class="hm-grid">${cellDivs}</div>
+    ${legend}
+  </div>`;
+}
+
+// ── activity-type donut + project bars (階段 C+, Breakdown) ────────────────
+
+/** Fixed color per activity kind (mirrors the gem series family). */
+function kindColor(kind: string): string {
+  switch (kind) {
+    case "edit":
+      return "#2b6fb8";
+    case "read":
+      return "#2fa87e";
+    case "run":
+      return "#c2497a";
+    default:
+      return "#6f7883";
+  }
+}
+function kindLabel(kind: string): string {
+  switch (kind) {
+    case "edit":
+      return t("analytics.kindEdit");
+    case "read":
+      return t("analytics.kindRead");
+    case "run":
+      return t("analytics.kindRun");
+    case "other":
+      return t("analytics.kindOther");
+    default:
+      return kind;
+  }
+}
+
+/** Activity-type donut (conic-gradient ring + center total + legend with %).
+ *  Empty when nothing is classifiable — the caller then omits the section. */
+function donut(byKind: KindCount[]): string {
+  if (byKind.length === 0) return "";
+  const total = byKind.reduce((s, k) => s + k.tokens, 0);
+  if (total <= 0) return "";
+  let acc = 0;
+  const stops: string[] = [];
+  const legend = byKind
+    .map((k) => {
+      const start = (acc / total) * 100;
+      acc += k.tokens;
+      const end = (acc / total) * 100;
+      const col = kindColor(k.kind);
+      stops.push(`${col} ${start.toFixed(2)}% ${end.toFixed(2)}%`);
+      return `<span><i style="background:${col}"></i>${kindLabel(k.kind)} <b>${sharePct(
+        k.tokens,
+        total,
+      )}%</b></span>`;
+    })
+    .join("");
+  return `<div class="donut-sec">
+    <div class="donut" style="background:conic-gradient(${stops.join(",")})">
+      <div class="donut-hole"><b>${fmtTokens(total)}</b><span>${t("analytics.tokens")}</span></div>
+    </div>
+    <div class="donut-legend">${legend}</div>
+  </div>`;
+}
+
+/** Per-project horizontal bars, "{tokens} · {pct}%" labels (reuses shareLabel).
+ *  Empty when there is no project data. */
+function projectBars(byProject: ProjectCount[]): string {
+  if (byProject.length === 0) return "";
+  const total = byProject.reduce((s, p) => s + p.tokens, 0);
+  const max = Math.max(1, ...byProject.map((p) => p.tokens));
+  const rows = byProject
+    .map((p, i) => {
+      const name = p.name === "__other__" ? t("analytics.projectsOther") : p.name;
+      return `<div class="bar-row">
+        <span class="bar-label" title="${esc(name)}">${esc(name)}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${
+          (p.tokens / max) * 100
+        }%;background:${seriesColor(i)}"></div></div>
+        <span class="bar-val">${shareLabel(p.tokens, total)}</span>
+      </div>`;
+    })
+    .join("");
+  return `<div class="bars">${rows}</div>`;
+}
+
+/** A titled sub-section wrapper for the extra Breakdown / overview dimensions. */
+function section(title: string, inner: string): string {
+  return `<div class="sub-sec"><div class="sub-sec-h">${title}</div>${inner}</div>`;
 }
 
 function tiles(a: Analytics): string {
@@ -199,14 +399,30 @@ export function renderAnalytics(container: HTMLElement, a: Analytics, opts: Anal
     case "hourly":
       body = hourly(a);
       break;
-    case "share":
-      body = shareBars(opts.group === "model" ? a.byModel : a.byAgent);
+    case "share": {
+      // The model/agent grouping, then two independent dimensions below it
+      // (階段 C+): activity type (donut) and per-project totals (bars). Each is
+      // omitted when it has no data, so an empty section never shows.
+      const activity = donut(a.byKind);
+      const projects = projectBars(a.byProject);
+      body =
+        shareBars(opts.group === "model" ? a.byModel : a.byAgent) +
+        (activity ? section(t("analytics.activityTitle"), activity) : "") +
+        (projects ? section(t("analytics.projectsTitle"), projects) : "");
       break;
+    }
     case "stats":
       body = statsView(a);
       break;
-    default: // overview (daily stacked chart)
+    default: {
+      // overview: daily stacked chart, plus the GitHub-style heatmap for the
+      // month range only (§ layout decision).
       body = stackedDaily(a, opts);
+      if (a.range === "month") {
+        const hm = heatmap(a);
+        if (hm) body += section(t("analytics.heatmapTitle"), hm);
+      }
+    }
   }
   // "from {date}" when a month's local logs don't reach the nominal window start.
   const start = monthStartNote(a);

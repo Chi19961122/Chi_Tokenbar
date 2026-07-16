@@ -4,9 +4,25 @@
 // condition or the denominator must turn one of these red.
 
 import { describe, expect, it } from "vitest";
-import { monthStartNote, renderAnalytics, sharePct, shareLabel } from "./analytics";
-import type { Analytics } from "./types";
+import { heatCells, monthStartNote, renderAnalytics, sharePct, shareLabel } from "./analytics";
+import type { Analytics, DayPoint } from "./types";
 import { mockAnalytics } from "./mock";
+
+/** N consecutive daily buckets from `start`, each with `tokens` under one agent
+ *  (0 → an empty day). Dates advance in UTC to match the backend buckets. */
+function mkDaily(start: string, n: number, tokens = 1_000_000): DayPoint[] {
+  const base = new Date(start + "T00:00:00Z").getTime();
+  return Array.from({ length: n }, (_, i) => {
+    const byAgent: Record<string, number> = {};
+    if (tokens > 0) byAgent["Claude Code"] = tokens;
+    return {
+      date: new Date(base + i * 86_400_000).toISOString().slice(0, 10),
+      byModel: {},
+      byAgent,
+      costUsd: 0,
+    };
+  });
+}
 
 describe("share-of-range labels", () => {
   it("computes a whole-number percent of the range total", () => {
@@ -74,6 +90,85 @@ describe("month chart with a short history", () => {
     // Leading empty days dropped → the axis starts at the first active day.
     const firstAxis = root.querySelector(".chart .axis")?.textContent;
     expect(firstAxis).toBe(a.rangeStartDay.slice(5));
+  });
+});
+
+describe("heatCells (activity heatmap)", () => {
+  it("aligns weeks and leaves leading blanks when the first day isn't Monday", () => {
+    // 2026-07-15 is a Wednesday → Mon=0 row 2.
+    const { cells, weeks } = heatCells(mkDaily("2026-07-15", 10));
+    expect(cells).toHaveLength(10);
+    expect(cells[0].weekdayRow).toBe(2); // Wednesday
+    expect(cells[0].weekCol).toBe(0);
+    // The first row-0/col-0 slots (Mon, Tue) are never emitted → leading blanks.
+    expect(cells.some((c) => c.weekCol === 0 && c.weekdayRow < 2)).toBe(false);
+    // 5 days after a Wednesday is a Monday, wrapping into the next column.
+    expect(cells[5].weekdayRow).toBe(0);
+    expect(cells[5].weekCol).toBe(1);
+    expect(weeks).toBe(2);
+  });
+
+  it("normalizes intensity to the busiest day", () => {
+    const daily = mkDaily("2026-07-13", 3, 0); // Monday start, all empty
+    daily[0].byAgent = { "Claude Code": 500_000 };
+    daily[1].byAgent = { "Claude Code": 1_000_000 };
+    // daily[2] stays empty
+    const { cells } = heatCells(daily);
+    expect(cells[0].intensity).toBeCloseTo(0.5);
+    expect(cells[1].intensity).toBe(1);
+    expect(cells[2].intensity).toBe(0);
+  });
+
+  it("keeps every cell faint (0) when the whole range is empty", () => {
+    const { cells } = heatCells(mkDaily("2026-07-13", 7, 0));
+    expect(cells).toHaveLength(7);
+    expect(cells.every((c) => c.intensity === 0)).toBe(true);
+  });
+
+  it("handles a single day", () => {
+    const { cells, weeks } = heatCells(mkDaily("2026-07-15", 1));
+    expect(cells).toHaveLength(1);
+    expect(cells[0].weekCol).toBe(0);
+    expect(cells[0].weekdayRow).toBe(2);
+    expect(weeks).toBe(1);
+    expect(cells[0].intensity).toBe(1);
+  });
+
+  it("returns an empty grid for no data", () => {
+    expect(heatCells([])).toEqual({ cells: [], weeks: 0 });
+  });
+});
+
+describe("階段 C+ render wiring", () => {
+  it("shows the heatmap on overview only for the month range", () => {
+    const month = { ...mockAnalytics("month"), range: "month" as const };
+    const week = { ...mockAnalytics("week"), range: "week" as const };
+    const root = document.createElement("div");
+
+    renderAnalytics(root, month, { subtab: "overview", metric: "tokens", group: "agent" });
+    expect(root.querySelector(".hm")).not.toBeNull();
+
+    renderAnalytics(root, week, { subtab: "overview", metric: "tokens", group: "agent" });
+    expect(root.querySelector(".hm")).toBeNull();
+  });
+
+  it("renders the activity donut and project bars on Breakdown", () => {
+    const a = mockAnalytics("week");
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
+    expect(root.querySelector(".donut")).not.toBeNull();
+    // Project bars carry a token·% label (shareLabel), like the other bars.
+    expect(root.querySelector(".sub-sec")).not.toBeNull();
+  });
+
+  it("omits empty advanced sections instead of drawing blank cards", () => {
+    const a = { ...mockAnalytics("week"), byKind: [], byProject: [] };
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
+    expect(root.querySelector(".donut")).toBeNull();
+    expect(root.querySelector(".sub-sec")).toBeNull();
+    // The primary model/agent breakdown is still there.
+    expect(root.querySelector(".bars")).not.toBeNull();
   });
 });
 

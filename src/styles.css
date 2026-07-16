@@ -714,9 +714,12 @@ body.settings-open #analytics {
 #analytics {
   padding: 4px 12px 14px;
   /* Fixed box so every subtab renders at the same height → window never
-     resizes on page switches (mode-locked height policy). */
+     resizes on page switches (mode-locked height policy). The richer 階段 C+
+     dimensions (heatmap, donut, project bars) can exceed it, so scroll inside
+     rather than resize the window: the height contract is preserved. */
   height: 300px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .tiles {
   display: grid;
@@ -880,6 +883,160 @@ body.settings-open #analytics {
 }
 .acct b {
   color: var(--text);
+}
+
+/* ── 階段 C+ advanced dimensions (heatmap / donut / project bars) ────── */
+
+/* A titled sub-section stacked below the primary chart on overview/Breakdown. */
+.sub-sec {
+  margin-top: 12px;
+}
+.sub-sec-h {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+/* GitHub-style activity heatmap. Two-column body: weekday axis + week grid,
+   with month labels spanning the grid columns above it. */
+.hm {
+  --hm-cell: 12px;
+  --hm-gap: 3px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+  row-gap: 4px;
+  overflow-x: auto;
+}
+.hm-months {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(var(--hm-weeks), var(--hm-cell));
+  column-gap: var(--hm-gap);
+  height: 12px;
+}
+.hm-mo {
+  grid-row: 1;
+  font-size: 8px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.hm-wds {
+  grid-column: 1;
+  display: grid;
+  grid-template-rows: repeat(7, var(--hm-cell));
+  row-gap: var(--hm-gap);
+  align-items: center;
+}
+.hm-wd {
+  font-size: 8px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  line-height: 1;
+}
+.hm-grid {
+  grid-column: 2;
+  display: grid;
+  grid-template-rows: repeat(7, var(--hm-cell));
+  grid-template-columns: repeat(var(--hm-weeks), var(--hm-cell));
+  gap: var(--hm-gap);
+}
+.hm-cell {
+  width: var(--hm-cell);
+  height: var(--hm-cell);
+  border-radius: 3px;
+}
+/* Emerald ramp (provider family), 5 steps less→more. */
+.hm-l0 {
+  background: rgba(255, 255, 255, 0.05);
+}
+.hm-l1 {
+  background: rgba(47, 168, 126, 0.3);
+}
+.hm-l2 {
+  background: rgba(47, 168, 126, 0.5);
+}
+.hm-l3 {
+  background: rgba(47, 168, 126, 0.72);
+}
+.hm-l4 {
+  background: rgba(47, 168, 126, 0.95);
+}
+.hm-legend {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 8px;
+  color: var(--text-dim);
+}
+.hm-legend i {
+  display: inline-block;
+}
+
+/* Activity-type donut: conic ring + punched center + legend with %. */
+.donut-sec {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.donut {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+.donut-hole {
+  position: absolute;
+  inset: 24px;
+  border-radius: 50%;
+  background: var(--panel-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.donut-hole b {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.donut-hole span {
+  font-size: 8px;
+  color: var(--text-dim);
+}
+.donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.donut-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.donut-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.donut-legend b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
 }
 
 /* ── Settings ─────────────────────────────────────────────────────── */

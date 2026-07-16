@@ -1,5 +1,15 @@
 # HANDOFF — 進度快照(2026-07-17)
 
+## 2026-07-17:三樣態優化 階段 C+ — Usage 進階維度(v0.3.2,程式碼完成、未打包)
+
+- **活動熱力圖**:`heatCells` 純函式(daily 30 桶 → GitHub 式格;首日非週一前置空格),overview 僅 month 顯示;軸標固定英文(同島嶼短標哲學,避語系洩漏)。**無新後端聚合**,直接用階段 C 的日桶。
+- **活動類型(勘察結論,寫在 analytics.rs scan_* 註解)**:Claude log 的 `message.content[]` tool_use 有標準工具名 → 可分類 `edit/read/run/other`(每則訊息記單一主類別,tie-break edit>read>run>other);**Codex 的 token_count 是回合累計、與工具事件分開記,無法歸屬 → byKind 不含 Codex、不出假類別**(§計畫硬規定)。donut % 分母=sum(byKind)=已分類總量(單 provider 前提下唯一自洽解讀)。
+- **專案維度**:Claude 用 projects/<slug> 目錄名、Codex 用 session `payload.cwd` basename → 兩家都進 byProject;top-8+`__other__` 合併。**§0 硬限制**:types.ts 與 analytics.rs 欄位旁都註明「buildShareData 禁止引用」——階段 D 實作者請遵守。
+- **版面**:#analytics 300px 高度契約不變,改內部捲動;byKind/byProject 空 → section 整個不渲染。
+- **測試 121 Rust + 59 前端**;gen:noto 189 glyphs 58.9KB。
+- **驗證備註**:本階段 fresh-context 對抗驗證因帳號額度中斷,改由 orchestrator 本機完成(四道驗收 + 保護檔零 diff + §0 註解 + 隱私掃描 + woff2);**完整對抗驗證待額度重置後補跑**(重點:heatCells 週對齊邊界、分類 tie-break、top-8 邊界、Windows 反斜線 basename)。
+- 尚未真人驗證:真本機 log 的分類分佈與 slug 顯示品質、380px 真視窗的熱力圖/donut 版面、真 Codex cwd 歸屬。
+
 ## 2026-07-17:三樣態優化 階段 C — Usage 詳細模式(v0.3.1,程式碼完成、未打包)
 
 - **額度單行摘要**:Usage 頂部 `buildQuotaSummary` 純函式產出(provider 色點+英文短標+% left,pctLeft 與列表同源),點擊展開完整列表;session 記憶不持久化。**設定開啟時強制完整列表**(設定改動要即時反映在額度列表,v0.1.5 驗收行為)。
