@@ -253,6 +253,21 @@ body.expanded #island {
   margin-top: 6px;
   backdrop-filter: blur(var(--panel-blur));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  /* Blur fades in on expand (see .panel-no-blur below). WebView2 rasterizes a
+     fresh backdrop-filter expensively on the first visible frame, so we hold it
+     off for two frames and let it settle in via this transition — the glass
+     "surfaces" rather than hitching the resize. */
+  transition: backdrop-filter 0.16s ease;
+}
+/* First-paint escape hatch toggled by deferPanelBlur(): flat glass, no filter
+   work. Carries the #panel id so it outranks the plain #panel rule above. */
+body.panel-no-blur #panel {
+  backdrop-filter: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  #panel {
+    transition: none;
+  }
 }
 
 /* ── Header: tabs + Resets + icon buttons ─────────────────────────── */
@@ -286,12 +301,15 @@ body.expanded #island {
   background: var(--seg-on-bg);
   color: var(--seg-on-fg);
 }
-.phead .resets {
+.phead .refresh-in {
   margin-left: auto;
-  font-family: var(--mono);
   font-size: 11px;
   color: var(--text-dim);
   white-space: nowrap;
+}
+.phead .refresh-in .num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 /* The tok/min readout is retained for data flow but folded out of the header —
    the number lives in the island aux and the Stats page. */
@@ -413,6 +431,12 @@ body.settings-open #analytics {
 .lrow .pcap {
   display: block;
 }
+.lrow-mid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .lrow-label {
   display: flex;
   align-items: center;
@@ -420,6 +444,14 @@ body.settings-open #analytics {
   font-size: 13px;
   color: var(--text);
   min-width: 0;
+}
+.lrow-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .lrow-pct {
   font-family: var(--mono);
@@ -758,6 +790,37 @@ body.settings-open #analytics {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px;
+}
+
+/* Analytics loading skeleton (§ expand speed): reuses .tiles/.tile/.chart-wrap
+   so it sits in the same glass language as the real content. Empty .tile.sk
+   cards show the recessed card face; the chart block is a groove-colored slab.
+   A slow opacity breath signals "loading" without motion that distracts. */
+.sk {
+  animation: tb-skel-pulse 1.4s ease-in-out infinite;
+}
+.tile.sk {
+  height: 44px;
+}
+.sk-chart {
+  height: 200px;
+  border-radius: 8px;
+  background: var(--track);
+}
+@keyframes tb-skel-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+    opacity: 0.6;
+  }
 }
 .chart {
   width: 100%;

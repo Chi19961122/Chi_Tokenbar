@@ -47,6 +47,9 @@ export interface Snapshot {
   limits: Limit[];
   worst_id: string | null;
   updated_at: number;
+  /** Seconds until the next backend data fetch, as of `updated_at`. The header
+   *  countdown is `max(0, next_fetch_in - (now - updated_at))`. */
+  next_fetch_in: number;
 }
 
 /**

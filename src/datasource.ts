@@ -229,8 +229,13 @@ export function resizeAnchored(w: number, h: number): Promise<void> {
         x = Math.min(Math.max(x, wa.position.x + margin), wa.position.x + wa.size.width - pw - margin);
         y = Math.min(Math.max(y, wa.position.y + margin), wa.position.y + wa.size.height - ph - margin);
       }
-      await win.setSize(new PhysicalSize(pw, ph));
-      await win.setPosition(new PhysicalPosition(x, y));
+      // x/y are the anchored top-left computed from the *current* geometry and
+      // the target size above — they don't depend on the resize landing first,
+      // so fire both writes together instead of serializing two IPC round-trips.
+      await Promise.all([
+        win.setSize(new PhysicalSize(pw, ph)),
+        win.setPosition(new PhysicalPosition(x, y)),
+      ]);
     } catch {
       /* geometry queries may fail transiently; next fit will retry */
     }

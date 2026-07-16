@@ -90,4 +90,7 @@ pub struct Snapshot {
     /// id of the single most-dangerous limit shown on the island (§3).
     pub worst_id: Option<String>,
     pub updated_at: i64,
+    /// Seconds until the next backend data fetch, as of `updated_at`. Drives the
+    /// header "Refresh in Ns" countdown. Set by the scheduler (engine leaves 0).
+    pub next_fetch_in: i64,
 }

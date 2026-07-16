@@ -79,6 +79,7 @@ impl Engine {
             limits,
             worst_id,
             updated_at: now,
+            next_fetch_in: 0, // scheduler overwrites with the real cadence
         }
     }
 }

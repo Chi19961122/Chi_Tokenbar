@@ -23,6 +23,7 @@ function snap(limits: Limit[], worst?: string): Snapshot {
     limits,
     worst_id: worst ?? (limits[0]?.id || null),
     updated_at: nowSecs(),
+    next_fetch_in: 180, // matches the backend REFRESH_SECS cadence
   };
 }
 

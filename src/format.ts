@@ -28,6 +28,24 @@ export function fmtHM(epochSecs: number): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
+/**
+ * Reset wall-clock for a limit row's note line: "14:00" when the reset falls
+ * today, "Thu 09:00" when it lands on a later day. The weekday is what makes a
+ * weekly window's time unambiguous — "09:00" alone could be days away.
+ */
+export function fmtReset(epochSecs: number): string {
+  const d = new Date(epochSecs * 1000);
+  const hm = fmtHM(epochSecs);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  // Fixed en-US locale: the UI is English-only, and the machine default would
+  // localize the weekday (e.g. 週日 on zh-TW Windows).
+  return sameDay ? hm : `${d.toLocaleDateString("en-US", { weekday: "short" })} ${hm}`;
+}
+
 /** 1_234_567 -> "1.2M", 12_300 -> "12.3K". */
 export function fmtTokens(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;

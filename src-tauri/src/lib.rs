@@ -400,7 +400,27 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             // guarantee — it still runs so a future third provider cannot leak
             // through by being absent from the skip logic.
             let limits = apply_provider_filter(&providers_filter, limits);
-            let snapshot = engine.ingest(limits, now);
+            let mut snapshot = engine.ingest(limits, now);
+
+            // Countdown to the next real data fetch (header "Refresh in Ns").
+            // The scheduler wakes every POLL_SECS but the providers only hit the
+            // network every REFRESH_SECS, so anchor on their cache expiry — the
+            // soonest among the providers actually polled this round. A manual
+            // refresh re-fetches and pushes these out, restarting the countdown.
+            // Pure local-Codex (no network provider) falls back to the poll tick,
+            // its real re-read cadence.
+            let mut next_fetch: Vec<i64> = Vec::new();
+            if want_claude {
+                next_fetch.push(anthropic.next_fetch_at());
+            }
+            if want_codex && matches!(codex_source.as_str(), "live" | "auto") {
+                next_fetch.push(codex_live.next_fetch_at());
+            }
+            snapshot.next_fetch_in = next_fetch
+                .iter()
+                .min()
+                .map(|&t| (t - now).max(0))
+                .unwrap_or(POLL_SECS as i64);
 
             if debug {
                 for l in &snapshot.limits {
@@ -716,6 +736,7 @@ mod tests {
             worst_id: limits.first().map(|l| l.id.clone()),
             limits,
             updated_at: 0,
+            next_fetch_in: 0,
         }
     }
 

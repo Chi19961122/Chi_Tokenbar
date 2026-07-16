@@ -177,6 +177,13 @@ impl AnthropicProvider {
         self.cached.clone()
     }
 
+    /// Epoch secs of the next scheduled network fetch (cache expiry). Drives the
+    /// header refresh countdown; the scheduler polls sooner but returns cached
+    /// data until this point.
+    pub fn next_fetch_at(&self) -> i64 {
+        self.last_fetch + REFRESH_SECS
+    }
+
     /// Never fails: a failure becomes degraded limits carrying a plain-language
     /// hint, so the UI always has something honest to show (§7). The precise
     /// stage goes to stderr only, and only under `TOKENBAR_DEBUG`.

@@ -37,6 +37,13 @@ impl CodexLiveProvider {
         self.cached.clone()
     }
 
+    /// Epoch secs of the next scheduled network fetch (cache expiry). Drives the
+    /// header refresh countdown; the scheduler polls sooner but returns cached
+    /// data until this point.
+    pub fn next_fetch_at(&self) -> i64 {
+        self.last_fetch + REFRESH_SECS
+    }
+
     fn fetch(&self) -> Option<Vec<Limit>> {
         let creds = read_creds()?;
         let usage = ureq::get(USAGE_URL)

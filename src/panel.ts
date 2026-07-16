@@ -2,7 +2,7 @@
 // per-limit detail view (drill-down), matching the v8 visual.
 
 import type { Limit, Provider, Snapshot } from "./types";
-import { fmtDur, fmtHM, fmtTokens, nowSecs, pctLeft } from "./format";
+import { fmtDur, fmtHM, fmtReset, fmtTokens, nowSecs, pctLeft } from "./format";
 import { providerIcon } from "./icons";
 
 export type PanelView = { kind: "list" } | { kind: "detail"; id: string };
@@ -68,6 +68,34 @@ function battery(left: number): string {
   </svg>`;
 }
 
+/**
+ * The row's note line — always carries the reset, so the user reads it without
+ * drilling into the detail view. Content is fixed copy plus formatted
+ * numbers/times (no backend free-text), so it needs no escaping.
+ *
+ *   safe + pace   → "On pace · resets 14:00"
+ *   over pace     → "12% over pace · resets Thu 09:00"
+ *   locked        → "Locked · resets in 3h 12m"   (countdown; window releasing)
+ *   no pace       → "Resets 16:30"
+ *   no reset info → whatever pace/status word we have, or "" (e.g. source_failed)
+ */
+function rowNote(l: Limit): string {
+  if (l.status === "locked") {
+    const c = l.resets_at > 0 ? ` · resets in ${fmtDur(l.resets_at - nowSecs())}` : "";
+    return `Locked${c}`;
+  }
+  const pace = l.pace
+    ? l.pace.in_deficit
+      ? `${Math.round(l.pace.deficit)}% over pace`
+      : "On pace"
+    : "";
+  if (l.resets_at > 0) {
+    const reset = fmtReset(l.resets_at);
+    return pace ? `${pace} · resets ${reset}` : `Resets ${reset}`;
+  }
+  return pace;
+}
+
 function row(l: Limit): string {
   const unknown = isUnknown(l);
   const left = pctLeft(l.util);
@@ -76,9 +104,13 @@ function row(l: Limit): string {
   const badge = unknown
     ? `<span class="badge">${l.status === "source_failed" ? "Unavailable" : "Estimate"}</span>`
     : "";
+  const note = rowNote(l);
   return `<button class="lrow status-${l.status} ${provClass(l)}" data-limit="${escapeHtml(l.id)}">
     ${battery(unknown ? 0 : left)}
-    <span class="lrow-label">${escapeHtml(displayName(l))}${badge}</span>
+    <span class="lrow-mid">
+      <span class="lrow-label">${escapeHtml(displayName(l))}${badge}</span>
+      ${note ? `<span class="lrow-note">${note}</span>` : ""}
+    </span>
     <span class="lrow-pct">${pct}</span>
   </button>`;
 }

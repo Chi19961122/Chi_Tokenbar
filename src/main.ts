@@ -1,6 +1,6 @@
 import "./fonts.css";
 import "./styles.css";
-import type { Snapshot } from "./types";
+import type { Analytics, Snapshot } from "./types";
 import type { PanelView, ReloginState } from "./panel";
 import { MANUAL_LOGIN_CMD } from "./panel";
 import type { AnalyticsOpts, Group, Metric, SubTab } from "./analytics";
@@ -25,7 +25,7 @@ import {
 import { islandIntent, renderIsland } from "./island";
 import { renderPanel } from "./panel";
 import { renderAnalytics } from "./analytics";
-import { fmtHM, fmtTokens } from "./format";
+import { fmtTokens, nowSecs } from "./format";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -46,6 +46,14 @@ const ui = {
 let lastSnap: Snapshot | null = null;
 let settings: Settings | null = null; // cached; compact toggle persists through it
 let todayRate: number | null = null; // today's tok/min for the island (refreshed every 60s)
+
+// Last Analytics payload, keyed so an expand can paint from it instantly instead
+// of blocking on the get_analytics IPC (100-500ms). The key captures everything
+// that changes what the backend returns for a fetch — range, the provider
+// filter, and the snapshot generation (updated_at) — but NOT subtab/metric/group,
+// which only re-slice the *same* payload at render time. Single-entry on purpose
+// (§ expand speed): the common case is re-opening onto the same data.
+let cachedAnalytics: { key: string; data: Analytics } | null = null;
 
 // ── rendering ────────────────────────────────────────────────────────
 
@@ -104,20 +112,68 @@ function setView(view: PanelView) {
   renderCards();
 }
 
-/** "Resets HH:MM" in the header — the soonest reset among the shown limits. */
-function renderResets() {
-  const el = $("resets");
-  const times = (lastSnap?.limits ?? [])
-    .map((l) => l.resets_at)
-    .filter((t) => t > 0);
-  el.textContent = times.length ? `Resets ${fmtHM(Math.min(...times))}` : "";
+/** "Refresh in Ns" in the header — a live countdown to the next backend data
+ *  fetch. Derived from the snapshot's `next_fetch_in` (measured at `updated_at`),
+ *  so it ticks down on the 1s island tick and restarts on its own whenever a
+ *  fresh snapshot lands — the scheduler's regular round or a manual refresh. */
+function renderRefresh() {
+  const el = $("refresh-in");
+  if (!lastSnap) {
+    el.textContent = "";
+    return;
+  }
+  const remaining = Math.max(0, lastSnap.next_fetch_in - (nowSecs() - lastSnap.updated_at));
+  el.innerHTML = `Refresh in <span class="num">${remaining}s</span>`;
 }
 
-async function renderAnalyticsNow() {
-  const a = await getAnalytics(ui.range);
+/** Cache key for a get_analytics *fetch* — the inputs that change the payload.
+ *  subtab/metric/group are deliberately absent: they re-slice the same data. */
+function analyticsDataKey(): string {
+  return `${ui.range}|${settings?.providers ?? "both"}|${lastSnap?.updated_at ?? 0}`;
+}
+
+/** Paint the analytics layer from an already-fetched payload (no IPC). */
+function renderAnalyticsInto(a: Analytics): void {
   $("rate").textContent = `${fmtTokens(a.tokPerMin)} tok/min`;
   const opts: AnalyticsOpts = { subtab: ui.subtab, metric: ui.metric, group: ui.group };
   renderAnalytics($("analytics"), a, opts);
+}
+
+/** Glass placeholder sized to the fixed 300px #analytics box, shown while the
+ *  first get_analytics for a key is in flight so the window measures its final
+ *  height in one fitWindow() and never jumps a second time. */
+function showAnalyticsSkeleton(): void {
+  $("analytics").innerHTML =
+    `<div class="tiles">` +
+    `<div class="tile sk"></div>`.repeat(4) +
+    `</div><div class="chart-wrap"><div class="sk sk-chart"></div></div>`;
+}
+
+/** Fetch (or reuse) the analytics payload and paint it. A cache hit renders
+ *  synchronously with no IPC; a miss awaits get_analytics, then paints only if
+ *  the key is still current (a rapid range/provider switch can supersede it). */
+async function renderAnalyticsNow(): Promise<void> {
+  const key = analyticsDataKey();
+  if (cachedAnalytics && cachedAnalytics.key === key) {
+    renderAnalyticsInto(cachedAnalytics.data);
+    return;
+  }
+  const a = await getAnalytics(ui.range);
+  cachedAnalytics = { key, data: a };
+  if (analyticsDataKey() === key) renderAnalyticsInto(a);
+}
+
+/** Non-blocking entry used on mode entry (expand / compact toggle): a cache hit
+ *  paints instantly; a miss shows the skeleton immediately and fills it in when
+ *  the fetch lands — either way fitWindow() can run right after without waiting. */
+function beginAnalytics(): void {
+  const key = analyticsDataKey();
+  if (cachedAnalytics && cachedAnalytics.key === key) {
+    renderAnalyticsInto(cachedAnalytics.data);
+    return;
+  }
+  showAnalyticsSkeleton();
+  void renderAnalyticsNow();
 }
 
 // ── window sizing (locked per display mode, bottom-right anchored) ───
@@ -175,7 +231,7 @@ async function applyCompact() {
   if (ui.expanded && !ui.compact) {
     renderSubtabs();
     renderToggles();
-    await renderAnalyticsNow();
+    beginAnalytics();
   }
   fitWindow();
 }
@@ -272,23 +328,43 @@ function readSettingsForm(): Settings {
   };
 }
 
-async function setExpanded(on: boolean) {
+/** Hold the panel's backdrop blur off the first paint. WebView2 rasterizes a
+ *  fresh backdrop-filter expensively on the frame the panel becomes visible;
+ *  paying that cost while the window is also resizing is the visible hitch on
+ *  expand. We paint the glass flat first, then re-enable blur two frames later
+ *  so it fades in via the #panel transition (a no-op step under
+ *  prefers-reduced-motion, where the transition is disabled but the one-frame
+ *  defer still spares the first paint). */
+function deferPanelBlur(): void {
+  document.body.classList.add("panel-no-blur");
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => document.body.classList.remove("panel-no-blur")),
+  );
+}
+
+function setExpanded(on: boolean): void {
   ui.expanded = on;
   document.body.classList.toggle("expanded", on);
   document.body.classList.toggle("collapsed", !on);
   if (on) {
+    deferPanelBlur();
     ui.view = { kind: "list" };
     ui.relogin = "idle";
     ui.copied = false;
     renderTabs();
     renderCards();
-    renderResets();
+    renderRefresh();
     if (!ui.compact) {
       renderSubtabs();
       renderToggles();
-      await renderAnalyticsNow();
+      // Non-blocking: paint from cache or drop a fixed-height skeleton, so
+      // fitWindow() below measures the final height and resizes exactly once —
+      // never waiting on the get_analytics IPC.
+      beginAnalytics();
     }
   }
+  // Size the window immediately (analytics box is a fixed 300px, so its content
+  // arriving later never changes the measured height).
   fitWindow();
 }
 
@@ -353,7 +429,9 @@ function wireEvents() {
     // The display filter scopes analytics too, and the backend applies it on
     // demand — so re-pull rather than leave the page stale until the 60s tick.
     // (Limits re-arrive filtered on the scheduler's next round.)
-    if (ui.expanded && !ui.compact) await renderAnalyticsNow();
+    // The provider filter is part of the analytics cache key, so this misses
+    // the stale entry and re-fetches; non-blocking so the settings UI stays live.
+    if (ui.expanded && !ui.compact) void renderAnalyticsNow();
   });
 
   // Header tabs = the compact/analytics display switch (was the ⊟/⊞ button).
@@ -468,7 +546,7 @@ async function boot() {
     renderIslandNow();
     if (ui.expanded) {
       renderCards();
-      renderResets();
+      renderRefresh();
     }
   });
 
@@ -478,7 +556,7 @@ async function boot() {
     renderIslandNow();
     if (ui.expanded) {
       renderCards();
-      renderResets();
+      renderRefresh();
     }
   }, 1000);
 
