@@ -191,6 +191,39 @@ fn relogin() -> Result<(), String> {
     launch_login(&claude).map_err(|_| ERR_SPAWN_FAILED.to_string())
 }
 
+// ── 階段 D 戰報 Share: local PNG export ───────────────────────────────
+
+/// Reduce a caller-supplied filename to a bare basename that can only ever land
+/// directly inside the downloads dir — never traverse out of it. Strips any path
+/// separators (`/`, `\`) and rejects `..` segments by taking only the last
+/// component and refusing dotted-only names. Pure so it is unit-testable without
+/// touching the filesystem.
+fn sanitize_share_filename(raw: &str) -> Option<String> {
+    // Take the final component after any separator, then reject empties and the
+    // parent/current markers so nothing can point outside the target dir.
+    let base = raw.rsplit(['/', '\\']).next().unwrap_or("").trim();
+    if base.is_empty() || base == "." || base == ".." {
+        return None;
+    }
+    // A remaining `..` (e.g. embedded) or NUL would be a path-trick smell.
+    if base.contains("..") || base.contains('\0') {
+        return None;
+    }
+    Some(base.to_string())
+}
+
+/// Write the exported share-card PNG bytes to the user's Downloads folder and
+/// return the full path. Filename is sanitized to a bare basename first so it
+/// can never escape the downloads dir.
+#[tauri::command]
+fn save_share_png(bytes: Vec<u8>, filename: String) -> Result<String, String> {
+    let name = sanitize_share_filename(&filename).ok_or_else(|| "invalid filename".to_string())?;
+    let dir = dirs::download_dir().ok_or_else(|| "no downloads directory".to_string())?;
+    let path = dir.join(&name);
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = config::load();
@@ -222,7 +255,8 @@ pub fn run() {
             get_settings,
             set_settings,
             refresh_now,
-            relogin
+            relogin,
+            save_share_png
         ])
         .setup(move |app| {
             build_tray(app.handle())?;
@@ -692,6 +726,43 @@ mod tests {
             limit("codex.5h", Provider::Codex),
             limit("cc.5h", Provider::Anthropic),
         ]
+    }
+
+    // ── 階段 D share PNG filename sanitization ─────────────────────────
+
+    #[test]
+    fn sanitize_keeps_a_plain_filename() {
+        assert_eq!(
+            sanitize_share_filename("tokenbar-week-20260717.png").as_deref(),
+            Some("tokenbar-week-20260717.png"),
+        );
+    }
+
+    #[test]
+    fn sanitize_strips_path_separators() {
+        // Only the last component survives, so nothing can escape the dir.
+        assert_eq!(
+            sanitize_share_filename("../../etc/passwd").as_deref(),
+            Some("passwd"),
+        );
+        assert_eq!(
+            sanitize_share_filename(r"C:\Windows\evil.png").as_deref(),
+            Some("evil.png"),
+        );
+        assert_eq!(
+            sanitize_share_filename("sub/dir/card.png").as_deref(),
+            Some("card.png"),
+        );
+    }
+
+    #[test]
+    fn sanitize_rejects_traversal_and_empty() {
+        assert_eq!(sanitize_share_filename(".."), None);
+        assert_eq!(sanitize_share_filename("."), None);
+        assert_eq!(sanitize_share_filename(""), None);
+        assert_eq!(sanitize_share_filename("   "), None);
+        // an embedded `..` (double-dotted name) is refused outright
+        assert_eq!(sanitize_share_filename("a..b.png"), None);
     }
 
     /// Unknown values (the legacy "worst", or a hand-edited typo in

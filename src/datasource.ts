@@ -23,6 +23,9 @@ const DEFAULT_SETTINGS: Settings = {
   island_pin_codex: "auto",
   island_aux: "tok_per_min",
   reset_display: "relative",
+  // 階段 D defaults — mirror config.rs `Settings::default()`.
+  share_style: "statement",
+  share_range: "week",
 };
 
 export const isTauri = () =>

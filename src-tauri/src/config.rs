@@ -68,6 +68,15 @@ pub struct Settings {
     /// (the absolute wall-clock time). Defaults to "relative".
     #[serde(default = "default_reset_display")]
     pub reset_display: String,
+    /// 階段 D 戰報 Share: which share-card style the report panel last used —
+    /// "statement" | "diagnostics" | "minimal" | "fuel" | "island_card" | "wa".
+    /// Defaults to "statement".
+    #[serde(default = "default_share_style")]
+    pub share_style: String,
+    /// 階段 D 戰報 Share: which range the report panel last summarized —
+    /// "today" | "week" | "month". Defaults to "week".
+    #[serde(default = "default_share_range")]
+    pub share_range: String,
 }
 
 fn default_locale() -> String {
@@ -90,6 +99,14 @@ fn default_reset_display() -> String {
     "relative".into()
 }
 
+fn default_share_style() -> String {
+    "statement".into()
+}
+
+fn default_share_range() -> String {
+    "week".into()
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -108,6 +125,8 @@ impl Default for Settings {
             island_pin_codex: default_pin(),
             island_aux: default_island_aux(),
             reset_display: default_reset_display(),
+            share_style: default_share_style(),
+            share_range: default_share_range(),
         }
     }
 }
@@ -289,6 +308,38 @@ mod tests {
         assert_eq!(back.island_pin_codex, "model:codex.credits");
         assert_eq!(back.island_aux, "cost_today");
         assert_eq!(back.reset_display, "clock");
+    }
+
+    // ── 階段 D fields (share_style / share_range) ──────────────────────
+    //
+    // Every settings.json written before 階段 D lacks these keys; `#[serde(default
+    // = ...)]` must fill each so an old file loads and keeps today's behaviour.
+
+    #[test]
+    fn defaults_for_stage_d_fields() {
+        let d = Settings::default();
+        assert_eq!(d.share_style, "statement");
+        assert_eq!(d.share_range, "week");
+    }
+
+    #[test]
+    fn missing_stage_d_fields_deserialize_to_defaults() {
+        let s = load_from_str(r#"{ "autostart": true }"#);
+        assert_eq!(s.share_style, "statement");
+        assert_eq!(s.share_range, "week");
+    }
+
+    #[test]
+    fn explicit_stage_d_fields_survive_a_save_load_round_trip() {
+        let s = Settings {
+            share_style: "fuel".into(),
+            share_range: "month".into(),
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back = load_from_str(&json);
+        assert_eq!(back.share_style, "fuel");
+        assert_eq!(back.share_range, "month");
     }
 
     /// The whole point of the feature: an explicit opt-out must survive a

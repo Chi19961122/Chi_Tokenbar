@@ -1,5 +1,15 @@
 # HANDOFF — 進度快照(2026-07-17)
 
+## 2026-07-17:三樣態優化 階段 D — 戰報 Share(v0.4.0,程式碼完成、未打包)
+
+- **入口**:Usage 第 5 個 subtab「Share / 戰報」,渲染進既有 300px `#analytics` 盒(沿用視窗尺寸/locale 重繪機制,零額外佈線)。獨立 `shareCache` 綁 `ui.shareRange`,與分析的 `ui.range` 分離。
+- **資料層 `buildShareData(range)`**:純函式;totalTokens/totalCostUsd(恆標 est.)/byAgent(僅 >0)/byModel/periodLabel/可選 quotaNote。**§0 驗證過**:測試在假資料塞 byProject 證明無法滲入輸出;拆分 % =佔區間總量;quotaNote 的限額 % 帶「left/剩」尾綴區隔、預設 off(island_card 預設 on)。
+- **六模板 `share.ts`**:視覺依已核可概念稿(share-raw 原檔改造),16:9 1200×675;**9:16 直式列後續**(概念稿已有,計畫本階段不做)。偏離:fuel 第二欄改佔比 %(無 per-model 成本,不捏造);wa 朱印「量」與 CUMULATIVE LEDGER 固定不譯。
+- **匯出**:html-to-image(D2,唯一新增前端依賴,lazy chunk)`document.fonts.ready` 後 render;Tauri 走新 command `save_share_png`(檔名消毒:剝路徑、拒 `..`,寫 Downloads);mock 走 `<a download>`;複製走 ClipboardItem。**無新增 Tauri plugin**。
+- **設定**:`share_style`(statement)/`share_range`(week)serde default + 遷移測試;選了即記住。**修掉一個既有坑**:`readSettingsForm` 原回傳純 literal,任何設定變更會把不在表單裡的欄位洗掉——已改 `...settings` 展開保留(這對日後每個新設定欄位都重要)。
+- **測試 127 Rust + 75 前端**;gen:noto 218 glyphs 64.7KB;mock preview 目視過(statement/wa 卡面、風格/區間切換、Quota line、Save/Copy 鈕)。
+- 尚未真人驗證:WebView2 實機匯出的字型嵌入(特別是 zh 卡面)、save_share_png 真實寫檔、剪貼簿在 Tauri 的行為。
+
 ## 2026-07-17:三樣態優化 階段 C+ — Usage 進階維度(v0.3.2,程式碼完成、未打包)
 
 - **活動熱力圖**:`heatCells` 純函式(daily 30 桶 → GitHub 式格;首日非週一前置空格),overview 僅 month 顯示;軸標固定英文(同島嶼短標哲學,避語系洩漏)。**無新後端聚合**,直接用階段 C 的日桶。

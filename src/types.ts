@@ -91,6 +91,10 @@ export interface Settings {
   island_aux: IslandAux;
   /** Reset-time display style. Defaults to "relative". */
   reset_display: ResetDisplay;
+  /** 階段 D 戰報 Share: last-used share-card style. Defaults to "statement". */
+  share_style: string;
+  /** 階段 D 戰報 Share: last-used range ("today"|"week"|"month"). Defaults to "week". */
+  share_range: string;
 }
 
 // ── Layer ③ analytics (UX Spec v3 §11) ──────────────────────────────

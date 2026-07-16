@@ -26,6 +26,8 @@ import { islandIntent, renderIsland, windowShort } from "./island";
 import { renderPanel } from "./panel";
 import { showIslandMenu } from "./contextmenu";
 import { renderAnalytics } from "./analytics";
+import { renderSharePanel } from "./share-panel";
+import type { ShareStyle } from "./share";
 import { fmtTokens, nowSecs } from "./format";
 import { getLocale, resolveLocale, setLocale, t } from "./i18n";
 
@@ -38,6 +40,13 @@ const ui = {
   metric: "tokens" as Metric,
   group: "agent" as Group,
   range: "week" as "today" | "week" | "month",
+  // 階段 D 戰報 Share (report subtab). style/range persist to settings; the fuel
+  // model/agent sub-toggle and the quota-note override are session-only.
+  // shareQuotaNote null → follow the style default (island_card on, else off).
+  shareStyle: "statement" as ShareStyle,
+  shareRange: "week" as "today" | "week" | "month",
+  shareFuelGroup: "model" as "model" | "agent",
+  shareQuotaNote: null as boolean | null,
   // Usage-tab quota summary expanded? Session-only (not persisted): the Usage
   // tab always re-opens onto the collapsed one-line digest.
   quotaExpanded: false,
@@ -68,6 +77,7 @@ function renderSubtabs() {
     ["share", t("subtab.share")],
     ["hourly", t("subtab.hourly")],
     ["stats", t("subtab.stats")],
+    ["report", t("subtab.report")],
   ];
   $("subtabs").innerHTML = subs
     .map(([id, label]) => `<button data-sub="${id}" class="${ui.subtab === id ? "on" : ""}">${label}</button>`)
@@ -75,6 +85,12 @@ function renderSubtabs() {
 }
 
 function renderToggles() {
+  // The report panel owns its own controls (style/range/etc), so the shared
+  // range/metric/group toggles render nothing there.
+  if (ui.subtab === "report") {
+    $("toggles").innerHTML = "";
+    return;
+  }
   // The model/agent group toggle drives both the overview stacks and the
   // "share" breakdown (階段 C: agents folded into this toggle).
   const showGroup = ui.subtab === "overview" || ui.subtab === "share";
@@ -166,10 +182,74 @@ function showAnalyticsSkeleton(): void {
     `</div><div class="chart-wrap"><div class="sk sk-chart"></div></div>`;
 }
 
+// ── 階段 D 戰報 Share (report subtab) ────────────────────────────────
+// The report panel uses its own range (ui.shareRange), independent of the usage
+// analytics range, so it keeps a separate one-entry cache.
+let shareCache: { range: string; data: Analytics } | null = null;
+
+function persistShare(): void {
+  if (!settings) return;
+  settings.share_style = ui.shareStyle;
+  settings.share_range = ui.shareRange;
+  void setSettings(settings);
+}
+
+/** Paint the share panel from an already-fetched payload (no IPC). */
+function paintReport(a: Analytics): void {
+  $("rate").textContent = `${fmtTokens(a.tokPerMin)} ${t("analytics.tokPerMin")}`;
+  const style = ui.shareStyle;
+  const quotaNote = ui.shareQuotaNote ?? style === "island_card";
+  renderSharePanel($("analytics"), {
+    analytics: a,
+    limits: lastSnap?.limits ?? [],
+    locale: getLocale(),
+    style,
+    range: ui.shareRange,
+    fuelGroup: ui.shareFuelGroup,
+    quotaNote,
+    setStyle: (s) => {
+      ui.shareStyle = s;
+      ui.shareQuotaNote = null; // reset override so the new style's default applies
+      persistShare();
+      paintReport(a);
+    },
+    setRange: (r) => {
+      ui.shareRange = r;
+      persistShare();
+      void renderReportNow();
+    },
+    setFuelGroup: (g) => {
+      ui.shareFuelGroup = g;
+      paintReport(a);
+    },
+    setQuotaNote: (on) => {
+      ui.shareQuotaNote = on;
+      paintReport(a);
+    },
+  });
+}
+
+/** Fetch (or reuse) the share-range analytics and paint the report panel. */
+async function renderReportNow(): Promise<void> {
+  const range = ui.shareRange;
+  if (shareCache && shareCache.range === range) {
+    paintReport(shareCache.data);
+    return;
+  }
+  const a = await getAnalytics(range);
+  shareCache = { range, data: a };
+  // Guard against a rapid range switch / subtab change superseding this fetch.
+  if (ui.subtab === "report" && ui.shareRange === range) paintReport(a);
+}
+
 /** Fetch (or reuse) the analytics payload and paint it. A cache hit renders
  *  synchronously with no IPC; a miss awaits get_analytics, then paints only if
  *  the key is still current (a rapid range/provider switch can supersede it). */
 async function renderAnalyticsNow(): Promise<void> {
+  if (ui.subtab === "report") {
+    await renderReportNow();
+    return;
+  }
   const key = analyticsDataKey();
   if (cachedAnalytics && cachedAnalytics.key === key) {
     renderAnalyticsInto(cachedAnalytics.data);
@@ -184,6 +264,10 @@ async function renderAnalyticsNow(): Promise<void> {
  *  paints instantly; a miss shows the skeleton immediately and fills it in when
  *  the fetch lands — either way fitWindow() can run right after without waiting. */
 function beginAnalytics(): void {
+  if (ui.subtab === "report") {
+    void renderReportNow();
+    return;
+  }
   const key = analyticsDataKey();
   if (cachedAnalytics && cachedAnalytics.key === key) {
     renderAnalyticsInto(cachedAnalytics.data);
@@ -435,7 +519,11 @@ async function renderSettings() {
 
 function readSettingsForm(): Settings {
   const v = (id: string) => $(id) as HTMLInputElement;
+  // Merge the form fields over the cached settings so fields with no form
+  // control (階段 D share_style / share_range, and any future non-form setting)
+  // are preserved rather than silently dropped on an unrelated settings change.
   return {
+    ...(settings ?? ({} as Settings)),
     autostart: v("s-autostart").checked,
     always_on_top: v("s-always-on-top").checked,
     allow_token_refresh: ($("s-refresh") as HTMLSelectElement).value === "on",
@@ -711,6 +799,16 @@ async function boot() {
   settings = await getSettings();
   setLocale(resolveLocale(settings.locale));
   applyStaticI18n();
+  // 階段 D: restore the last share style/range, clamping any junk to a default.
+  const STYLES: ShareStyle[] = ["statement", "diagnostics", "minimal", "fuel", "island_card", "wa"];
+  ui.shareStyle = STYLES.includes(settings.share_style as ShareStyle)
+    ? (settings.share_style as ShareStyle)
+    : "statement";
+  ui.shareRange = (["today", "week", "month"] as const).includes(
+    settings.share_range as "today" | "week" | "month",
+  )
+    ? (settings.share_range as "today" | "week" | "month")
+    : "week";
   ui.compact = settings.compact;
   document.body.classList.toggle("compact", ui.compact);
   renderTabs();
