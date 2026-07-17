@@ -62,8 +62,10 @@
 
 ## 視覺方向（定案後回填）
 
-* chosen_direction: <待選 — Claude Design 專案「TokenBar Design System」已有六方向比稿>
-* 參考圖路徑: `design/refs/direction-chosen.png`
+* chosen_direction: **D 極簡編輯部**（2026-07-17 拍板；六方向文字版見 design/refs/ds-A~F.md）
+* 出圖與匯出碼: **v0.app**（非 Stitch）— `design/stitch/export/token-bar-overlay-design/`
+* 參考圖路徑: `design/stitch/export/token-bar-overlay-design/public/final.png`、`refined.png`
+* 規格合同: `docs/DESIGN-SPEC.md`
 
 * * *
 
