@@ -6,7 +6,7 @@ use chrono::Timelike;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 #[derive(Serialize)]
@@ -438,13 +438,13 @@ where
     }
 }
 
-// ── Codex: tail-read each recent session for its cumulative total ────────
+// ── Codex: cumulative token events converted to per-event deltas ─────────
 //
 // 階段 C+ 資料源勘察結論(2026-07-17,本機真實 log 抽樣,只看結構):
 //
 // Codex rollout-*.jsonl 每行 `{timestamp,type,payload}`。可用於本階段的欄位:
-//   · payload.type == "token_count" 帶 `total_token_usage`(累計值,取最後一筆
-//     即為本 session 總量;現行 tail-read 即靠此)。
+//   · payload.type == "token_count" 帶 `total_token_usage` 累計值；同檔逐筆
+//     差分後，依各事件 timestamp 歸屬。
 //   · session_meta(通常首行)/ turn_context 的 `payload.cwd` = 專案工作目錄。
 //     → 專案維度:取 cwd 的 basename 當專案名(見 first_cwd_basename)。
 //
@@ -462,6 +462,7 @@ fn scan_codex(acc: &mut Acc, start: i64) -> u32 {
         .to_string_lossy()
         .replace('\\', "/");
     let mut sessions = 0;
+    let mut seen = HashSet::new();
     if let Ok(paths) = glob::glob(&pattern) {
         for p in paths.filter_map(Result::ok) {
             let ts = mtime_secs(&p);
@@ -469,14 +470,87 @@ fn scan_codex(acc: &mut Acc, start: i64) -> u32 {
                 continue;
             }
             sessions += 1;
-            if let Some((i, ca, o, r)) = last_total_usage(&p) {
+            if let Ok(file) = File::open(&p) {
                 let project = first_cwd_basename(&p);
-                // kind = None: Codex tokens aren't per-tool attributable (see note).
-                acc.add(ts, "gpt-5-codex", "Codex CLI", &project, None, i, ca, o, r);
+                scan_codex_lines(
+                    acc,
+                    start,
+                    &project,
+                    BufReader::new(file).lines().map_while(Result::ok),
+                    &mut seen,
+                );
             }
         }
     }
     sessions
+}
+
+type CodexUsage = (u64, u64, u64, u64);
+
+fn codex_token_event(line: &str) -> Option<(i64, CodexUsage)> {
+    if !line.contains("token_count") {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let payload = v.get("payload")?;
+    if payload.get("type").and_then(|x| x.as_str()) != Some("token_count") {
+        return None;
+    }
+    let usage = payload
+        .get("info")
+        .and_then(|x| x.get("total_token_usage"))
+        .or_else(|| payload.get("total_token_usage"))?;
+    let get = |key: &str| usage.get(key).and_then(|x| x.as_u64()).unwrap_or(0);
+    Some((
+        v.get("timestamp").and_then(parse_epoch)?,
+        (
+            get("input_tokens"),
+            get("cached_input_tokens"),
+            get("output_tokens"),
+            get("reasoning_output_tokens"),
+        ),
+    ))
+}
+
+fn usage_total((input, cached, output, reasoning): CodexUsage) -> u64 {
+    input.saturating_add(cached).saturating_add(output).saturating_add(reasoning)
+}
+
+fn scan_codex_lines<I>(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    lines: I,
+    seen: &mut HashSet<(i64, u64)>,
+) where
+    I: Iterator<Item = String>,
+{
+    let mut previous: Option<CodexUsage> = None;
+    for line in lines {
+        let Some((ts, current)) = codex_token_event(&line) else {
+            continue;
+        };
+        let total = usage_total(current);
+        let duplicate = !seen.insert((ts, total));
+        let prior = previous.replace(current).unwrap_or((0, 0, 0, 0));
+        if duplicate || ts < start || total.saturating_sub(usage_total(prior)) == 0 {
+            continue;
+        }
+        let (i, ca, o, r) = current;
+        let (pi, pca, po, pr) = prior;
+        // kind = None: Codex tokens aren't per-tool attributable (see note).
+        acc.add(
+            ts,
+            "gpt-5-codex",
+            "Codex CLI",
+            project,
+            None,
+            i.saturating_sub(pi),
+            ca.saturating_sub(pca),
+            o.saturating_sub(po),
+            r.saturating_sub(pr),
+        );
+    }
 }
 
 /// The session's project folder, from the first `payload.cwd` in the file
@@ -513,44 +587,6 @@ fn mtime_secs(p: &PathBuf) -> i64 {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
-}
-
-fn last_total_usage(path: &PathBuf) -> Option<(u64, u64, u64, u64)> {
-    let mut f = File::open(path).ok()?;
-    let len = f.metadata().ok()?.len();
-    let start = len.saturating_sub(512 * 1024);
-    f.seek(SeekFrom::Start(start)).ok()?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf).ok()?;
-    let text = String::from_utf8_lossy(&buf);
-
-    let key = "total_token_usage\":";
-    let at = text.rfind(key)?;
-    let brace = text[at + key.len()..].find('{')?;
-    let obj_start = at + key.len() + brace;
-    let bytes = text.as_bytes();
-    let mut depth = 0i32;
-    let mut end = None;
-    for i in obj_start..bytes.len() {
-        match bytes[i] {
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    end = Some(i + 1);
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    let obj: serde_json::Value = serde_json::from_str(&text[obj_start..end?]).ok()?;
-    Some((
-        obj.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
-        obj.get("cached_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
-        obj.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
-        obj.get("reasoning_output_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
-    ))
 }
 
 // ── Claude: per-message usage from projects/*.jsonl ──────────────────────
@@ -1075,6 +1111,76 @@ mod tests {
         let a = routed("today", "codex", codex_only, |_, _| {}, Vec::new());
         assert!(a.by_kind.is_empty(), "Codex must not produce activity kinds");
         assert_eq!(a.by_project[0].name, "proj-x");
+    }
+
+    fn codex_line(ts: &str, total: u64) -> String {
+        serde_json::json!({
+            "timestamp": ts,
+            "payload": {
+                "type": "token_count",
+                "info": { "total_token_usage": { "input_tokens": total } }
+            }
+        })
+        .to_string()
+    }
+
+    fn scan_fake_codex_files(files: Vec<Vec<String>>) -> Acc {
+        let mut acc = Acc::new(1_783_000_000);
+        let mut seen = HashSet::new();
+        for lines in files {
+            scan_codex_lines(&mut acc, 0, "test-project", lines.into_iter(), &mut seen);
+        }
+        acc
+    }
+
+    #[test]
+    fn codex_cumulative_events_become_timestamped_deltas() {
+        let acc = scan_fake_codex_files(vec![vec![
+            codex_line("2026-07-17T01:00:00Z", 100),
+            codex_line("2026-07-17T02:00:00Z", 250),
+            codex_line("2026-07-17T03:00:00Z", 250),
+            codex_line("2026-07-17T04:00:00Z", 400),
+        ]]);
+        assert_eq!(acc.breakdown.input, 400);
+        assert_eq!(acc.hourly[1], 100);
+        assert_eq!(acc.hourly[2], 150);
+        assert_eq!(acc.hourly[3], 0);
+        assert_eq!(acc.hourly[4], 150);
+    }
+
+    #[test]
+    fn codex_events_across_midnight_are_booked_to_separate_days() {
+        let acc = scan_fake_codex_files(vec![vec![
+            codex_line("2026-07-16T23:59:00Z", 100),
+            codex_line("2026-07-17T00:01:00Z", 250),
+        ]]);
+        assert_eq!(acc.days["2026-07-16"].by_agent[CODEX_AGENT], 100);
+        assert_eq!(acc.days["2026-07-17"].by_agent[CODEX_AGENT], 150);
+    }
+
+    #[test]
+    fn codex_fork_replay_prefix_counts_once() {
+        let parent = vec![
+            codex_line("2026-07-17T01:00:00Z", 100),
+            codex_line("2026-07-17T02:00:00Z", 250),
+        ];
+        let fork = vec![
+            codex_line("2026-07-17T01:00:00Z", 100),
+            codex_line("2026-07-17T02:00:00Z", 250),
+            codex_line("2026-07-17T03:00:00Z", 400),
+        ];
+        let acc = scan_fake_codex_files(vec![parent, fork]);
+        assert_eq!(acc.breakdown.input, 400);
+    }
+
+    #[test]
+    fn codex_decreasing_total_saturates_to_zero() {
+        let acc = scan_fake_codex_files(vec![vec![
+            codex_line("2026-07-17T01:00:00Z", 250),
+            codex_line("2026-07-17T02:00:00Z", 100),
+        ]]);
+        assert_eq!(acc.breakdown.input, 250);
+        assert_eq!(acc.hourly[2], 0);
     }
 
     #[test]
