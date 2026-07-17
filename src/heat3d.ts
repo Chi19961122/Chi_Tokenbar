@@ -43,7 +43,7 @@ function heatColors(container: HTMLElement): Array<{ color: THREE.Color; opacity
     const match = css.match(/[\d.]+/g)?.map(Number) ?? [];
     return match.length >= 3
       ? { color: new THREE.Color(match[0] / 255, match[1] / 255, match[2] / 255), opacity: match[3] ?? 1 }
-      : { color: new THREE.Color("#2fa87e"), opacity: 1 };
+      : { color: new THREE.Color("#F4F4F5"), opacity: 1 };
   });
   probe.remove();
   return colors;
@@ -181,7 +181,7 @@ export function mountHeat3d(
       if (hit !== instance.hovered) {
         instance.hovered?.material.emissive.set(0x000000);
         instance.hovered = hit ?? null;
-        instance.hovered?.material.emissive.set(0x26352f);
+        instance.hovered?.material.emissive.set(0xec4899);
         render(instance);
       }
       tooltip.hidden = !instance.hovered;

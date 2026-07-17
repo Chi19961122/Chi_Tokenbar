@@ -1,4 +1,4 @@
-// Shared palette for TS-side SVG charts (mirrors CSS vars — v8 gem family).
+// Shared neutral palette for TS-side charts (DESIGN-SPEC chart-scale).
 
 export const STATUS = {
   near: "#e0a63a",
@@ -6,42 +6,38 @@ export const STATUS = {
   muted: "#6f7883",
 };
 
-// Categorical series palette for stacked charts (gem family, distinct).
+// Charts intentionally carry no provider/status family colors. The pink accent
+// is reserved for explicit "today" / first-place marks in their renderers.
 export const SERIES = [
-  "#2fa87e",
-  "#2b6fb8",
-  "#7a4fc9",
-  "#c2497a",
-  "#2ba3a0",
-  "#5b62d4",
-  "#8d93e8",
-  "#5cc39f",
+  "#18181B",
+  "#52525B",
+  "#A1A1AA",
+  "#D4D4D8",
+  "#F4F4F5",
 ];
 
 export function seriesColor(i: number): string {
   return SERIES[i % SERIES.length];
 }
 
-// Fixed color per known model / agent, so a given series keeps its color across
-// pages regardless of enumeration order. Substring match: real keys carry
-// suffixes/versions ("opus-4.8", "gpt-5-codex"). Unknown keys fall back to the
-// rotating SERIES palette by index.
+// Fixed neutral shade per known model / agent, so a given series keeps its
+// shade across pages without reintroducing provider-family colors.
 const NAMED: Array<[string, string]> = [
   // models
-  ["sonnet", "#2fa87e"],
-  ["opus", "#2b6fb8"],
-  ["haiku", "#7a4fc9"],
+  ["sonnet", "#52525B"],
+  ["opus", "#18181B"],
+  ["haiku", "#A1A1AA"],
   // agents (main/root session, then the role fleet)
-  ["main", "#2fa87e"],
-  ["root", "#2fa87e"],
-  ["executor", "#2b6fb8"],
-  ["scout", "#7a4fc9"],
-  ["verifier", "#c2497a"],
+  ["main", "#18181B"],
+  ["root", "#18181B"],
+  ["executor", "#52525B"],
+  ["scout", "#A1A1AA"],
+  ["verifier", "#D4D4D8"],
   // codex spans both a model family and its agent
-  ["codex", "#5b62d4"],
+  ["codex", "#52525B"],
   // 階段 E multi-tool clients (agent keys "OpenCode" / "Gemini CLI")
-  ["opencode", "#2ba3a0"],
-  ["gemini", "#c2497a"],
+  ["opencode", "#A1A1AA"],
+  ["gemini", "#D4D4D8"],
 ];
 
 /** Color for a named series (model/agent), falling back to the index palette. */

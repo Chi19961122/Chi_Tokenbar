@@ -1,4 +1,5 @@
 # T-ui-202 — Usage 視圖：圖表灰階化（bar/熱力/donut/專案條/tiles/3D）
+status: done
 
 `視覺遷移模式。只改外觀 / tokens / 共用元件樣式。禁止改 API、資料流、route path。服從 DESIGN-SPEC.md。`
 

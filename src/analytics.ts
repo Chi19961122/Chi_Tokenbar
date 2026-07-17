@@ -143,6 +143,7 @@ const WEEKDAY_AXIS = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
 function heatmap(a: Analytics): string {
   const { cells, weeks } = heatCells(a.daily);
   if (cells.length === 0) return "";
+  const today = cells[cells.length - 1].date;
   const totalByDate = new Map(
     a.daily.map((d) => [d.date, Object.values(d.byAgent).reduce((s, v) => s + v, 0)]),
   );
@@ -151,7 +152,7 @@ function heatmap(a: Analytics): string {
     .map((c) => {
       const level = c.intensity === 0 ? 0 : Math.min(4, Math.ceil(c.intensity * 4));
       const tot = totalByDate.get(c.date) ?? 0;
-      return `<div class="hm-cell hm-l${level}" style="grid-row:${c.weekdayRow + 1};grid-column:${
+      return `<div class="hm-cell hm-l${level}${c.date === today ? " hm-today" : ""}" style="grid-row:${c.weekdayRow + 1};grid-column:${
         c.weekCol + 1
       }" title="${c.date} · ${fmtTokens(tot)}"></div>`;
     })
@@ -261,18 +262,10 @@ async function syncHeat3d(container: HTMLElement, a: Analytics, epoch: number): 
 
 // ── activity-type donut + project bars (階段 C+, Breakdown) ────────────────
 
-/** Fixed color per activity kind (mirrors the gem series family). */
-function kindColor(kind: string): string {
-  switch (kind) {
-    case "edit":
-      return "#2b6fb8";
-    case "read":
-      return "#2fa87e";
-    case "run":
-      return "#c2497a";
-    default:
-      return "#6f7883";
-  }
+/** Fixed editorial sequence; activity kinds no longer carry semantic colors. */
+function kindColor(index: number): string {
+  const colors = ["#18181B", "#71717A", "#D4D4D8", "#EC4899"];
+  return colors[index % colors.length];
 }
 function kindLabel(kind: string): string {
   switch (kind) {
@@ -295,15 +288,20 @@ function donut(byKind: KindCount[]): string {
   if (byKind.length === 0) return "";
   const total = byKind.reduce((s, k) => s + k.tokens, 0);
   if (total <= 0) return "";
-  let acc = 0;
-  const stops: string[] = [];
+  const radius = 20;
+  const circumference = 2 * Math.PI * radius;
+  const gap = 2;
+  let offset = 0;
+  const arcs: string[] = [];
   const legend = byKind
-    .map((k) => {
-      const start = (acc / total) * 100;
-      acc += k.tokens;
-      const end = (acc / total) * 100;
-      const col = kindColor(k.kind);
-      stops.push(`${col} ${start.toFixed(2)}% ${end.toFixed(2)}%`);
+    .map((k, index) => {
+      const col = kindColor(index);
+      const share = k.tokens / total;
+      const dash = Math.max(0, share * circumference - gap);
+      arcs.push(`<circle cx="28" cy="28" r="${radius}" fill="none" stroke="${col}" stroke-width="7"
+        stroke-dasharray="${dash} ${circumference - dash}" stroke-dashoffset="${-offset}"
+        transform="rotate(-90 28 28)"/>`);
+      offset += share * circumference;
       return `<span><i style="background:${col}"></i>${kindLabel(k.kind)} <b>${sharePct(
         k.tokens,
         total,
@@ -311,9 +309,10 @@ function donut(byKind: KindCount[]): string {
     })
     .join("");
   return `<div class="donut-sec">
-    <div class="donut" style="background:conic-gradient(${stops.join(",")})">
-      <div class="donut-hole"><b>${fmtTokens(total)}</b><span>${t("analytics.tokens")}</span></div>
-    </div>
+    <svg class="donut" viewBox="0 0 56 56" role="img" aria-label="${fmtTokens(total)} ${t("analytics.tokens")}">
+      <circle cx="28" cy="28" r="${radius}" fill="none" stroke="#F4F4F5" stroke-width="7"/>
+      ${arcs.join("")}
+    </svg>
     <div class="donut-legend">${legend}</div>
   </div>`;
 }
@@ -329,9 +328,9 @@ function projectBars(byProject: ProjectCount[]): string {
       const name = p.name === "__other__" ? t("analytics.projectsOther") : p.name;
       return `<div class="bar-row">
         <span class="bar-label" title="${esc(name)}">${esc(name)}</span>
-        <div class="bar-track"><div class="bar-fill" style="width:${
+        <div class="bar-track"><div class="bar-fill${i === 0 ? " is-top" : ""}" style="width:${
           (p.tokens / max) * 100
-        }%;background:${seriesColor(i)}"></div></div>
+        }%"></div></div>
         <span class="bar-val">${shareLabel(p.tokens, total)}</span>
       </div>`;
     })
@@ -347,19 +346,10 @@ function section(title: string, inner: string): string {
 function tiles(a: Analytics): string {
   return `
     <div class="tiles">
-      <div class="tile"><b>${fmtTokens(a.totalTokens)}</b><span>${t("analytics.tokens")}</span></div>
-      <div class="tile"><b>${fmtUsd(a.totalCostUsd)}</b><span>${t("analytics.estCost")}</span></div>
-      <div class="tile"><b>${fmtUsd(a.bestDay.costUsd)}</b><span>${t("analytics.peak")} · ${a.bestDay.date.slice(5)}</span></div>
-      <div class="tile"><b>${a.activeDays}</b><span>${t("analytics.activeDays")}</span></div>
+      <div class="tile tile-accent"><span>${t("analytics.estCost")}</span><b>${fmtUsd(a.totalCostUsd)}</b></div>
+      <div class="tile"><span>${t("analytics.peak")}</span><b>${a.records.maxDay.date.slice(5)}</b></div>
+      <div class="tile"><span>${t("analytics.streak")}</span><b>${a.records.streakDays}d</b></div>
     </div>`;
-}
-
-function seriesKeys(daily: DayPoint[], group: Group): string[] {
-  const set = new Set<string>();
-  for (const d of daily) {
-    for (const k of Object.keys(group === "model" ? d.byModel : d.byAgent)) set.add(k);
-  }
-  return [...set];
 }
 
 /** Value shown on the y-axis for one day, honouring the metric. */
@@ -370,7 +360,7 @@ function dayTotal(d: DayPoint, opts: AnalyticsOpts): number {
 }
 
 function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
-  const W = 320, H = 150, padB = 18, padT = 6;
+  const W = 320, plotH = 56, H = 74, gap = 2;
   // Drop leading empty days so a month backed by a few days of logs doesn't
   // render a wall of blank bars; the x-axis then starts at the first active day
   // (which matches the backend's range_start_day annotation).
@@ -380,60 +370,28 @@ function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
   const daily = a.daily.slice(fi);
   const totals = allTotals.slice(fi);
   const n = daily.length;
-  const bw = (W / n) * 0.62;
-  const keys = seriesKeys(daily, opts.group);
+  const bw = (W - gap * Math.max(0, n - 1)) / Math.max(1, n);
 
   const max = Math.max(1, ...totals);
-  const scale = (H - padB - padT) / max;
+  const scale = plotH / max;
   // Denominator for the "share of range total" hover labels (§ readability).
   const rangeTotal = totals.reduce((s, v) => s + v, 0);
   const fmtDayVal = (v: number) => (opts.metric === "price" ? fmtUsd(v) : shareLabel(v, rangeTotal));
 
   const bars = daily
     .map((d, i) => {
-      const cx = (i + 0.5) * (W / n);
+      const x = i * (bw + gap);
+      const h = totals[i] * scale;
+      const color = i === n - 1 ? "#EC4899" : totals[i] / max > 0.6 ? "#18181B" : "#D4D4D8";
       const title = `<title>${d.date.slice(5)} · ${fmtDayVal(totals[i])}</title>`;
-      if (opts.metric === "price") {
-        const h = d.costUsd * scale;
-        return `<rect x="${cx - bw / 2}" y="${H - padB - h}" width="${bw}" height="${h}" rx="1.5" fill="${seriesColor(1)}">${title}</rect>`;
-      }
-      const rec = opts.group === "model" ? d.byModel : d.byAgent;
-      // Topmost non-empty segment gets a rounded top (C1 dome). rx on a <rect>
-      // rounds all four corners; since this is the last segment drawn and the
-      // ones below it are square-topped, the visible result reads as a dome.
-      let topKi = -1;
-      keys.forEach((k, ki) => {
-        if ((rec[k] || 0) > 0) topKi = ki;
-      });
-      let y = H - padB;
-      let segs = "";
-      keys.forEach((k, ki) => {
-        const v = rec[k] || 0;
-        const h = v * scale;
-        y -= h;
-        const dome = ki === topKi ? ` rx="2"` : "";
-        segs += `<rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${h}"${dome} fill="${keyColor(k, ki)}"/>`;
-      });
-      // A transparent full-height hitbox per day carries the total/% hover.
-      const hit = `<rect x="${cx - bw / 2}" y="${padT}" width="${bw}" height="${H - padB - padT}" fill="transparent">${title}</rect>`;
-      return segs + hit;
+      return `<rect class="daily-bar${i === n - 1 ? " is-today" : ""}" x="${x}" y="${plotH - h}" width="${bw}" height="${Math.max(0, h)}" rx="1" fill="${color}">${title}</rect>`;
     })
     .join("");
 
-  const xlabels =
-    n > 1
-      ? `<text x="2" y="${H - 5}" class="axis">${daily[0].date.slice(5)}</text>
-         <text x="${W - 2}" y="${H - 5}" class="axis" text-anchor="end">${daily[n - 1].date.slice(5)}</text>`
-      : `<text x="${W / 2}" y="${H - 5}" class="axis" text-anchor="middle">${daily[0].date.slice(5)}</text>`;
+  const xlabels = `<text x="0" y="${H - 1}" class="axis">30d ago</text>
+    <text x="${W}" y="${H - 1}" class="axis axis-today" text-anchor="end">today</text>`;
 
-  const legend =
-    opts.metric === "price"
-      ? ""
-      : `<div class="legend">${keys
-          .map((k, ki) => `<span><i style="background:${keyColor(k, ki)}"></i>${k}</span>`)
-          .join("")}</div>`;
-
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart">${bars}${xlabels}</svg>${legend}`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart daily-chart">${bars}${xlabels}</svg>`;
 }
 
 function hourly(a: Analytics): string {

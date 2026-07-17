@@ -97,9 +97,12 @@ describe("month chart with a short history", () => {
     renderAnalytics(root, a, { subtab: "overview", metric: "tokens", group: "agent" });
 
     expect(root.querySelector(".chart-note")?.textContent).toContain(a.rangeStartDay.slice(5));
-    // Leading empty days dropped → the axis starts at the first active day.
-    const firstAxis = root.querySelector(".chart .axis")?.textContent;
-    expect(firstAxis).toBe(a.rangeStartDay.slice(5));
+    // Leading empty days are still dropped, while the editorial axis stays minimal.
+    expect(root.querySelectorAll(".daily-bar")).toHaveLength(2);
+    expect([...root.querySelectorAll(".chart .axis")].map((n) => n.textContent)).toEqual([
+      "30d ago",
+      "today",
+    ]);
   });
 });
 
@@ -150,6 +153,18 @@ describe("heatCells (activity heatmap)", () => {
 });
 
 describe("階段 C+ render wiring", () => {
+  it("renders daily totals as neutral single bars with a pink today bar", () => {
+    const a = mockAnalytics("month");
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "overview", metric: "tokens", group: "agent" });
+
+    const bars = [...root.querySelectorAll<SVGRectElement>(".daily-bar")];
+    expect(bars).toHaveLength(a.daily.length);
+    expect(bars[bars.length - 1]?.getAttribute("fill")).toBe("#EC4899");
+    expect(bars.slice(0, -1).every((bar) => ["#18181B", "#D4D4D8"].includes(bar.getAttribute("fill") ?? ""))).toBe(true);
+    expect(root.querySelector(".legend")).toBeNull();
+  });
+
   it("shows the heatmap on overview only for the month range", () => {
     const month = { ...mockAnalytics("month"), range: "month" as const };
     const week = { ...mockAnalytics("week"), range: "week" as const };
@@ -157,6 +172,7 @@ describe("階段 C+ render wiring", () => {
 
     renderAnalytics(root, month, { subtab: "overview", metric: "tokens", group: "agent" });
     expect(root.querySelector(".hm")).not.toBeNull();
+    expect(root.querySelectorAll(".hm-today")).toHaveLength(1);
 
     renderAnalytics(root, week, { subtab: "overview", metric: "tokens", group: "agent" });
     expect(root.querySelector(".hm")).toBeNull();
@@ -167,6 +183,8 @@ describe("階段 C+ render wiring", () => {
     const root = document.createElement("div");
     renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
     expect(root.querySelector(".donut")).not.toBeNull();
+    expect(root.querySelector(".donut")?.tagName).toBe("svg");
+    expect(root.querySelectorAll(".donut circle")).toHaveLength(a.byKind.length + 1);
     // Project bars carry a token·% label (shareLabel), like the other bars.
     expect(root.querySelector(".sub-sec")).not.toBeNull();
   });
@@ -194,6 +212,13 @@ describe("personal records", () => {
     const root = document.createElement("div");
     renderAnalytics(root, a, { subtab: "stats", metric: "tokens", group: "agent" });
     expect(root.querySelector(".records")).toBeNull();
+  });
+
+  it("renders three stat tiles with Est. Cost reversed", () => {
+    const root = document.createElement("div");
+    renderAnalytics(root, mockAnalytics("week"), { subtab: "overview", metric: "tokens", group: "agent" });
+    expect(root.querySelectorAll(":scope > .tiles > .tile")).toHaveLength(3);
+    expect(root.querySelector(":scope > .tiles > .tile")?.classList.contains("tile-accent")).toBe(true);
   });
 
   it("renders record values and PR badge", () => {
