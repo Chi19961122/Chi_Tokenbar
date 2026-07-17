@@ -837,14 +837,49 @@ async function boot() {
     }
   });
 
-  // Tick countdowns once a second from the cached snapshot. Never resizes
-  // the window — heights are locked per display mode.
+  // Tick once a second from the cached snapshot. Never resizes the window —
+  // heights are locked per display mode.
+  //
+  // The "refresh in Ns" countdown is a cheap targeted textContent update and
+  // runs every second. The heavy rebuilds (island + the whole Limits panel via
+  // innerHTML) only run when their *visible* output would actually change: a
+  // new snapshot, a UI-state change, or a minute rolling over (reset countdowns
+  // are minute-granular). Rebuilding the entire DOM every second restarted the
+  // gauge CSS transitions and re-laid-out the editorial type each frame, which
+  // read as the whole app being laggy.
+  let lastRenderSig = "";
   setInterval(() => {
+    if (ui.expanded) renderRefresh();
+    // Reset countdowns are minute-granular (fmtDur → "3h 12m") EXCEPT the final
+    // minute, which renders as "Ns" and must tick every second. Drop the time
+    // bucket to per-second only while a reset is that close (relative mode);
+    // otherwise a per-minute bucket keeps the heavy rebuild rare.
+    const now = nowSecs();
+    const relative = (settings?.reset_display ?? "relative") !== "clock";
+    const imminentReset =
+      relative &&
+      (lastSnap?.limits ?? []).some((l) => {
+        const d = l.resets_at - now;
+        return d > 0 && d < 60;
+      });
+    const timeBucket = imminentReset ? now : Math.floor(now / 60);
+    const sig = JSON.stringify([
+      lastSnap?.updated_at ?? 0,
+      ui.expanded,
+      ui.compact,
+      ui.relogin,
+      ui.copied,
+      ui.quotaExpanded,
+      !$("settings").hasAttribute("hidden"),
+      timeBucket,
+      todayRate,
+      todayCost,
+      settings,
+    ]);
+    if (sig === lastRenderSig) return;
+    lastRenderSig = sig;
     renderIslandNow();
-    if (ui.expanded) {
-      renderCards();
-      renderRefresh();
-    }
+    if (ui.expanded) renderCards();
   }, 1000);
 
   // Today's burn rate + est. cost for the island aux readout (60s cache). On a
