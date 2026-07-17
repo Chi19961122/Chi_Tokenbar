@@ -107,9 +107,6 @@ const en = {
 
   // Analytics — 階段 C+ advanced dimensions
   "analytics.heatmapTitle": "Daily activity",
-  "analytics.heatmapViewLabel": "Heatmap view",
-  "analytics.heatmapView2d": "2D",
-  "analytics.heatmapView3d": "3D",
   "analytics.activityTitle": "Activity type",
   "analytics.projectsTitle": "Projects",
   "analytics.projectsOther": "Other projects",
@@ -292,9 +289,6 @@ const zhTW = {
   "analytics.reasoning": "推理",
 
   "analytics.heatmapTitle": "每日活動",
-  "analytics.heatmapViewLabel": "熱力圖檢視",
-  "analytics.heatmapView2d": "2D",
-  "analytics.heatmapView3d": "3D",
   "analytics.activityTitle": "活動類型",
   "analytics.projectsTitle": "專案",
   "analytics.projectsOther": "其他專案",
