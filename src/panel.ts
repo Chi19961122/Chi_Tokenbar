@@ -194,6 +194,31 @@ function list(limits: Limit[], opts: PanelOpts): string {
   return groups || `<div class="empty-note">${t("list.noTools")}</div>`;
 }
 
+function shellStatus(limits: Limit[]): "safe" | "warn" | "locked" | "stale" {
+  if (limits.some((l) => l.status === "locked")) return "locked";
+  if (limits.some((l) => l.status === "near")) return "warn";
+  if (limits.some((l) => isUnknown(l) || l.status === "stale" || l.status === "idle")) return "stale";
+  return "safe";
+}
+
+function sectionHeader(number: "01" | "02", title: "limits" | "usage"): string {
+  return `<div class="section-head">
+    <span class="section-number">${number}</span>
+    <span class="section-title">${t(`section.${title}`)}</span>
+    <span class="section-editorial">${t(`section.${title}Editorial`)}</span>
+  </div>`;
+}
+
+function statusPill(limits: Limit[]): string {
+  const state = shellStatus(limits);
+  const known = limits.filter((l) => !isUnknown(l));
+  const left = known.length ? Math.min(...known.map((l) => pctLeft(l.util))) : null;
+  return `<div class="status-row">
+    <span class="app-mark" aria-hidden="true">ϟ</span>
+    <span class="status-pill status-pill-${state}"><span class="status-ping"></span>${left === null ? "—" : `${left}% left`}</span>
+  </div>`;
+}
+
 // ── Usage-tab quota summary (階段 C) ──────────────────────────────────
 
 /** Fixed-English provider labels for the summary line (mirrors the island's
@@ -257,8 +282,9 @@ export function renderPanel(container: HTMLElement, snap: Snapshot | null, opts:
   const limits = snap?.limits ?? [];
   if (opts.variant === "summary") {
     const expanded = opts.summaryExpanded ?? false;
-    container.innerHTML = summaryBar(limits, expanded) + (expanded ? list(limits, opts) : "");
+    container.innerHTML = statusPill(limits) + sectionHeader("02", "usage") +
+      summaryBar(limits, expanded) + (expanded ? list(limits, opts) : "");
     return;
   }
-  container.innerHTML = list(limits, opts);
+  container.innerHTML = statusPill(limits) + sectionHeader("01", "limits") + list(limits, opts);
 }

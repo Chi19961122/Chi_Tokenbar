@@ -1,4 +1,5 @@
 # T-ui-011 — Shell：面板外框、StatusPill、SectionHeader、BottomBar、segmented、選單
+status: done
 
 `視覺遷移模式。只改外觀 / tokens / 共用元件樣式。禁止改 API、資料流、route path。服從 DESIGN-SPEC.md。`
 
@@ -44,3 +45,8 @@
 | 開哪個 URL | 做什麼 | 期望看到 |
 | --- | --- | --- |
 | http://localhost:1420 | 看頂列/區段頭/底列/選單/分頁切換 | 對齊 SPEC 樣式；devbar 各情境膠囊色正確；無 console 錯誤 |
+
+### Attempt 1
+
+    ERROR: Selected model is at capacity. Please try a different model.
+    （gpt-5.6-sol 容量滿載，非票內容問題；工作區已清回乾淨狀態重試）

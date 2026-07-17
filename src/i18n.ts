@@ -18,6 +18,10 @@ const en = {
   "header.settingsTitle": "Settings",
   "header.collapseTitle": "Collapse",
   "header.refreshIn": "Refresh in {v}",
+  "section.limits": "Limits",
+  "section.limitsEditorial": "What's left in the tank",
+  "section.usage": "Usage",
+  "section.usageEditorial": "How the work adds up",
 
   // Settings form
   "settings.startupWindow": "Startup & Window",
@@ -204,6 +208,10 @@ const zhTW = {
   "header.settingsTitle": "設定",
   "header.collapseTitle": "收合",
   "header.refreshIn": "{v} 後更新",
+  "section.limits": "限額",
+  "section.limitsEditorial": "還能跑多遠",
+  "section.usage": "分析",
+  "section.usageEditorial": "每一段投入的累積",
 
   "settings.startupWindow": "啟動與視窗",
   "settings.launchAtStartup": "開機時啟動",

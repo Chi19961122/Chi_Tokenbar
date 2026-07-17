@@ -89,5 +89,8 @@ describe("renderPanel summary variant", () => {
 
     expect(root.querySelector("[data-quota-toggle]")).toBeNull();
     expect(root.querySelectorAll(".lrow").length).toBe(LIMITS.length);
+    expect(root.querySelector(".status-pill")?.textContent).toContain("0% left");
+    expect(root.querySelector(".section-number")?.textContent).toBe("01");
+    expect(root.querySelector(".section-editorial")?.textContent).toBe("What's left in the tank");
   });
 });
