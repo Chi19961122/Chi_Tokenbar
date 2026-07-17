@@ -185,7 +185,12 @@ impl Acc {
         Acc {
             days: HashMap::new(),
             hourly: [0; 24],
-            breakdown: Breakdown { input: 0, cached: 0, output: 0, reasoning: 0 },
+            breakdown: Breakdown {
+                input: 0,
+                cached: 0,
+                output: 0,
+                reasoning: 0,
+            },
             by_kind: HashMap::new(),
             by_project: HashMap::new(),
             recent_tokens: 0,
@@ -209,6 +214,26 @@ impl Acc {
         output: u64,
         reasoning: u64,
     ) {
+        let cost = ((input + cached + output + reasoning) as f64 / 1e6) * rate_per_mtok(model);
+        self.add_with_cost(
+            ts, model, agent, project, kind, input, cached, output, reasoning, cost,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn add_with_cost(
+        &mut self,
+        ts: i64,
+        model: &str,
+        agent: &str,
+        project: &str,
+        kind: Option<&str>,
+        input: u64,
+        cached: u64,
+        output: u64,
+        reasoning: u64,
+        cost: f64,
+    ) {
         let total = input + cached + output + reasoning;
         if total == 0 {
             return;
@@ -216,10 +241,13 @@ impl Acc {
         let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) else {
             return;
         };
-        let day = self.days.entry(dt.format("%Y-%m-%d").to_string()).or_default();
+        let day = self
+            .days
+            .entry(dt.format("%Y-%m-%d").to_string())
+            .or_default();
         *day.by_model.entry(model.to_string()).or_default() += total;
         *day.by_agent.entry(agent.to_string()).or_default() += total;
-        day.cost += (total as f64 / 1e6) * rate_per_mtok(model);
+        day.cost += cost;
 
         self.hourly[dt.hour() as usize] += total;
 
@@ -282,7 +310,12 @@ fn filter_accounts(
 ///
 /// Skips the scan outright rather than scanning then discarding: `scan_*`
 /// walks a whole directory tree, and a hidden provider's files are pure waste.
-pub fn compute_with(range: &str, filter: &str, tool_opencode: bool, tool_gemini: bool) -> Analytics {
+pub fn compute_with(
+    range: &str,
+    filter: &str,
+    tool_opencode: bool,
+    tool_gemini: bool,
+) -> Analytics {
     compute_routed(
         range,
         filter,
@@ -355,7 +388,10 @@ where
     let mut by_agent: HashMap<String, u64> = HashMap::new();
     let mut total_tokens = 0u64;
     let mut total_cost = 0.0;
-    let mut best = BestDay { date: String::new(), cost_usd: 0.0 };
+    let mut best = BestDay {
+        date: String::new(),
+        cost_usd: 0.0,
+    };
 
     for i in 0..=days_back {
         let date = date_str(start + i * 86400);
@@ -369,7 +405,10 @@ where
         }
         total_cost += agg.cost;
         if agg.cost > best.cost_usd {
-            best = BestDay { date: date.clone(), cost_usd: agg.cost };
+            best = BestDay {
+                date: date.clone(),
+                cost_usd: agg.cost,
+            };
         }
         daily.push(DayPoint {
             date,
@@ -415,7 +454,10 @@ where
         }
     }
     if other_project > 0 {
-        by_project.push(ProjectCount { name: "__other__".to_string(), tokens: other_project });
+        by_project.push(ProjectCount {
+            name: "__other__".to_string(),
+            tokens: other_project,
+        });
     }
 
     Analytics {
@@ -485,6 +527,84 @@ fn scan_codex(acc: &mut Acc, start: i64) -> u32 {
     sessions
 }
 
+#[derive(Clone, Copy)]
+struct ClaudeRates {
+    input: f64,
+    output: f64,
+    cache_read: f64,
+    cache_write_5m: f64,
+    cache_write_1h: f64,
+}
+
+/// Vendored Anthropic API prices in $/Mtok, cached 2026-06-24 (§11).
+fn claude_rates(model: &str) -> Option<ClaudeRates> {
+    let m = model.to_lowercase();
+    let rates = if m.contains("fable-5") || m.contains("mythos-5") {
+        ClaudeRates {
+            input: 10.00,
+            output: 50.00,
+            cache_read: 1.00,
+            cache_write_5m: 12.50,
+            cache_write_1h: 20.00,
+        }
+    } else if m.contains("opus") {
+        ClaudeRates {
+            input: 5.00,
+            output: 25.00,
+            cache_read: 0.50,
+            cache_write_5m: 6.25,
+            cache_write_1h: 10.00,
+        }
+    } else if m.contains("sonnet") {
+        ClaudeRates {
+            input: 3.00,
+            output: 15.00,
+            cache_read: 0.30,
+            cache_write_5m: 3.75,
+            cache_write_1h: 6.00,
+        }
+    } else if m.contains("haiku") {
+        ClaudeRates {
+            input: 1.00,
+            output: 5.00,
+            cache_read: 0.10,
+            cache_write_5m: 1.25,
+            cache_write_1h: 2.00,
+        }
+    } else {
+        return None;
+    };
+    Some(rates)
+}
+
+fn claude_cost(
+    model: &str,
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write_5m: u64,
+    cache_write_1h: u64,
+) -> f64 {
+    let Some(r) = claude_rates(model) else {
+        return ((input + output + cache_read + cache_write_5m + cache_write_1h) as f64 / 1e6)
+            * rate_per_mtok(model);
+    };
+    (input as f64 * r.input
+        + output as f64 * r.output
+        + cache_read as f64 * r.cache_read
+        + cache_write_5m as f64 * r.cache_write_5m
+        + cache_write_1h as f64 * r.cache_write_1h)
+        / 1e6
+}
+
+fn codex_cost(model: &str, input: u64, cached: u64, output: u64, reasoning: u64) -> f64 {
+    let rate = rate_per_mtok(model);
+    (input.saturating_sub(cached) as f64 * rate
+        + cached as f64 * rate * 0.1
+        + (output + reasoning) as f64 * rate)
+        / 1e6
+}
+
 type CodexUsage = (u64, u64, u64, u64);
 
 fn codex_token_event(line: &str) -> Option<(i64, CodexUsage)> {
@@ -513,7 +633,10 @@ fn codex_token_event(line: &str) -> Option<(i64, CodexUsage)> {
 }
 
 fn usage_total((input, cached, output, reasoning): CodexUsage) -> u64 {
-    input.saturating_add(cached).saturating_add(output).saturating_add(reasoning)
+    input
+        .saturating_add(cached)
+        .saturating_add(output)
+        .saturating_add(reasoning)
 }
 
 fn scan_codex_lines<I>(
@@ -538,17 +661,22 @@ fn scan_codex_lines<I>(
         }
         let (i, ca, o, r) = current;
         let (pi, pca, po, pr) = prior;
+        let di = i.saturating_sub(pi);
+        let dca = ca.saturating_sub(pca);
+        let do_ = o.saturating_sub(po);
+        let dr = r.saturating_sub(pr);
         // kind = None: Codex tokens aren't per-tool attributable (see note).
-        acc.add(
+        acc.add_with_cost(
             ts,
             "gpt-5-codex",
             "Codex CLI",
             project,
             None,
-            i.saturating_sub(pi),
-            ca.saturating_sub(pca),
-            o.saturating_sub(po),
-            r.saturating_sub(pr),
+            di,
+            dca,
+            do_,
+            dr,
+            codex_cost("gpt-5-codex", di, dca, do_, dr),
         );
     }
 }
@@ -571,7 +699,10 @@ fn first_cwd_basename(path: &PathBuf) -> String {
             Err(_) => break,
         }
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) {
-            if let Some(cwd) = v.get("payload").and_then(|p| p.get("cwd")).and_then(|c| c.as_str())
+            if let Some(cwd) = v
+                .get("payload")
+                .and_then(|p| p.get("cwd"))
+                .and_then(|c| c.as_str())
             {
                 return basename(cwd);
             }
@@ -647,54 +778,98 @@ fn scan_claude_lines(
     seen: &mut HashSet<String>,
 ) {
     for line in lines {
-            if !line.contains("\"usage\"") {
-                continue;
-            }
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
-                continue;
-            };
-            let msg = v.get("message");
-            let Some(usage) = msg.and_then(|m| m.get("usage")) else {
-                continue;
-            };
-            let ts = v
-                .get("timestamp")
-                .and_then(|t| t.as_str())
-                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                .map(|d| d.timestamp())
-                .unwrap_or(0);
-            if ts < start {
-                continue;
-            }
-            let dedup_key = v
-                .get("requestId")
-                .and_then(|x| x.as_str())
-                .or_else(|| msg.and_then(|m| m.get("id")).and_then(|x| x.as_str()))
-                .or_else(|| v.get("uuid").and_then(|x| x.as_str()));
-            if dedup_key.is_some_and(|key| !seen.insert(key.to_string())) {
-                continue;
-            }
-            let model = msg
-                .and_then(|m| m.get("model"))
-                .and_then(|m| m.as_str())
-                .unwrap_or("claude");
-            // Activity kind from this message's tool_use names.
-            let mut tools: Vec<String> = Vec::new();
-            if let Some(content) = msg.and_then(|m| m.get("content")).and_then(|c| c.as_array()) {
-                for it in content {
-                    if it.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                        if let Some(name) = it.get("name").and_then(|n| n.as_str()) {
-                            tools.push(name.to_string());
-                        }
+        if !line.contains("\"usage\"") {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let msg = v.get("message");
+        let Some(usage) = msg.and_then(|m| m.get("usage")) else {
+            continue;
+        };
+        let ts = v
+            .get("timestamp")
+            .and_then(|t| t.as_str())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|d| d.timestamp())
+            .unwrap_or(0);
+        if ts < start {
+            continue;
+        }
+        let dedup_key = v
+            .get("requestId")
+            .and_then(|x| x.as_str())
+            .or_else(|| msg.and_then(|m| m.get("id")).and_then(|x| x.as_str()))
+            .or_else(|| v.get("uuid").and_then(|x| x.as_str()));
+        if dedup_key.is_some_and(|key| !seen.insert(key.to_string())) {
+            continue;
+        }
+        let model = msg
+            .and_then(|m| m.get("model"))
+            .and_then(|m| m.as_str())
+            .unwrap_or("claude");
+        // Activity kind from this message's tool_use names.
+        let mut tools: Vec<String> = Vec::new();
+        if let Some(content) = msg
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_array())
+        {
+            for it in content {
+                if it.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                    if let Some(name) = it.get("name").and_then(|n| n.as_str()) {
+                        tools.push(name.to_string());
                     }
                 }
             }
-            let kind = message_kind(&tools);
-            let input = usage.get("input_tokens").and_then(|x| x.as_u64()).unwrap_or(0);
-            let output = usage.get("output_tokens").and_then(|x| x.as_u64()).unwrap_or(0);
-            let cached = usage.get("cache_read_input_tokens").and_then(|x| x.as_u64()).unwrap_or(0)
-                + usage.get("cache_creation_input_tokens").and_then(|x| x.as_u64()).unwrap_or(0);
-            acc.add(ts, model, "Claude Code", &project, Some(kind), input, cached, output, 0);
+        }
+        let kind = message_kind(&tools);
+        let input = usage
+            .get("input_tokens")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        let output = usage
+            .get("output_tokens")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        let cache_read = usage
+            .get("cache_read_input_tokens")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        let cache_creation = usage
+            .get("cache_creation_input_tokens")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        let cache_creation_detail = usage.get("cache_creation");
+        let cache_write_1h = cache_creation_detail
+            .and_then(|x| x.get("ephemeral_1h_input_tokens"))
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        let cache_write_5m = cache_creation_detail
+            .and_then(|x| x.get("ephemeral_5m_input_tokens"))
+            .and_then(|x| x.as_u64())
+            .unwrap_or_else(|| cache_creation.saturating_sub(cache_write_1h));
+        let cached = cache_read + cache_creation;
+        let cost = claude_cost(
+            model,
+            input,
+            output,
+            cache_read,
+            cache_write_5m,
+            cache_write_1h,
+        );
+        acc.add_with_cost(
+            ts,
+            model,
+            "Claude Code",
+            &project,
+            Some(kind),
+            input,
+            cached,
+            output,
+            0,
+            cost,
+        );
     }
 }
 
@@ -735,8 +910,12 @@ fn oc_record(v: &serde_json::Value) -> Option<(i64, String, u64, u64, u64, u64)>
     let output = get("output");
     let reasoning = get("reasoning");
     let cache = tokens.get("cache");
-    let cache_get =
-        |k: &str| cache.and_then(|c| c.get(k)).and_then(|x| x.as_u64()).unwrap_or(0);
+    let cache_get = |k: &str| {
+        cache
+            .and_then(|c| c.get(k))
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0)
+    };
     let cached = cache_get("read") + cache_get("write");
     if input + output + reasoning + cached == 0 {
         return None;
@@ -746,7 +925,11 @@ fn oc_record(v: &serde_json::Value) -> Option<(i64, String, u64, u64, u64, u64)>
         .and_then(|t| t.get("created"))
         .and_then(parse_epoch)
         .unwrap_or(0);
-    let model = v.get("modelID").and_then(|m| m.as_str()).unwrap_or("opencode").to_string();
+    let model = v
+        .get("modelID")
+        .and_then(|m| m.as_str())
+        .unwrap_or("opencode")
+        .to_string();
     Some((ts, model, input, cached, output, reasoning))
 }
 
@@ -809,7 +992,11 @@ fn gemini_record(line: &str) -> Option<(i64, String, u64, u64, u64, u64)> {
         return None;
     }
     let ts = v.get("timestamp").and_then(parse_epoch)?;
-    let model = v.get("model").and_then(|m| m.as_str()).unwrap_or("gemini").to_string();
+    let model = v
+        .get("model")
+        .and_then(|m| m.as_str())
+        .unwrap_or("gemini")
+        .to_string();
     Some((ts, model, input, cached, output, thoughts))
 }
 
@@ -850,7 +1037,9 @@ fn parse_epoch(v: &serde_json::Value) -> Option<i64> {
         return Some(if n > 10_000_000_000 { n / 1000 } else { n });
     }
     if let Some(s) = v.as_str() {
-        return chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.timestamp());
+        return chrono::DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|d| d.timestamp());
     }
     None
 }
@@ -862,12 +1051,28 @@ mod tests {
     /// Convenience wrapper: run `compute_routed` with the 階段 E scanners disabled,
     /// so every pre-E test reads exactly as before (OpenCode/Gemini contribute
     /// nothing). 階段 E's own tests call `compute_routed` directly.
-    fn routed<C, L>(range: &str, filter: &str, codex: C, claude: L, accounts: Vec<Account>) -> Analytics
+    fn routed<C, L>(
+        range: &str,
+        filter: &str,
+        codex: C,
+        claude: L,
+        accounts: Vec<Account>,
+    ) -> Analytics
     where
         C: FnOnce(&mut Acc, i64) -> u32,
         L: FnOnce(&mut Acc, i64),
     {
-        compute_routed(range, filter, codex, claude, |_, _| {}, |_, _| {}, false, false, accounts)
+        compute_routed(
+            range,
+            filter,
+            codex,
+            claude,
+            |_, _| {},
+            |_, _| {},
+            false,
+            false,
+            accounts,
+        )
     }
 
     /// The scan helpers hit the real home dir, so these assert on the pure
@@ -1014,7 +1219,17 @@ mod tests {
     fn stub_recent(days: i64) -> impl Fn(&mut Acc, i64) {
         move |acc: &mut Acc, _start: i64| {
             for k in 0..days {
-                acc.add(acc.now - k * 86400, "claude-opus", CLAUDE_AGENT, "", None, 100, 0, 0, 0);
+                acc.add(
+                    acc.now - k * 86400,
+                    "claude-opus",
+                    CLAUDE_AGENT,
+                    "",
+                    None,
+                    100,
+                    0,
+                    0,
+                    0,
+                );
             }
         }
     }
@@ -1066,8 +1281,14 @@ mod tests {
             "edit"
         );
         // Tie between edit and read breaks to edit (fixed priority order).
-        assert_eq!(message_kind(&["Read".to_string(), "Edit".to_string()]), "edit");
-        assert_eq!(message_kind(&["Read".to_string(), "Read".to_string()]), "read");
+        assert_eq!(
+            message_kind(&["Read".to_string(), "Edit".to_string()]),
+            "edit"
+        );
+        assert_eq!(
+            message_kind(&["Read".to_string(), "Read".to_string()]),
+            "read"
+        );
     }
 
     #[test]
@@ -1079,9 +1300,39 @@ mod tests {
 
     /// Claude activity across two projects, several kinds.
     fn stub_activity(acc: &mut Acc, _start: i64) {
-        acc.add(acc.now, "claude-opus", CLAUDE_AGENT, "proj-a", Some("edit"), 100, 0, 0, 0);
-        acc.add(acc.now, "claude-opus", CLAUDE_AGENT, "proj-a", Some("read"), 50, 0, 0, 0);
-        acc.add(acc.now, "claude-opus", CLAUDE_AGENT, "proj-b", Some("edit"), 30, 0, 0, 0);
+        acc.add(
+            acc.now,
+            "claude-opus",
+            CLAUDE_AGENT,
+            "proj-a",
+            Some("edit"),
+            100,
+            0,
+            0,
+            0,
+        );
+        acc.add(
+            acc.now,
+            "claude-opus",
+            CLAUDE_AGENT,
+            "proj-a",
+            Some("read"),
+            50,
+            0,
+            0,
+            0,
+        );
+        acc.add(
+            acc.now,
+            "claude-opus",
+            CLAUDE_AGENT,
+            "proj-b",
+            Some("edit"),
+            30,
+            0,
+            0,
+            0,
+        );
     }
 
     #[test]
@@ -1105,11 +1356,24 @@ mod tests {
     #[test]
     fn codex_is_absent_from_by_kind() {
         fn codex_only(acc: &mut Acc, _start: i64) -> u32 {
-            acc.add(acc.now, "gpt-5-codex", CODEX_AGENT, "proj-x", None, 100, 0, 0, 0);
+            acc.add(
+                acc.now,
+                "gpt-5-codex",
+                CODEX_AGENT,
+                "proj-x",
+                None,
+                100,
+                0,
+                0,
+                0,
+            );
             1
         }
         let a = routed("today", "codex", codex_only, |_, _| {}, Vec::new());
-        assert!(a.by_kind.is_empty(), "Codex must not produce activity kinds");
+        assert!(
+            a.by_kind.is_empty(),
+            "Codex must not produce activity kinds"
+        );
         assert_eq!(a.by_project[0].name, "proj-x");
     }
 
@@ -1119,6 +1383,21 @@ mod tests {
             "payload": {
                 "type": "token_count",
                 "info": { "total_token_usage": { "input_tokens": total } }
+            }
+        })
+        .to_string()
+    }
+
+    fn codex_detailed_line(ts: &str, input: u64, cached: u64, output: u64) -> String {
+        serde_json::json!({
+            "timestamp": ts,
+            "payload": {
+                "type": "token_count",
+                "info": { "total_token_usage": {
+                    "input_tokens": input,
+                    "cached_input_tokens": cached,
+                    "output_tokens": output
+                } }
             }
         })
         .to_string()
@@ -1146,6 +1425,24 @@ mod tests {
         assert_eq!(acc.hourly[2], 150);
         assert_eq!(acc.hourly[3], 0);
         assert_eq!(acc.hourly[4], 150);
+    }
+
+    #[test]
+    fn codex_cached_input_uses_discounted_delta_cost() {
+        let acc = scan_fake_codex_files(vec![vec![
+            codex_detailed_line("2026-07-17T01:00:00Z", 500, 300, 50),
+            codex_detailed_line("2026-07-17T02:00:00Z", 1000, 800, 100),
+        ]]);
+        let cost: f64 = acc.days.values().map(|d| d.cost).sum();
+        // (input-cached)=200 at $5 + cached=800 at $0.50 + output=100 at $5.
+        assert!((cost - 0.0019).abs() < 1e-12);
+    }
+
+    #[test]
+    fn codex_without_cached_breakdown_keeps_blended_cost() {
+        let acc = scan_fake_codex_files(vec![vec![codex_line("2026-07-17T01:00:00Z", 1000)]]);
+        let cost: f64 = acc.days.values().map(|d| d.cost).sum();
+        assert!((cost - 0.005).abs() < 1e-12);
     }
 
     #[test]
@@ -1214,6 +1511,23 @@ mod tests {
             scan_claude_lines(&mut acc, 0, "test-project", lines.into_iter(), &mut seen);
         }
         acc
+    }
+
+    #[test]
+    fn claude_opus_usage_uses_component_prices() {
+        let line = r#"{"timestamp":"2026-07-17T00:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":1000,"output_tokens":500,"cache_read_input_tokens":100000,"cache_creation_input_tokens":2000}}}"#.to_string();
+        let acc = scan_fake_claude_files(vec![vec![line]]);
+        let cost: f64 = acc.days.values().map(|d| d.cost).sum();
+        // 0.005 + 0.0125 + 0.05 + 0.0125 = 0.08.
+        assert!((cost - 0.08).abs() < 1e-12);
+    }
+
+    #[test]
+    fn claude_cache_creation_1h_uses_one_hour_price() {
+        let line = r#"{"timestamp":"2026-07-17T00:00:00Z","message":{"model":"claude-opus-4-8","usage":{"cache_creation_input_tokens":2000,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":2000}}}}"#.to_string();
+        let acc = scan_fake_claude_files(vec![vec![line]]);
+        let cost: f64 = acc.days.values().map(|d| d.cost).sum();
+        assert!((cost - 0.02).abs() < 1e-12);
     }
 
     #[test]
@@ -1310,7 +1624,7 @@ mod tests {
         assert!(gemini_record("").is_none());
         assert!(gemini_record("   ").is_none());
         assert!(gemini_record("{ not valid json").is_none()); // a truncated/broken line
-        // Valid JSON but no tokens → nothing to book.
+                                                              // Valid JSON but no tokens → nothing to book.
         assert!(gemini_record(r#"{ "timestamp": 1, "model": "gemini" }"#).is_none());
         // Valid JSON, all-zero tokens → skipped.
         assert!(gemini_record(r#"{ "timestamp": 1, "tokens": { "input": 0 } }"#).is_none());
@@ -1328,13 +1642,32 @@ mod tests {
         }
 
         // Both on: both agents present, both quota-pool scans off so nothing else.
-        let on = compute_routed("today", "both", no_codex, |_, _| {}, oc, gem, true, true, Vec::new());
+        let on = compute_routed(
+            "today",
+            "both",
+            no_codex,
+            |_, _| {},
+            oc,
+            gem,
+            true,
+            true,
+            Vec::new(),
+        );
         assert_eq!(on.by_agent.get("OpenCode"), Some(&100));
         assert_eq!(on.by_agent.get("Gemini CLI"), Some(&50));
 
         // Both off: neither scan runs, neither agent appears (no fake 0 card).
-        let off =
-            compute_routed("today", "both", no_codex, |_, _| {}, oc, gem, false, false, Vec::new());
+        let off = compute_routed(
+            "today",
+            "both",
+            no_codex,
+            |_, _| {},
+            oc,
+            gem,
+            false,
+            false,
+            Vec::new(),
+        );
         assert!(off.by_agent.get("OpenCode").is_none());
         assert!(off.by_agent.get("Gemini CLI").is_none());
         assert_eq!(off.total_tokens, 0);
@@ -1344,8 +1677,17 @@ mod tests {
     /// enabled-but-empty scanner contributes nothing, so no agent/legend entry.
     #[test]
     fn enabled_but_empty_tool_adds_nothing() {
-        let a =
-            compute_routed("today", "both", no_codex, |_, _| {}, |_, _| {}, |_, _| {}, true, true, Vec::new());
+        let a = compute_routed(
+            "today",
+            "both",
+            no_codex,
+            |_, _| {},
+            |_, _| {},
+            |_, _| {},
+            true,
+            true,
+            Vec::new(),
+        );
         assert!(a.by_agent.is_empty());
         assert_eq!(a.total_tokens, 0);
     }
@@ -1381,7 +1723,10 @@ mod tests {
 fn detect_accounts() -> Vec<Account> {
     let mut out = Vec::new();
     let home = dirs::home_dir();
-    if home.as_ref().map_or(false, |h| h.join(".claude/.credentials.json").exists()) {
+    if home
+        .as_ref()
+        .map_or(false, |h| h.join(".claude/.credentials.json").exists())
+    {
         out.push(Account {
             client: "Claude Code".into(),
             provider: "anthropic".into(),
@@ -1389,7 +1734,10 @@ fn detect_accounts() -> Vec<Account> {
             plan: "Claude".into(),
         });
     }
-    if home.as_ref().map_or(false, |h| h.join(".codex/sessions").exists()) {
+    if home
+        .as_ref()
+        .map_or(false, |h| h.join(".codex/sessions").exists())
+    {
         out.push(Account {
             client: "Codex CLI".into(),
             provider: "codex".into(),

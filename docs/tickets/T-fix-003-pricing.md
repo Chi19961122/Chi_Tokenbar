@@ -1,4 +1,5 @@
 # T-fix-003 — 分項計價：input/output/cache 分開累計 + vendored 價目表
+status: done
 
 `只實作本票行為與資料。可沿用現有樣式。禁止大規模 redesign。對照 PLAN flow。`
 
