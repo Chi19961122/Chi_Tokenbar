@@ -25,6 +25,12 @@ function fakeAnalytics(): Analytics {
     totalCostUsd: 47.2,
     bestDay: { date: "2026-07-14", costUsd: 12 },
     activeDays: 7,
+    records: {
+      maxDay: { date: "2026-07-14", tokens: 2_400_000 },
+      maxHour: { date: "2026-07-14", hour: 15, tokens: 800_000 },
+      streakDays: 7,
+      prNow: false,
+    },
     daily,
     hourly: new Array(24).fill(0),
     byModel: { "sonnet-5": 6_204_113, "opus-4.8": 2_000_000 },
@@ -98,6 +104,13 @@ describe("buildShareData contract", () => {
   it("never exposes byProject / project data (§0)", () => {
     const d = buildShareData(fakeAnalytics(), { range: "week", locale: "en" });
     expect(Object.keys(d)).not.toContain("byProject");
+    expect(JSON.stringify(d)).not.toContain("secret-project");
+  });
+
+  it("exposes only the two authorized numeric record fields", () => {
+    const d = buildShareData(fakeAnalytics(), { range: "week", locale: "en" });
+    expect(d.streakDays).toBe(7);
+    expect(d.maxDayTokens).toBe(2_400_000);
     expect(JSON.stringify(d)).not.toContain("secret-project");
   });
 

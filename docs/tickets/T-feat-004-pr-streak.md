@@ -1,4 +1,5 @@
 # T-feat-004 — PR 個人紀錄與連勝（max day / max hour / streak / PR NOW）
+status: done
 
 `只實作本票行為與資料。可沿用現有樣式。禁止大規模 redesign。對照 PLAN flow。`
 

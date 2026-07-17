@@ -2,7 +2,7 @@
 //! model / agent breakdowns, cost estimate, and stats. All from local files —
 //! no undocumented API, no risk. Dates are bucketed in UTC for consistency.
 
-use chrono::Timelike;
+use chrono::{Datelike, Timelike};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
@@ -23,6 +23,30 @@ pub struct DayPoint {
 pub struct BestDay {
     pub date: String,
     pub cost_usd: f64,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MaxDayRecord {
+    pub date: String,
+    pub tokens: u64,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MaxHourRecord {
+    pub date: String,
+    pub hour: u8,
+    pub tokens: u64,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Records {
+    pub max_day: MaxDayRecord,
+    pub max_hour: MaxHourRecord,
+    pub streak_days: u32,
+    pub pr_now: bool,
 }
 
 #[derive(Serialize)]
@@ -73,6 +97,7 @@ pub struct Analytics {
     pub total_cost_usd: f64,
     pub best_day: BestDay,
     pub active_days: u32,
+    pub records: Records,
     pub daily: Vec<DayPoint>,
     pub hourly: Vec<u64>,
     pub by_model: HashMap<String, u64>,
@@ -164,6 +189,7 @@ fn date_str(ts: i64) -> String {
 struct Acc {
     days: HashMap<String, DayAgg>,
     hourly: [u64; 24],
+    hourly_by_day: HashMap<(String, u8), u64>,
     breakdown: Breakdown,
     /// Range-total activity-type buckets (Claude only). Summed like `breakdown`.
     by_kind: HashMap<String, u64>,
@@ -185,6 +211,7 @@ impl Acc {
         Acc {
             days: HashMap::new(),
             hourly: [0; 24],
+            hourly_by_day: HashMap::new(),
             breakdown: Breakdown {
                 input: 0,
                 cached: 0,
@@ -250,6 +277,11 @@ impl Acc {
         day.cost += cost;
 
         self.hourly[dt.hour() as usize] += total;
+        let local = dt.with_timezone(&chrono::Local);
+        *self
+            .hourly_by_day
+            .entry((local.format("%Y-%m-%d").to_string(), local.hour() as u8))
+            .or_default() += total;
 
         self.breakdown.input += input;
         self.breakdown.cached += cached;
@@ -266,6 +298,63 @@ impl Acc {
         if self.now - ts <= 600 {
             self.recent_tokens += total;
         }
+    }
+}
+
+fn records_for(acc: &Acc, today: chrono::NaiveDate, current_hour: u8) -> Records {
+    let mut by_day: HashMap<&str, u64> = HashMap::new();
+    let mut max_hour = MaxHourRecord::default();
+    let mut historical_hour_max = 0u64;
+    let today_s = today.format("%Y-%m-%d").to_string();
+    let current_key = (today_s.as_str(), current_hour);
+
+    for ((date, hour), tokens) in &acc.hourly_by_day {
+        *by_day.entry(date.as_str()).or_default() += *tokens;
+        if *tokens > max_hour.tokens {
+            max_hour = MaxHourRecord {
+                date: date.clone(),
+                hour: *hour,
+                tokens: *tokens,
+            };
+        }
+        if (date.as_str(), *hour) != current_key {
+            historical_hour_max = historical_hour_max.max(*tokens);
+        }
+    }
+
+    let max_day = by_day
+        .iter()
+        .max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0)))
+        .map(|(date, tokens)| MaxDayRecord {
+            date: (*date).to_string(),
+            tokens: *tokens,
+        })
+        .unwrap_or_default();
+
+    let mut cursor = if by_day.contains_key(today_s.as_str()) {
+        today
+    } else {
+        today.pred_opt().unwrap_or(today)
+    };
+    let mut streak_days = 0;
+    while by_day.contains_key(cursor.format("%Y-%m-%d").to_string().as_str()) {
+        streak_days += 1;
+        let Some(previous) = cursor.pred_opt() else {
+            break;
+        };
+        cursor = previous;
+    }
+
+    let current_tokens = acc
+        .hourly_by_day
+        .get(&(today_s, current_hour))
+        .copied()
+        .unwrap_or(0);
+    Records {
+        max_day,
+        max_hour,
+        streak_days,
+        pr_now: current_tokens > historical_hour_max && current_tokens > 0,
     }
 }
 
@@ -422,6 +511,13 @@ where
     }
 
     let active_days = daily.iter().filter(|d| !d.by_agent.is_empty()).count() as u32;
+    let local_now = chrono::Local::now();
+    let records = records_for(
+        &acc,
+        chrono::NaiveDate::from_ymd_opt(local_now.year(), local_now.month(), local_now.day())
+            .unwrap(),
+        local_now.hour() as u8,
+    );
 
     // Actual start: the first day with activity, so a "month" backed by only a
     // few days of logs reports its true reach instead of claiming 30. Falls
@@ -467,6 +563,7 @@ where
         total_cost_usd: total_cost,
         best_day: best,
         active_days,
+        records,
         daily,
         hourly: acc.hourly.to_vec(),
         by_model,
@@ -1717,6 +1814,50 @@ mod tests {
         let only_oc = filter_accounts("both", true, false, accts());
         assert_eq!(only_oc.len(), 1);
         assert_eq!(only_oc[0].provider, "opencode");
+    }
+
+    fn record_acc(now: i64, entries: &[(&str, u8, u64)]) -> Acc {
+        let mut acc = Acc::new(now);
+        for (date, hour, tokens) in entries {
+            acc.hourly_by_day.insert(((*date).into(), *hour), *tokens);
+        }
+        acc
+    }
+
+    #[test]
+    fn streak_falls_back_to_yesterday_and_stops_at_gap() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 7, 17).unwrap();
+        let acc = record_acc(0, &[("2026-07-16", 8, 10), ("2026-07-15", 9, 10)]);
+        assert_eq!(records_for(&acc, today, 10).streak_days, 2);
+
+        let gap = record_acc(0, &[("2026-07-15", 9, 10)]);
+        assert_eq!(records_for(&gap, today, 10).streak_days, 0);
+    }
+
+    #[test]
+    fn max_hour_is_one_date_hour_not_cross_day_bucket() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 7, 17).unwrap();
+        let acc = record_acc(
+            0,
+            &[
+                ("2026-07-15", 9, 60),
+                ("2026-07-16", 9, 60),
+                ("2026-07-16", 10, 100),
+            ],
+        );
+        let records = records_for(&acc, today, 11);
+        assert_eq!(records.max_hour.tokens, 100);
+        assert_eq!(records.max_hour.hour, 10);
+    }
+
+    #[test]
+    fn pr_now_excludes_current_hour_from_history() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 7, 17).unwrap();
+        let acc = record_acc(0, &[("2026-07-16", 9, 100), ("2026-07-17", 10, 101)]);
+        assert!(records_for(&acc, today, 10).pr_now);
+
+        let tied = record_acc(0, &[("2026-07-16", 9, 101), ("2026-07-17", 10, 101)]);
+        assert!(!records_for(&tied, today, 10).pr_now);
     }
 }
 

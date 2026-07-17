@@ -34,6 +34,8 @@ export interface ShareSplit {
 export interface ShareData {
   totalTokens: number;
   totalCostUsd: number; // always displayed labeled "est."
+  streakDays: number;
+  maxDayTokens: number;
   byAgent: ShareSplit[]; // from Analytics.byAgent, only tokens>0, sorted desc
   byModel: ShareSplit[]; // from Analytics.byModel, only tokens>0, sorted desc
   agentCount: number; // byAgent.length (tokens>0)
@@ -165,6 +167,8 @@ export function buildShareData(a: Analytics, opts: BuildOpts): ShareData {
   return {
     totalTokens: a.totalTokens,
     totalCostUsd: a.totalCostUsd,
+    streakDays: a.records.streakDays,
+    maxDayTokens: a.records.maxDay.tokens,
     byAgent,
     byModel,
     agentCount: byAgent.length,

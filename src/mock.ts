@@ -116,6 +116,15 @@ export function mockAnalytics(range: "today" | "week" | "month"): Analytics {
     totalCostUsd,
     bestDay: best,
     activeDays: days,
+    records: {
+      maxDay: {
+        date: daily.reduce((best, d) => d.costUsd > best.costUsd ? d : best).date,
+        tokens: Math.max(...daily.map((d) => Object.values(d.byAgent).reduce((sum, n) => sum + n, 0))),
+      },
+      maxHour: { date: daily[daily.length - 1].date, hour: new Date().getHours(), tokens: 7_800_000 },
+      streakDays: days,
+      prNow: true,
+    },
     daily,
     hourly: Array.from({ length: 24 }, () => Math.round(Math.random() * 8_000_000)),
     byModel,

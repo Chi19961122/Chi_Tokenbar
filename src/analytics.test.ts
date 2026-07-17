@@ -172,6 +172,37 @@ describe("階段 C+ render wiring", () => {
   });
 });
 
+describe("personal records", () => {
+  it("omits the whole records section when records are empty", () => {
+    const a = mockAnalytics("week");
+    a.records = {
+      maxDay: { date: "", tokens: 0 },
+      maxHour: { date: "", hour: 0, tokens: 0 },
+      streakDays: 0,
+      prNow: false,
+    };
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "stats", metric: "tokens", group: "agent" });
+    expect(root.querySelector(".records")).toBeNull();
+  });
+
+  it("renders record values and PR badge", () => {
+    const a = mockAnalytics("week");
+    a.records = {
+      maxDay: { date: "2026-07-16", tokens: 2_400_000 },
+      maxHour: { date: "2026-07-16", hour: 9, tokens: 800_000 },
+      streakDays: 6,
+      prNow: true,
+    };
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "stats", metric: "tokens", group: "agent" });
+    expect(root.querySelector(".records")?.textContent).toContain("2.4M");
+    expect(root.querySelector(".records")?.textContent).toContain("800.0K");
+    expect(root.querySelector(".records")?.textContent).toContain("07-16 09:00");
+    expect(root.querySelector(".pr-now")?.textContent).toBe("PR NOW");
+  });
+});
+
 describe("subtab convergence", () => {
   it("share breakdown follows the model/agent group toggle", () => {
     const a = mockAnalytics("week");

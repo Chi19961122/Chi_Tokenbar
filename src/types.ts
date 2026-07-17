@@ -144,6 +144,12 @@ export interface Analytics {
   totalCostUsd: number;
   bestDay: { date: string; costUsd: number };
   activeDays: number;
+  records: {
+    maxDay: { date: string; tokens: number };
+    maxHour: { date: string; hour: number; tokens: number };
+    streakDays: number;
+    prNow: boolean;
+  };
   daily: DayPoint[];
   hourly: number[]; // 24 buckets, tokens
   byModel: Record<string, number>;

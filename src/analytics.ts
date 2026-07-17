@@ -379,7 +379,16 @@ function statsView(a: Analytics): string {
   const accounts = a.accounts
     .map((ac) => `<div class="acct"><b>${ac.client}</b> · ${ac.account} · ${ac.plan}</div>`)
     .join("");
+  const records = a.records.maxDay.tokens > 0
+    ? `<div class="records">${a.records.prNow ? `<span class="pr-now">${t("analytics.prNow")}</span>` : ""}
+       <div class="tiles">
+         <div class="tile"><b>${fmtTokens(a.records.maxDay.tokens)}</b><span>${t("analytics.maxDay")} · ${a.records.maxDay.date.slice(5)}</span></div>
+         <div class="tile"><b>${fmtTokens(a.records.maxHour.tokens)}</b><span>${t("analytics.maxHour")} · ${a.records.maxHour.date.slice(5)} ${String(a.records.maxHour.hour).padStart(2, "0")}:00</span></div>
+         <div class="tile"><b>${a.records.streakDays}</b><span>${t("analytics.streak")}</span></div>
+       </div></div>`
+    : "";
   return `
+    ${records}
     <div class="bars">
       ${seg(t("analytics.input"), b.input, 0)}
       ${seg(t("analytics.cached"), b.cached, 1)}
