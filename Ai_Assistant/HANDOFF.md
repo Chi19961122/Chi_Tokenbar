@@ -1,4 +1,12 @@
-# HANDOFF — 進度快照(2026-07-17)
+# HANDOFF — 進度快照(2026-07-18)
+
+## 2026-07-18:v0.6 輪 Wave2 — 方向 D 極簡編輯部視覺換皮全數完成(程式碼完成、未打包)
+
+- **五張視覺票**(T-ui-010/011/201/202/203)依 docs/DESIGN-SPEC.md(五裁決定稿)執行完畢:token 機械替換(light 編輯部、玻璃廢止、`--island-*` 逐字未動)、Playfair Italic 28.4KB 本地 subset、shell 元件、GaugeCard 60px 狀態色 hero+providerIcon 彩色照真、全圖表灰階+粉紅 today(3D 柱同步)、戰報六模板換皮(§0 複驗、PNG 匯出像素級驗證)。
+- **測試 153 Rust + 87 前端全綠**;基準可回 git tag `pre-redesign-v06`。
+- 執行者:codex(gpt-5.6-sol,一般票 medium);011 遇 model at capacity 重試、011/203 收尾卡 notify hook 由 orchestrator 砍行程收割(成果完整)。備援政策:codex 斷糧改 Claude executor(一般 Sonnet 5/複雜 Opus 4.8)。
+- 尚未真人驗證:真機整輪(新視覺+修正後數字+3D 於 WebView2);版號尚未 bump(建議打包時 0.5.0→0.6.0);打包待使用者決定。
+- 回饋流程:試用問題寫 docs/FEEDBACK.md(F-xxx)→ 翻 T-9xx 修正票。
 
 ## 2026-07-17(晚):v0.6 輪 Wave0+1 — 正確性三連修 + PR 紀錄 + 3D 熱力圖(程式碼完成、未打包)
 
