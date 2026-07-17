@@ -1,5 +1,18 @@
 # HANDOFF — 進度快照(2026-07-17)
 
+## 2026-07-17(晚):v0.6 輪 Wave0+1 — 正確性三連修 + PR 紀錄 + 3D 熱力圖(程式碼完成、未打包)
+
+- **流程**:改走 /webapp-frontend 票據流(docs/PLAN.md、docs/tickets/、docs/DESIGN-SPEC.md);實作全由 codex exec 逐票執行(分離行程,一票一 commit)。
+- **T-fix-001 Claude 去重**:scan_claude 全域 HashSet,key 優先序 requestId→message.id→uuid;resume/fork 副本只計一次;無 id 照計。
+- **T-fix-002 Codex 增量**:token_count 逐事件「累計轉增量」按事件時間歸屬 daily/hourly(跨午夜修正);(ts,total) 全域防 fork replay,重複事件仍作差分基準;分項(input/cached/output/reasoning)各自差分。舊 tail-read `last_total_usage` 移除。providers/codex.rs 零 diff。
+- **T-fix-003 分項計價**:claude_rates vendored 表($/Mtok,快取 2026-06-24;fable/opus/sonnet/haiku 四家族,input/output/cache_read/cache_write 5m+1h);cache_creation 有 5m/1h 細項分別計價,否則當 5m;Codex cached 0.1× 折扣;未知模型 blended fallback;**總量口徑不變、零外連**。
+- **T-feat-004 PR 紀錄**:Analytics.records{maxDay,maxHour,streakDays,prNow};maxHour 用獨立 (date,hour) map(hourly[24] 是跨日彙總不能用);prNow 排除本小時比較;stats 子頁三 tile + PR NOW badge;戰報只加 streakDays/maxDayTokens 兩數字(§0 無專案名,已逐行驗)。
+- **T-feat-005 3D 熱力圖**:three@0.185 僅 heat3d.ts import、動態載入(主 chunk +0.78KB gzip;three 獨立 chunk 134KB);OrbitControls+raycaster tooltip;on-demand render 無常駐 rAF;切離完整 dispose;WebGL 不可用靜默回 2D 藏 toggle;view 存 localStorage 預設 2d。
+- **測試 153 Rust + 81 前端全綠**;票與 Attempts 全記錄在 docs/tickets/。
+- **經驗**:codex exec 非 TTY 會等 stdin(要 </dev/null);背景工具 10 分鐘上限跑不完一張票 → nohup 分離 + exit 標記檔 + Monitor。
+- 尚未真人驗證:真機 3D 熱力圖(WebView2 GPU/ANGLE)、380px 版面、修正後數字 vs v0.1.2 舊版對比、PR tile 真資料。
+- **Wave2 視覺(方向 D 極簡編輯部)待使用者確認 DESIGN-SPEC 四裁決後拆票**;打包待使用者決定。
+
 ## 2026-07-17:三樣態優化 階段 E — 多工具(v0.5.0,計畫全階段收官;程式碼完成、未打包)
 
 - **勘察結論(全文在 data-sources-findings.md §4)**:OpenCode 本機未裝(文件化格式:storage/message/*/​*.json,tokens 欄位有;無官方 limit 檔 → 僅 Usage);Gemini CLI 本機無用量檔(~/.gemini/ 是 Antigravity IDE 的 .pb,不採用;預設無 token 落檔;僅 Usage)。**兩家 Limits 判準都不成立,只做 Usage。**
