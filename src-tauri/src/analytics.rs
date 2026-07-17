@@ -4,7 +4,7 @@
 
 use chrono::Timelike;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::PathBuf;
@@ -579,6 +579,7 @@ fn scan_claude(acc: &mut Acc, start: i64) {
     let Ok(paths) = glob::glob(&pattern) else {
         return;
     };
+    let mut seen = HashSet::new();
     for p in paths.filter_map(Result::ok) {
         if mtime_secs(&p) < start {
             continue;
@@ -592,7 +593,24 @@ fn scan_claude(acc: &mut Acc, start: i64) {
         let Ok(file) = File::open(&p) else {
             continue;
         };
-        for line in BufReader::new(file).lines().map_while(Result::ok) {
+        scan_claude_lines(
+            acc,
+            start,
+            &project,
+            BufReader::new(file).lines().map_while(Result::ok),
+            &mut seen,
+        );
+    }
+}
+
+fn scan_claude_lines(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    lines: impl Iterator<Item = String>,
+    seen: &mut HashSet<String>,
+) {
+    for line in lines {
             if !line.contains("\"usage\"") {
                 continue;
             }
@@ -610,6 +628,14 @@ fn scan_claude(acc: &mut Acc, start: i64) {
                 .map(|d| d.timestamp())
                 .unwrap_or(0);
             if ts < start {
+                continue;
+            }
+            let dedup_key = v
+                .get("requestId")
+                .and_then(|x| x.as_str())
+                .or_else(|| msg.and_then(|m| m.get("id")).and_then(|x| x.as_str()))
+                .or_else(|| v.get("uuid").and_then(|x| x.as_str()));
+            if dedup_key.is_some_and(|key| !seen.insert(key.to_string())) {
                 continue;
             }
             let model = msg
@@ -633,7 +659,6 @@ fn scan_claude(acc: &mut Acc, start: i64) {
             let cached = usage.get("cache_read_input_tokens").and_then(|x| x.as_u64()).unwrap_or(0)
                 + usage.get("cache_creation_input_tokens").and_then(|x| x.as_u64()).unwrap_or(0);
             acc.add(ts, model, "Claude Code", &project, Some(kind), input, cached, output, 0);
-        }
     }
 }
 
@@ -1074,6 +1099,37 @@ mod tests {
         assert_eq!(a.by_project.last().unwrap().name, "__other__");
         // The remainder holds the two smallest (p08=60, p09=55).
         assert_eq!(a.by_project.last().unwrap().tokens, 115);
+    }
+
+    fn scan_fake_claude_files(files: Vec<Vec<String>>) -> Acc {
+        let mut acc = Acc::new(1_782_000_000);
+        let mut seen = HashSet::new();
+        for lines in files {
+            scan_claude_lines(&mut acc, 0, "test-project", lines.into_iter(), &mut seen);
+        }
+        acc
+    }
+
+    #[test]
+    fn claude_duplicate_message_id_across_files_counts_once() {
+        let line = r#"{"timestamp":"2026-07-17T00:00:00Z","message":{"id":"message-a","model":"claude-test","usage":{"input_tokens":100}}}"#.to_string();
+        let acc = scan_fake_claude_files(vec![vec![line.clone()], vec![line]]);
+        assert_eq!(acc.breakdown.input, 100);
+    }
+
+    #[test]
+    fn claude_request_id_takes_priority_over_message_id() {
+        let first = r#"{"requestId":"request-a","timestamp":"2026-07-17T00:00:00Z","message":{"id":"message-a","model":"claude-test","usage":{"input_tokens":100}}}"#.to_string();
+        let second = r#"{"requestId":"request-a","timestamp":"2026-07-17T00:00:01Z","message":{"id":"message-b","model":"claude-test","usage":{"input_tokens":200}}}"#.to_string();
+        let acc = scan_fake_claude_files(vec![vec![first], vec![second]]);
+        assert_eq!(acc.breakdown.input, 100);
+    }
+
+    #[test]
+    fn claude_messages_without_ids_all_count() {
+        let line = r#"{"timestamp":"2026-07-17T00:00:00Z","message":{"model":"claude-test","usage":{"input_tokens":100}}}"#.to_string();
+        let acc = scan_fake_claude_files(vec![vec![line.clone()], vec![line]]);
+        assert_eq!(acc.breakdown.input, 200);
     }
 
     #[test]

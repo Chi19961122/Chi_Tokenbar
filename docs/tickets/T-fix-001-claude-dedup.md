@@ -1,4 +1,5 @@
 # T-fix-001 — Claude log 掃描去重（resume/fork 副本不再重複計數）
+nstatus: done
 
 `只實作本票行為與資料。可沿用現有樣式。禁止大規模 redesign。對照 PLAN flow。`
 
@@ -47,3 +48,10 @@
 | --- | --- | --- |
 | cargo test | 跑後端測試 | 新增 ≥3 個去重測試全過，既有 121+ 測試不壞 |
 | 隱私掃描 | grep 改動處 | 無任何 id/token 進 println!/eprintln!/log |
+
+### Attempt 1
+
+    （無 stderr）codex exec 經 PowerShell 背景執行時卡在
+    "Reading additional input from stdin..." 等待 stdin EOF，
+    40 分鐘零產出後被工具超時砍掉。非票內容問題。
+    修正：stdin 導 /dev/null（</dev/null）重跑。
