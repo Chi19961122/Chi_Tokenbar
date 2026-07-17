@@ -229,7 +229,6 @@ function sectionHeader(number: "01" | "02", title: "limits" | "usage"): string {
   return `<div class="section-head">
     <span class="section-number">${number}</span>
     <span class="section-title">${t(`section.${title}`)}</span>
-    <span class="section-editorial">${t(`section.${title}Editorial`)}</span>
   </div>`;
 }
 

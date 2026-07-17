@@ -91,7 +91,7 @@ describe("renderPanel summary variant", () => {
     expect(root.querySelectorAll(".gauge-row").length).toBe(LIMITS.length);
     expect(root.querySelector(".status-pill")?.textContent).toContain("0% left");
     expect(root.querySelector(".section-number")?.textContent).toBe("01");
-    expect(root.querySelector(".section-editorial")?.textContent).toBe("What's left in the tank");
+    expect(root.querySelector(".section-editorial")).toBeNull();
     expect(root.querySelectorAll(".gauge-card").length).toBe(2);
     expect(root.querySelector(".gauge-card.prov-claude .picon")).not.toBeNull();
     expect(root.querySelector(".gauge-card.prov-claude .picon")?.getAttribute("width")).toBe("14");
