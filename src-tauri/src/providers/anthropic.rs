@@ -153,6 +153,11 @@ fn classify(err: ureq::Error, http: fn(u16) -> FailureStage, transport: fn(&'sta
 pub struct AnthropicProvider {
     last_fetch: i64,
     cached: Vec<Limit>,
+    /// The most recent fetch that succeeded and was healthy (Normal). Kept so a
+    /// transient failure (429/5xx/network) can show the last real numbers marked
+    /// Stale instead of blanking the whole provider. Empty until the first
+    /// success. Holds only `Limit` data — never any token or credential.
+    last_good: Vec<Limit>,
 }
 
 impl AnthropicProvider {
@@ -160,6 +165,7 @@ impl AnthropicProvider {
         Self {
             last_fetch: 0,
             cached: Vec::new(),
+            last_good: Vec::new(),
         }
     }
 
@@ -173,7 +179,8 @@ impl AnthropicProvider {
             return self.cached.clone();
         }
         self.last_fetch = now;
-        self.cached = self.fetch(allow_refresh);
+        let result = self.fetch_inner(allow_refresh);
+        self.cached = reconcile(&mut self.last_good, result);
         self.cached.clone()
     }
 
@@ -182,24 +189,6 @@ impl AnthropicProvider {
     /// data until this point.
     pub fn next_fetch_at(&self) -> i64 {
         self.last_fetch + REFRESH_SECS
-    }
-
-    /// Never fails: a failure becomes degraded limits carrying a plain-language
-    /// hint, so the UI always has something honest to show (§7). The precise
-    /// stage goes to stderr only, and only under `TOKENBAR_DEBUG`.
-    ///
-    /// Single degradation path on purpose — if `poll` also produced degraded
-    /// limits we'd get hint-less `SourceFailed` rows that the UI can't explain.
-    fn fetch(&self, allow_refresh: bool) -> Vec<Limit> {
-        match self.fetch_inner(allow_refresh) {
-            Ok(limits) => limits,
-            Err(stage) => {
-                if std::env::var("TOKENBAR_DEBUG").is_ok() {
-                    eprintln!("[tb] anthropic fetch failed: {}", stage.label());
-                }
-                degraded_limits(&stage)
-            }
-        }
     }
 
     fn fetch_inner(&self, allow_refresh: bool) -> Result<Vec<Limit>, FailureStage> {
@@ -217,6 +206,57 @@ impl AnthropicProvider {
 
         usage_to_limits(&get_usage(&token)?)
     }
+}
+
+/// Decide what to display from a fetch result and update the last-known-good
+/// cache. Pure (touches no network / no `self`) so it is unit-testable.
+///
+/// - `Ok(limits)` → remember them as the new `last_good`; show them as-is.
+/// - `Err(stage)` where `stage.action().is_some()` (login-class: 401/403, no
+///   login, bad creds, refresh disabled) → blank + relogin via
+///   `degraded_limits`. Never reuse `last_good`: showing old numbers when the
+///   credential is genuinely broken would mislead.
+/// - `Err(stage)` where `stage.action().is_none()` (transient: 429/5xx,
+///   network, json, schema) → keep the last good values marked `Stale`; but if
+///   there has never been a success, fall back to `degraded_limits`.
+///
+/// The single `TOKENBAR_DEBUG` stderr line for a failure lives here now (moved
+/// verbatim from the old `fetch`), so behaviour is unchanged.
+fn reconcile(last_good: &mut Vec<Limit>, result: Result<Vec<Limit>, FailureStage>) -> Vec<Limit> {
+    match result {
+        Ok(limits) => {
+            *last_good = limits.clone();
+            limits
+        }
+        Err(stage) => {
+            if std::env::var("TOKENBAR_DEBUG").is_ok() {
+                eprintln!("[tb] anthropic fetch failed: {}", stage.label());
+            }
+            if stage.action().is_some() {
+                // Terminal / login-class failure → honest blank + relogin.
+                degraded_limits(&stage)
+            } else if !last_good.is_empty() {
+                // Transient / retryable failure → last real numbers, marked Stale.
+                stale_limits(last_good)
+            } else {
+                // Failed before any success ever landed → nothing to reuse.
+                degraded_limits(&stage)
+            }
+        }
+    }
+}
+
+/// Copy the last good limits with `status` forced to `Stale`, keeping every
+/// other field (`id`/`label`/`util`/`resets_at`/`window_secs`/`absolute`/…)
+/// untouched. `action`/`hint` stay `None` — the panel's stale badge already
+/// conveys staleness, so no hint or button is needed.
+fn stale_limits(good: &[Limit]) -> Vec<Limit> {
+    good.iter()
+        .map(|l| Limit {
+            status: LimitStatus::Stale,
+            ..l.clone()
+        })
+        .collect()
 }
 
 /// Turn a usage response into limits, treating "parsed to nothing" as a
@@ -810,6 +850,81 @@ mod tests {
         // entry without percent skipped; entry without kind skipped
         assert_eq!(ls.len(), 1);
         assert_eq!(ls[0].id, "cc.5h");
+    }
+
+    /// Healthy good limits built from the live fixture, for the reconcile tests.
+    fn good_limits() -> Vec<Limit> {
+        let v: Value = serde_json::from_str(MODERN).unwrap();
+        let ls = parse_usage(&v);
+        assert!(!ls.is_empty(), "fixture should parse to some limits");
+        ls
+    }
+
+    /// 成功 → last_good 被填入,回傳的就是那批 limits(status Normal)。
+    #[test]
+    fn reconcile_success_records_last_good_and_returns_normal() {
+        let mut last_good: Vec<Limit> = Vec::new();
+        let fresh = good_limits();
+        let out = reconcile(&mut last_good, Ok(fresh.clone()));
+
+        // last_good now mirrors the successful fetch.
+        assert_eq!(last_good.len(), fresh.len());
+        assert!(last_good.iter().all(|l| l.status == LimitStatus::Normal));
+        // returned limits are the healthy ones, unchanged.
+        assert!(out.iter().all(|l| l.status == LimitStatus::Normal));
+        assert_eq!(out.iter().find(|l| l.id == "cc.5h").unwrap().util, 25.0);
+    }
+
+    /// 先成功、再 429 → 回傳沿用上次數值但 status=Stale、無 relogin。
+    #[test]
+    fn reconcile_transient_429_returns_stale_from_last_good() {
+        let mut last_good = good_limits();
+        let prev = last_good.clone();
+        let out = reconcile(&mut last_good, Err(FailureStage::UsageHttp(429)));
+
+        // Same rows, same numbers/ids, only the status flipped to Stale.
+        assert_eq!(out.len(), prev.len());
+        assert!(out.iter().all(|l| l.status == LimitStatus::Stale));
+        assert!(out.iter().all(|l| l.action.is_none()), "stale rows must not offer relogin");
+        assert!(out.iter().all(|l| l.hint.is_none()), "stale rows carry no hint");
+        let s5h = out.iter().find(|l| l.id == "cc.5h").expect("cc.5h");
+        let p5h = prev.iter().find(|l| l.id == "cc.5h").expect("cc.5h");
+        assert_eq!(s5h.util, p5h.util);
+        assert_eq!(s5h.resets_at, p5h.resets_at);
+        // last_good untouched by a transient failure — the real values survive.
+        assert!(last_good.iter().all(|l| l.status == LimitStatus::Normal));
+    }
+
+    /// 先成功、再 403/401 → 降級(SourceFailed + Relogin),**不**沿用 last_good。
+    #[test]
+    fn reconcile_login_failure_degrades_and_ignores_last_good() {
+        for stage in [FailureStage::UsageHttp(403), FailureStage::UsageHttp(401)] {
+            let mut last_good = good_limits();
+            let out = reconcile(&mut last_good, Err(stage.clone()));
+            assert!(!out.is_empty());
+            assert!(
+                out.iter().all(|l| l.status == LimitStatus::SourceFailed),
+                "{:?} 應降級為 SourceFailed",
+                stage
+            );
+            assert!(
+                out.iter().all(|l| l.action == Some(LimitAction::Relogin)),
+                "{:?} 的降級列應帶 relogin",
+                stage
+            );
+            // No Stale row leaked from last_good.
+            assert!(out.iter().all(|l| l.status != LimitStatus::Stale));
+        }
+    }
+
+    /// 沒有任何成功值就 429 → 降級(非空、SourceFailed),因為無可沿用的值。
+    #[test]
+    fn reconcile_no_prior_success_degrades_on_transient() {
+        let mut last_good: Vec<Limit> = Vec::new();
+        let out = reconcile(&mut last_good, Err(FailureStage::UsageHttp(429)));
+        assert!(!out.is_empty());
+        assert!(out.iter().all(|l| l.status == LimitStatus::SourceFailed));
+        assert!(out.iter().all(|l| l.status != LimitStatus::Stale));
     }
 }
 
