@@ -3,8 +3,10 @@
 
 :root {
   /* Global alert colors (override provider family on near/locked). */
-  --near: #e0a63a;
-  --locked: #e05e58;
+  --near: #D97706;
+  --locked: #DC2626;
+  --safe: #16A34A;
+  --stale: #A1A1AA;
 
   /* Provider family colors — gem palette. Value colors for gauges/numbers. */
   --prov-claude: #2fa87e; /* emerald */
@@ -13,24 +15,24 @@
   --prov-codex-hdr: #8d93e8;
 
   /* Interaction accent — primary buttons, focus ring. Never used for gauges. */
-  --accent: #3d82d9;
-  --seg-on-bg: #1c3450; /* selected tab / seg background */
-  --seg-on-fg: #7cb5f2; /* selected tab / seg text */
+  --accent: #EC4899;
+  --seg-on-bg: #09090B; /* selected tab / seg background */
+  --seg-on-fg: #FAFAFA; /* selected tab / seg text */
 
   /* Brand orange: icon-only (providerIcon). Never text/gauges/charts. */
   --claude: #d97757;
 
-  /* Panel glass. */
-  --panel-bg: rgba(18, 21, 27, 0.72);
-  --panel-blur: 14px;
-  --border: rgba(255, 255, 255, 0.1); /* panel + generic borders */
-  --hairline: rgba(255, 255, 255, 0.09); /* row separators */
-  --card-bg: rgba(255, 255, 255, 0.045);
-  --track: rgba(0, 0, 0, 0.35); /* recessed groove */
+  /* Panel. */
+  --panel-bg: #FAFAFA;
+  --border: #E4E4E7; /* panel + generic borders */
+  --hairline: #E4E4E7; /* row separators */
+  --card-bg: #FFFFFF;
+  --track: #E4E4E7; /* recessed groove */
 
-  --text: #dfe3e8;
-  --text-dim: #8b939e;
-  --muted: #6f7883;
+  --text: #09090B;
+  --text-dim: #52525B;
+  --muted: #71717A;
+  --faint: #A1A1AA;
 
   /* Island stays opaque and theme-invariant. */
   --island-bg: #14171c;
@@ -41,6 +43,7 @@
   --mono: "Geist Mono", "Noto Sans TC", ui-monospace, "SF Mono", "Cascadia Mono", Menlo,
     Consolas, monospace;
   --sans: "Geist", "Noto Sans TC", -apple-system, system-ui, "Segoe UI", sans-serif;
+  --serif: "Playfair Display", Georgia, serif;
 }
 
 /* Provider family variable — set once per element carrying a provider class,
@@ -251,25 +254,8 @@ body.expanded #island {
   border: 1px solid var(--border);
   border-radius: 16px;
   margin-top: 6px;
-  backdrop-filter: blur(var(--panel-blur));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  /* Blur fades in on expand (see .panel-no-blur below). WebView2 rasterizes a
-     fresh backdrop-filter expensively on the first visible frame, so we hold it
-     off for two frames and let it settle in via this transition — the glass
-     "surfaces" rather than hitching the resize. */
-  transition: backdrop-filter 0.16s ease;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.10), 0 1px 4px rgba(0, 0, 0, 0.05);
 }
-/* First-paint escape hatch toggled by deferPanelBlur(): flat glass, no filter
-   work. Carries the #panel id so it outranks the plain #panel rule above. */
-body.panel-no-blur #panel {
-  backdrop-filter: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  #panel {
-    transition: none;
-  }
-}
-
 /* ── Header: tabs + Resets + icon buttons ─────────────────────────── */
 
 .phead {

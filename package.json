@@ -11,7 +11,8 @@
     "tauri": "tauri",
     "build:release": "tauri build && node scripts/collect-installers.mjs",
     "collect": "node scripts/collect-installers.mjs",
-    "gen:noto": "node scripts/gen-noto-subset.mjs"
+    "gen:noto": "node scripts/gen-noto-subset.mjs",
+    "gen:playfair": "node scripts/gen-playfair-subset.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

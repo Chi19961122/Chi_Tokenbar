@@ -1,5 +1,13 @@
 /* Geist + Geist Mono, extracted from the Live Island prototype bundle. */
 @font-face {
+  font-family: 'Playfair Display';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/playfair_italic_sub.woff2") format('woff2');
+}
+
+@font-face {
   font-family: 'Geist';
   font-style: normal;
   font-weight: 400;

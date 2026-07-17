@@ -1,4 +1,5 @@
 # T-ui-010 — Foundation：token 機械替換 + Playfair Italic 本地 subset
+status: done
 
 `視覺遷移模式。只改外觀 / tokens / 共用元件樣式。禁止改 API、資料流、route path。服從 DESIGN-SPEC.md。`
 
