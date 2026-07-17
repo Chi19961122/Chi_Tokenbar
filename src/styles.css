@@ -502,11 +502,6 @@ body.settings-open #analytics {
   flex: none;
 }
 
-.lsec {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 6px;
-}
 .lsec-head {
   display: flex;
   align-items: center;
@@ -532,100 +527,157 @@ body.settings-open #analytics {
   vertical-align: -2px;
 }
 
-.lrow {
-  --frame: rgba(255, 255, 255, 0.35);
-  position: relative;
-  display: grid;
-  grid-template-columns: 46px 1fr auto;
-  align-items: center;
-  gap: 11px;
-  padding: 9px 8px;
-  border: none;
+/* GaugeCard: transparent editorial rows, one card per provider. */
+.gauge-card {
+  margin-inline: -20px;
+  padding: 24px 20px;
   border-bottom: 1px solid var(--hairline);
-  border-radius: 0;
   background: transparent;
-  color: var(--fam);
+}
+.gauge-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.gauge-provider,
+.gauge-card-status {
+  display: inline-flex;
+  align-items: center;
+}
+.gauge-provider {
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+}
+.gauge-provider-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.gauge-card-status {
+  --gauge-color: var(--safe);
+  flex: none;
+  gap: 6px;
+  color: var(--gauge-color);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .04em;
+}
+.gauge-status-dot {
+  width: 1.5px;
+  height: 1.5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.gauge-row {
+  --gauge-color: var(--safe);
+  min-width: 0;
+  color: var(--gauge-color);
   font-family: var(--sans);
   text-align: left;
-  cursor: default;
 }
-.lsec .lrow:last-child {
-  border-bottom: none;
+.gauge-state-warn { --gauge-color: var(--near); }
+.gauge-state-locked { --gauge-color: var(--locked); }
+.gauge-state-stale,
+.gauge-state-degraded { --gauge-color: var(--stale); }
+.gauge-kicker {
+  min-height: 11px;
+  margin-bottom: 4px;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 9px;
+  letter-spacing: .16em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
-.lrow .pcap {
-  display: block;
+.gauge-hero {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
 }
-.lrow-mid {
+.gauge-value {
+  font-size: 60px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.055em;
+  line-height: .82;
+}
+.gauge-unit {
+  margin-left: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+.gauge-left {
+  margin-left: 8px;
+  color: var(--faint);
+  font-family: var(--serif);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1;
+}
+.gauge-track {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #E4E4E7;
+}
+.gauge-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--gauge-color);
+  transition: width 700ms ease;
+}
+.gauge-state-stale .gauge-fill,
+.gauge-state-degraded .gauge-fill {
+  transition: none;
+}
+.gauge-meta {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin-top: 8px;
   min-width: 0;
 }
-.lrow-label {
+.gauge-detail {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text);
+  gap: 5px;
   min-width: 0;
-}
-.lrow-note {
-  font-size: 11px;
   color: var(--text-dim);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+}
+.gauge-reset {
   overflow: hidden;
+  color: var(--faint);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
-}
-.lrow-pct {
-  font-family: var(--mono);
-  font-size: 15px;
-  font-weight: 700;
-  text-align: right;
-  color: inherit;
-}
-
-/* Row status coloring drives both the battery fill (currentColor) and the %. */
-.lrow.status-near {
-  --frame: rgba(224, 166, 58, 0.6);
-  color: var(--near);
-}
-.lrow.status-locked {
-  --frame: rgba(224, 94, 88, 0.7);
-  color: var(--locked);
-}
-/* Near/Locked carry a thick left color bar so the two attention states read at
-   a glance down the list (階段 B: 左側色條加粗). */
-.lrow.status-near::before,
-.lrow.status-locked::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 5px;
-  bottom: 5px;
-  width: 4px;
-  border-radius: 2px;
-}
-.lrow.status-near::before {
-  background: var(--near);
-}
-.lrow.status-locked::before {
-  background: #e05e58;
-}
-.lrow.status-source_failed,
-.lrow.status-insufficient_data,
-.lrow.status-stale,
-.lrow.status-idle {
-  color: var(--muted);
-  opacity: 0.85;
+  white-space: nowrap;
 }
 
 .badge {
-  border: 1px solid var(--muted);
-  color: var(--muted);
-  padding: 0 5px;
-  border-radius: 4px;
-  font-size: 10px;
+  color: var(--faint);
+  font-size: 9px;
   font-family: var(--sans);
 }
 .empty-note {
@@ -640,7 +692,7 @@ body.settings-open #analytics {
 /* Inline slot for the re-login affordance under a failed row (階段 B moved it
    out of the deleted detail view). */
 .lrow-action {
-  padding: 0 8px 8px 65px;
+  margin-top: 8px;
 }
 
 .relogin {

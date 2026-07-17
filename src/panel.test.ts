@@ -70,17 +70,17 @@ describe("renderPanel summary variant", () => {
     renderPanel(root, snap(LIMITS), { ...baseOpts, variant: "summary", summaryExpanded: false });
 
     expect(root.querySelector("[data-quota-toggle]")).not.toBeNull();
-    expect(root.querySelector(".lrow")).toBeNull(); // full list is hidden
+    expect(root.querySelector(".gauge-row")).toBeNull(); // full list is hidden
     expect(root.textContent).toContain("Claude");
     expect(root.textContent).toContain("62%");
   });
 
-  it("expands to show the full battery list beneath the toggle", () => {
+  it("expands to show the full gauge list beneath the toggle", () => {
     const root = document.createElement("div");
     renderPanel(root, snap(LIMITS), { ...baseOpts, variant: "summary", summaryExpanded: true });
 
     expect(root.querySelector("[data-quota-toggle]")).not.toBeNull();
-    expect(root.querySelectorAll(".lrow").length).toBe(LIMITS.length);
+    expect(root.querySelectorAll(".gauge-row").length).toBe(LIMITS.length);
   });
 
   it("full variant renders the list directly, with no summary toggle", () => {
@@ -88,9 +88,29 @@ describe("renderPanel summary variant", () => {
     renderPanel(root, snap(LIMITS), { ...baseOpts, variant: "full" });
 
     expect(root.querySelector("[data-quota-toggle]")).toBeNull();
-    expect(root.querySelectorAll(".lrow").length).toBe(LIMITS.length);
+    expect(root.querySelectorAll(".gauge-row").length).toBe(LIMITS.length);
     expect(root.querySelector(".status-pill")?.textContent).toContain("0% left");
     expect(root.querySelector(".section-number")?.textContent).toBe("01");
     expect(root.querySelector(".section-editorial")?.textContent).toBe("What's left in the tank");
+    expect(root.querySelectorAll(".gauge-card").length).toBe(2);
+    expect(root.querySelector(".gauge-card.prov-claude .picon")).not.toBeNull();
+    expect(root.querySelector(".gauge-card.prov-claude .picon")?.getAttribute("width")).toBe("14");
+    expect(root.querySelector(".gauge-card.prov-codex .gauge-card-status")?.textContent).toContain("locked");
+    expect(root.querySelector(".gauge-row .gauge-value")?.textContent).toBe("62");
+    expect(root.querySelector(".gauge-row .gauge-unit")?.textContent).toBe("%");
+    expect(root.querySelector(".gauge-row .gauge-fill")?.getAttribute("style")).toContain("width:62%");
+  });
+
+  it("keeps unavailable data unknown and marks its provider degraded", () => {
+    const root = document.createElement("div");
+    renderPanel(root, snap([
+      limit({ status: "source_failed", util: 0, hint: "offline" }),
+      limit({ id: "cc.week", util: 40 }),
+    ]), { ...baseOpts, variant: "full" });
+
+    expect(root.querySelector(".gauge-card-status")?.textContent).toContain("degraded");
+    expect(root.querySelector(".gauge-state-degraded .gauge-value")?.textContent).toBe("—");
+    expect(root.querySelector(".gauge-state-degraded .gauge-unit")).toBeNull();
+    expect(root.querySelector(".gauge-state-degraded .gauge-fill")?.getAttribute("style")).toContain("width:0%");
   });
 });

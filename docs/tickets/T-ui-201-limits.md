@@ -1,4 +1,5 @@
 # T-ui-201 — Limits 視圖：GaugeCard 編輯部化（hero 數字 + 狀態色 + 彩色品牌 icon）
+status: done
 
 `視覺遷移模式。只改外觀 / tokens / 共用元件樣式。禁止改 API、資料流、route path。服從 DESIGN-SPEC.md。`
 

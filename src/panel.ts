@@ -80,15 +80,27 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Battery gauge (46×22): white frame + electrode nub; inner fill = % left,
- *  drawn in the row's current color and framed by the row's --frame var. */
-function battery(left: number): string {
-  const w = (Math.min(100, Math.max(0, left)) / 100) * 34;
-  return `<svg class="pcap" width="46" height="22" viewBox="0 0 46 22" aria-hidden="true">
-    <rect x="1" y="1" width="40" height="20" rx="6" fill="none" stroke="var(--frame)" stroke-width="2"/>
-    <rect x="42.5" y="7" width="2.5" height="8" rx="1.25" fill="var(--frame)"/>
-    <rect x="4" y="4" width="${w.toFixed(1)}" height="14" rx="3" fill="currentColor"/>
-  </svg>`;
+type GaugeState = "safe" | "warn" | "locked" | "stale" | "degraded";
+
+const gaugeState = (l: Limit): GaugeState => {
+  if (l.status === "locked") return "locked";
+  if (l.status === "near") return "warn";
+  if (isUnknown(l)) return "degraded";
+  if (l.status === "stale" || l.status === "idle") return "stale";
+  return "safe";
+};
+
+const GAUGE_STATE_PRIORITY: GaugeState[] = ["locked", "warn", "degraded", "stale", "safe"];
+const GAUGE_STATE_LABEL: Record<GaugeState, string> = {
+  safe: "healthy",
+  warn: "near limit",
+  locked: "locked",
+  stale: "stale",
+  degraded: "degraded",
+};
+
+function worstGaugeState(limits: Limit[]): GaugeState {
+  return GAUGE_STATE_PRIORITY.find((state) => limits.some((l) => gaugeState(l) === state)) ?? "safe";
 }
 
 /** The reset instant as either a countdown or a clock, following reset_display —
@@ -156,7 +168,8 @@ function reloginBlock(state: ReloginState, copied: boolean): string {
 function row(l: Limit, opts: PanelOpts): string {
   const unknown = isUnknown(l);
   const left = pctLeft(l.util);
-  const pct = unknown ? "—" : `${left}%`;
+  const state = gaugeState(l);
+  const pct = unknown ? "—" : `${left}`;
   // source_failed is not an estimate (the backend sends 0% placeholders) — say
   // "Unavailable"; insufficient_data is a real estimate; stale flags "从上次".
   const badge = unknown
@@ -171,14 +184,21 @@ function row(l: Limit, opts: PanelOpts): string {
     l.status === "source_failed" && l.action === "relogin"
       ? `<div class="lrow-action">${reloginBlock(opts.relogin ?? "idle", opts.copied ?? false)}</div>`
       : "";
-  return `<div class="lrow status-${l.status} ${provClass(l)}">
-    ${battery(unknown ? 0 : left)}
-    <span class="lrow-mid">
-      <span class="lrow-label">${escapeHtml(displayName(l))}${badge}</span>
-      ${note ? `<span class="lrow-note">${note}</span>` : ""}
-    </span>
-    <span class="lrow-pct">${pct}</span>
-  </div>${action}`;
+  const detail = unknown ? badge : `<span>${left}% ${t("share.left")}</span>${badge}`;
+  return `<div class="gauge-row gauge-state-${state} status-${l.status} ${provClass(l)}">
+    <div class="gauge-kicker">${escapeHtml(displayName(l))}</div>
+    <div class="gauge-hero">
+      <span class="gauge-value">${pct}</span>
+      ${unknown ? "" : `<span class="gauge-unit">%</span>`}
+      <span class="gauge-left">${t("share.left")}</span>
+    </div>
+    <div class="gauge-track" aria-hidden="true"><span class="gauge-fill" style="width:${unknown ? 0 : left}%"></span></div>
+    <div class="gauge-meta">
+      <span class="gauge-detail">${detail}</span>
+      ${note ? `<span class="gauge-reset">${note}</span>` : ""}
+    </div>
+    ${action}
+  </div>`;
 }
 
 function list(limits: Limit[], opts: PanelOpts): string {
@@ -186,9 +206,13 @@ function list(limits: Limit[], opts: PanelOpts): string {
     const items = limits.filter((l) => l.provider === p);
     if (items.length === 0) return "";
     const meta = PROVIDER_META[p];
-    return `<div class="lsec">
-      <div class="lsec-head ${meta.cls}">${providerIcon(p, 12)}${meta.name}</div>
-      ${items.map((l) => row(l, opts)).join("")}
+    const state = worstGaugeState(items);
+    return `<div class="lsec gauge-card ${meta.cls}">
+      <div class="gauge-card-head">
+        <span class="gauge-provider">${providerIcon(p, 14)}<span class="gauge-provider-name">${meta.name}</span></span>
+        <span class="gauge-card-status gauge-state-${state}"><span class="gauge-status-dot"></span>${GAUGE_STATE_LABEL[state]}</span>
+      </div>
+      <div class="gauge-grid">${items.map((l) => row(l, opts)).join("")}</div>
     </div>`;
   }).join("");
   return groups || `<div class="empty-note">${t("list.noTools")}</div>`;
