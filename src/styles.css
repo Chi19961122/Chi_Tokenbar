@@ -31,8 +31,12 @@
 
   --text: #09090B;
   --text-dim: #52525B;
-  --muted: #71717A;
-  --faint: #A1A1AA;
+  /* Secondary text tiers darkened to clear WCAG AA (4.5:1) on the #FAFAFA/#FFF
+     editorial ground — the old zinc-500/400 pair (#71717A ≈4.6, #A1A1AA ≈2.5)
+     read as "hard to see" at the 9–11px label sizes. Hierarchy preserved:
+     text-dim > muted > faint, all now ≥4.9:1. */
+  --muted: #5D5D65;
+  --faint: #6C6C75;
 
   /* Island stays opaque and theme-invariant. */
   --island-bg: #14171c;
