@@ -1,4 +1,5 @@
 # T-ui-203 — 戰報 Share 換皮（六模板 token 對齊，版面結構不動）
+status: done
 
 `視覺遷移模式。只改外觀 / tokens / 共用元件樣式。禁止改 API、資料流、route path。服從 DESIGN-SPEC.md。`
 

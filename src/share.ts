@@ -216,6 +216,15 @@ function barPct(tokens: number, maxTokens: number): number {
 
 const TOP_N = 5;
 
+/** Optional records caption for the two stats-oriented templates. Keep this in
+ * the existing caption slots; the themed templates intentionally omit it. */
+function recordsCaption(data: ShareData, T: TFn): string {
+  const parts: string[] = [];
+  if (data.streakDays > 0) parts.push(T("share.streakDays", { n: data.streakDays }));
+  if (data.maxDayTokens > 0) parts.push(T("share.peakTokens", { tokens: fmtTokens(data.maxDayTokens) }));
+  return parts.length > 0 ? `<span class="sh-records"> · ${parts.join(" · ")}</span>` : "";
+}
+
 /** Build the `-card` root element for a style. `<div class="…-card">` with the
  *  concept markup as innerHTML; the caller sizes/mounts it. */
 export function renderShareCard(
@@ -259,6 +268,7 @@ const BATTERY_SVG = `<svg width="30" height="17" viewBox="0 0 28 16" fill="none"
 
 // ── statement 用量結算單 (byAgent) ───────────────────────────────────────────
 function statementCard(data: ShareData, T: TFn): HTMLElement {
+  const records = recordsCaption(data, T);
   const rows = data.byAgent
     .slice(0, TOP_N)
     .map(
@@ -278,7 +288,7 @@ function statementCard(data: ShareData, T: TFn): HTMLElement {
       <div class="shst-tokens">
         <div class="lbl">${T("share.totalTokens")}</div>
         <div class="num">${grouped(data.totalTokens)}</div>
-        <div class="sub">${T("share.tokensAcrossAgents", { n: data.agentCount })}</div>
+        <div class="sub">${T("share.tokensAcrossAgents", { n: data.agentCount })}${records}</div>
       </div>
       <div class="shst-cost">
         <div class="lbl">${T("share.estCost")}</div>
@@ -299,6 +309,7 @@ function statementCard(data: ShareData, T: TFn): HTMLElement {
 
 // ── diagnostics 系統診斷 (byAgent) ───────────────────────────────────────────
 function diagnosticsCard(data: ShareData, T: TFn): HTMLElement {
+  const records = recordsCaption(data, T);
   const top = data.byAgent.slice(0, TOP_N);
   const rows = top
     .map(
@@ -317,7 +328,7 @@ function diagnosticsCard(data: ShareData, T: TFn): HTMLElement {
     <div class="shdx-winlbl">tokenbar :: report</div>
     <div class="shdx-body">
       <div class="shdx-cmd"><span class="p">$ </span>tokenbar --report<span class="cur">&nbsp;</span></div>
-      <div class="shdx-comment"># ${esc(data.periodLabel)}</div>
+      <div class="shdx-comment"># ${esc(data.periodLabel)}${records}</div>
       <div class="shdx-kv">
         <div class="line"><span class="k">TOTAL_TOKENS</span><span class="eq"> = </span><span class="v big">${grouped(
           data.totalTokens,
@@ -417,11 +428,11 @@ function fuelCard(data: ShareData, T: TFn, group: "model" | "agent"): HTMLElemen
 
 // ── island_card Liquid 島嶼卡 (byAgent + gem-gradient rows + quotaNote) ────────
 const GEM_GRADIENTS = [
-  "linear-gradient(90deg,#2fa87e,#37c493)",
-  "linear-gradient(90deg,#2b6fb8,#3a8ad8)",
-  "linear-gradient(90deg,#7a4fc9,#9566e2)",
-  "linear-gradient(90deg,#c2497a,#dd6096)",
-  "linear-gradient(90deg,#5b62d4,#767de8)",
+  "#18181B",
+  "#52525B",
+  "#71717A",
+  "#A1A1AA",
+  "#D4D4D8",
 ];
 
 function islandCard(data: ShareData, T: TFn): HTMLElement {

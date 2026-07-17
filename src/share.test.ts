@@ -211,4 +211,29 @@ describe("renderShareCard — all six styles", () => {
     expect(zh.textContent ?? "").toContain("本週");
     expect(zh.textContent ?? "").toContain("用量結算單");
   });
+
+  it("shows records only in the two stats-oriented templates", () => {
+    const records = "7d streak · peak 2.4M";
+    for (const style of ALL_STYLES) {
+      const card = renderShareCard(style, data, "en", { fuelGroup: "model" });
+      if (style === "statement" || style === "diagnostics") {
+        expect(card.textContent ?? "", `${style} should show records`).toContain(records);
+      } else {
+        expect(card.textContent ?? "", `${style} should not show records`).not.toContain(records);
+      }
+    }
+  });
+
+  it("omits the records caption when both record values are empty", () => {
+    const empty = { ...data, streakDays: 0, maxDayTokens: 0 };
+    expect(renderShareCard("statement", empty, "en").querySelector(".sh-records")).toBeNull();
+    expect(renderShareCard("diagnostics", empty, "en").querySelector(".sh-records")).toBeNull();
+  });
+
+  it("never renders project names in any template", () => {
+    for (const style of ALL_STYLES) {
+      const card = renderShareCard(style, data, "en", { fuelGroup: "model" });
+      expect(card.textContent ?? "").not.toContain("secret-project");
+    }
+  });
 });
