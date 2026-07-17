@@ -23,3 +23,22 @@ Windows 常駐的 AI coding 額度 runway 監控器（Tauri 2 + vanilla TS）。
 - **Claude refresh 是 opt-in**（settings `allow_token_refresh`，預設關）：refresh 會輪替 token，已實作原子寫回並實測不影響 Claude Code 登入，但保持使用者自選；設定改動即時生效（每輪重讀）。
 - 前端顯示一律 `% left`（剩餘/電量隱喻，膠囊與橫條填剩餘）；內部 canonical 與排名一律 util%（已用）。
 - 視覺：Geist/Geist Mono 由原型 bundle 抽出（`public/fonts/` + `src/fonts.css`）；調色盤 token 在 `src/styles.css` :root；島嶼膠囊用固定 `--island-*` 配色，三種發行版外觀必須一致（CONFIG.md §7）。
+
+## Frontend redesign flow — source of truth (high → low)
+
+行為/狀態機/演算法的真相仍是 `Ai_Assistant/TokenBar UX Spec v3.md`（上表）。以下優先序只管**視覺與本輪改版流程**：
+
+1. docs/DESIGN-SPEC.md（視覺 token / 元件規格）
+2. docs/PLAN.md（本輪範圍、P0、Non-goals）
+3. current ticket under docs/tickets/
+4. design/stitch export (raw material only)
+5. design/refs images (intent only)
+6. Taste / Impeccable (must not override SPEC tokens)
+
+FEEDBACK.md is input only — translate to T-xxx before Codex.
+
+### Rules
+- One ticket at a time; no free redesign; no drive-by refactors outside ticket scope
+- Build gate must pass before commit
+- Page tickets must not restyle shared components (open T-1xx instead)
+- Do not enable UI UX Pro Max during implementation
