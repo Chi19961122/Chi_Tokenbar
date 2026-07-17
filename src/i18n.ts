@@ -45,6 +45,9 @@ const en = {
   "settings.codexLive": "Live",
   "settings.codexAuto": "Auto (live first)",
   "settings.codexLocal": "Local session snapshot",
+  "settings.toolOpencode": "Include OpenCode",
+  "settings.toolGemini": "Include Gemini CLI",
+  "settings.toolNote": "Usage only, from local logs; shown when data is found.",
 
   // Settings — 階段 B rows (island / expand / reset display)
   "settings.island": "Island",
@@ -220,6 +223,9 @@ const zhTW = {
   "settings.codexLive": "即時",
   "settings.codexAuto": "自動(優先即時)",
   "settings.codexLocal": "本機工作階段快照",
+  "settings.toolOpencode": "納入 OpenCode",
+  "settings.toolGemini": "納入 Gemini CLI",
+  "settings.toolNote": "僅用量,取自本機記錄;有資料才顯示。",
 
   "settings.island": "島嶼",
   "settings.expandDefault": "點島嶼展開到",

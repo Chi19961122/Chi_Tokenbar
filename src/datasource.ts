@@ -26,6 +26,9 @@ const DEFAULT_SETTINGS: Settings = {
   // 階段 D defaults — mirror config.rs `Settings::default()`.
   share_style: "statement",
   share_range: "week",
+  // 階段 E defaults — mirror config.rs `Settings::default()` (detect-and-show).
+  tool_opencode: true,
+  tool_gemini: true,
 };
 
 export const isTauri = () =>

@@ -259,12 +259,20 @@ fn scans_claude(filter: &str) -> bool {
     filter != "codex"
 }
 
-fn filter_accounts(filter: &str, accounts: Vec<Account>) -> Vec<Account> {
+fn filter_accounts(
+    filter: &str,
+    tool_opencode: bool,
+    tool_gemini: bool,
+    accounts: Vec<Account>,
+) -> Vec<Account> {
     accounts
         .into_iter()
         .filter(|a| match a.provider.as_str() {
             "anthropic" => scans_claude(filter),
             "codex" => scans_codex(filter),
+            // 階段 E: gated by their own toggle, not the anthropic/codex filter.
+            "opencode" => tool_opencode,
+            "gemini" => tool_gemini,
             _ => true,
         })
         .collect()
@@ -274,8 +282,18 @@ fn filter_accounts(filter: &str, accounts: Vec<Account>) -> Vec<Account> {
 ///
 /// Skips the scan outright rather than scanning then discarding: `scan_*`
 /// walks a whole directory tree, and a hidden provider's files are pure waste.
-pub fn compute_with(range: &str, filter: &str) -> Analytics {
-    compute_routed(range, filter, scan_codex, scan_claude, detect_accounts())
+pub fn compute_with(range: &str, filter: &str, tool_opencode: bool, tool_gemini: bool) -> Analytics {
+    compute_routed(
+        range,
+        filter,
+        scan_codex,
+        scan_claude,
+        scan_opencode,
+        scan_gemini,
+        tool_opencode,
+        tool_gemini,
+        detect_accounts(),
+    )
 }
 
 /// The real body of `compute_with`, with every source of ambient state
@@ -284,16 +302,23 @@ pub fn compute_with(range: &str, filter: &str) -> Analytics {
 /// This split exists purely so the filter routing below is testable: the
 /// scanners read the real home dir, so a test that cannot replace them can
 /// only re-assert `scans_*`, which proves nothing about which branch runs.
-fn compute_routed<C, L>(
+#[allow(clippy::too_many_arguments)]
+fn compute_routed<C, L, O, G>(
     range: &str,
     filter: &str,
     scan_codex_fn: C,
     scan_claude_fn: L,
+    scan_opencode_fn: O,
+    scan_gemini_fn: G,
+    tool_opencode: bool,
+    tool_gemini: bool,
     accounts: Vec<Account>,
 ) -> Analytics
 where
     C: FnOnce(&mut Acc, i64) -> u32,
     L: FnOnce(&mut Acc, i64),
+    O: FnOnce(&mut Acc, i64),
+    G: FnOnce(&mut Acc, i64),
 {
     let now = chrono::Utc::now().timestamp();
     let days_back: i64 = match range {
@@ -312,6 +337,17 @@ where
     };
     if scans_claude(filter) {
         scan_claude_fn(&mut acc, start);
+    }
+    // 階段 E 多工具: gated purely on their own toggle, independent of the
+    // anthropic/codex `providers` filter (those two are quota pools; these are
+    // separate clients). A disabled tool is never scanned; an enabled tool with
+    // no local data simply contributes nothing (no fake 0 card — Acc::add drops
+    // zero-token rows, and byAgent only holds keys that actually had usage).
+    if tool_opencode {
+        scan_opencode_fn(&mut acc, start);
+    }
+    if tool_gemini {
+        scan_gemini_fn(&mut acc, start);
     }
 
     let mut daily: Vec<DayPoint> = Vec::new();
@@ -398,7 +434,7 @@ where
         by_project,
         sessions_this_week: sessions,
         tok_per_min: (acc.recent_tokens as f64 / 10.0) as u64,
-        accounts: filter_accounts(filter, accounts),
+        accounts: filter_accounts(filter, tool_opencode, tool_gemini, accounts),
     }
 }
 
@@ -601,9 +637,177 @@ fn scan_claude(acc: &mut Acc, start: i64) {
     }
 }
 
+// ── OpenCode: one JSON file per message (階段 E) ──────────────────────────
+//
+// 勘察結論(2026-07-17,見 data-sources-findings.md §4.1):本機**未安裝**
+// OpenCode。scanner 依「文件化格式」實作,執行期目錄不存在即回空:
+//   storage/message/<sessionID>/<messageID>.json —— assistant 訊息帶 `role`、
+//   `modelID`、`time.created`(epoch 毫秒)、`tokens.{input,output,reasoning,
+//   cache.read,cache.write}`。基底目錄取 XDG data + 常見備援。
+// Limits:OpenCode 本機無官方 limit 檔(額度歸後端 provider)→ 僅 Usage。
+
+/// Candidate OpenCode storage roots (first existing wins is *not* assumed — all
+/// are scanned so a mirrored/legacy layout is still picked up).
+fn opencode_bases() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        v.push(home.join(".local/share/opencode"));
+        v.push(home.join(".opencode"));
+        v.push(home.join(".config/opencode"));
+    }
+    if let Some(local) = dirs::data_local_dir() {
+        v.push(local.join("opencode"));
+    }
+    v
+}
+
+/// Parse one OpenCode message object into `(ts_secs, model, input, cached,
+/// output, reasoning)`. `None` for non-assistant messages, malformed objects,
+/// or ones with no token counts — the scanner then skips them.
+fn oc_record(v: &serde_json::Value) -> Option<(i64, String, u64, u64, u64, u64)> {
+    if v.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+        return None;
+    }
+    let tokens = v.get("tokens")?;
+    let get = |k: &str| tokens.get(k).and_then(|x| x.as_u64()).unwrap_or(0);
+    let input = get("input");
+    let output = get("output");
+    let reasoning = get("reasoning");
+    let cache = tokens.get("cache");
+    let cache_get =
+        |k: &str| cache.and_then(|c| c.get(k)).and_then(|x| x.as_u64()).unwrap_or(0);
+    let cached = cache_get("read") + cache_get("write");
+    if input + output + reasoning + cached == 0 {
+        return None;
+    }
+    let ts = v
+        .get("time")
+        .and_then(|t| t.get("created"))
+        .and_then(parse_epoch)
+        .unwrap_or(0);
+    let model = v.get("modelID").and_then(|m| m.as_str()).unwrap_or("opencode").to_string();
+    Some((ts, model, input, cached, output, reasoning))
+}
+
+fn scan_opencode(acc: &mut Acc, start: i64) {
+    for base in opencode_bases() {
+        let pattern = base
+            .join("storage/message/**/*.json")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let Ok(paths) = glob::glob(&pattern) else {
+            continue;
+        };
+        for p in paths.filter_map(Result::ok) {
+            if mtime_secs(&p) < start {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&p) else {
+                continue;
+            };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            if let Some((ts, model, i, ca, o, r)) = oc_record(&v) {
+                if ts < start {
+                    continue;
+                }
+                // kind = None: OpenCode tokens aren't per-tool attributable here;
+                // project = "": message files don't carry cwd (see findings §4.1).
+                acc.add(ts, &model, "OpenCode", "", None, i, ca, o, r);
+            }
+        }
+    }
+}
+
+// ── Gemini CLI: documented JSONL usage records (階段 E) ────────────────────
+//
+// 勘察結論(2026-07-17,見 data-sources-findings.md §4.2):本機 `~/.gemini/`
+// 只有 Antigravity IDE 的 protobuf 資料,**無** Gemini CLI 用量 log。scanner 依
+// 一個文件化的 JSONL 用量形狀掃 `~/.gemini/**/*.jsonl`(每行 `{timestamp,model,
+// tokens:{input,output,cached,thoughts}}`),掃不到即回空。**只吃 *.jsonl**,因此
+// 天然避開 `oauth_creds.json` / `settings.json`(憑證/設定,鐵則:連讀都不讀)。
+// Limits:Gemini CLI 本機無官方 limit 檔 → 僅 Usage。
+
+/// Parse one Gemini usage log line into `(ts_secs, model, input, cached,
+/// output, reasoning)`. `None` for a blank/corrupt line or one with no tokens,
+/// so a malformed line is skipped rather than aborting the file.
+fn gemini_record(line: &str) -> Option<(i64, String, u64, u64, u64, u64)> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let tokens = v.get("tokens")?;
+    let get = |k: &str| tokens.get(k).and_then(|x| x.as_u64()).unwrap_or(0);
+    let input = get("input");
+    let output = get("output");
+    let cached = get("cached");
+    let thoughts = get("thoughts"); // Gemini's reasoning-equivalent field
+    if input + output + cached + thoughts == 0 {
+        return None;
+    }
+    let ts = v.get("timestamp").and_then(parse_epoch)?;
+    let model = v.get("model").and_then(|m| m.as_str()).unwrap_or("gemini").to_string();
+    Some((ts, model, input, cached, output, thoughts))
+}
+
+fn scan_gemini(acc: &mut Acc, start: i64) {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let pattern = home
+        .join(".gemini/**/*.jsonl")
+        .to_string_lossy()
+        .replace('\\', "/");
+    let Ok(paths) = glob::glob(&pattern) else {
+        return;
+    };
+    for p in paths.filter_map(Result::ok) {
+        if mtime_secs(&p) < start {
+            continue;
+        }
+        let Ok(file) = File::open(&p) else {
+            continue;
+        };
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
+            if let Some((ts, model, i, ca, o, r)) = gemini_record(&line) {
+                if ts < start {
+                    continue;
+                }
+                acc.add(ts, &model, "Gemini CLI", "", None, i, ca, o, r);
+            }
+        }
+    }
+}
+
+/// Epoch seconds from a JSON value that may be epoch millis, epoch seconds, or
+/// an RFC3339 string. Millis are distinguished by magnitude (> ~Sat 2286 in
+/// seconds), which is safe for any realistic log timestamp.
+fn parse_epoch(v: &serde_json::Value) -> Option<i64> {
+    if let Some(n) = v.as_i64() {
+        return Some(if n > 10_000_000_000 { n / 1000 } else { n });
+    }
+    if let Some(s) = v.as_str() {
+        return chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.timestamp());
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Convenience wrapper: run `compute_routed` with the 階段 E scanners disabled,
+    /// so every pre-E test reads exactly as before (OpenCode/Gemini contribute
+    /// nothing). 階段 E's own tests call `compute_routed` directly.
+    fn routed<C, L>(range: &str, filter: &str, codex: C, claude: L, accounts: Vec<Account>) -> Analytics
+    where
+        C: FnOnce(&mut Acc, i64) -> u32,
+        L: FnOnce(&mut Acc, i64),
+    {
+        compute_routed(range, filter, codex, claude, |_, _| {}, |_, _| {}, false, false, accounts)
+    }
 
     /// The scan helpers hit the real home dir, so these assert on the pure
     /// routing decision instead: which scans the filter authorises.
@@ -639,6 +843,8 @@ mod tests {
     fn accounts_follow_the_filter() {
         let only_claude = filter_accounts(
             "claude",
+            true,
+            true,
             vec![
                 Account {
                     client: "Claude Code".into(),
@@ -679,7 +885,7 @@ mod tests {
 
     /// Agents that actually got scanned, for `filter`, sorted.
     fn scanned_agents(filter: &str) -> Vec<String> {
-        let a = compute_routed("today", filter, stub_codex, stub_claude, Vec::new());
+        let a = routed("today", filter, stub_codex, stub_claude, Vec::new());
         let mut names: Vec<String> = a.by_agent.keys().cloned().collect();
         names.sort();
         names
@@ -720,15 +926,15 @@ mod tests {
     /// its session count with it.
     #[test]
     fn skipped_codex_scan_drops_its_tokens_and_sessions() {
-        let claude_only = compute_routed("today", "claude", stub_codex, stub_claude, Vec::new());
+        let claude_only = routed("today", "claude", stub_codex, stub_claude, Vec::new());
         assert_eq!(claude_only.total_tokens, 200);
         assert_eq!(claude_only.sessions_this_week, 0);
 
-        let codex_only = compute_routed("today", "codex", stub_codex, stub_claude, Vec::new());
+        let codex_only = routed("today", "codex", stub_codex, stub_claude, Vec::new());
         assert_eq!(codex_only.total_tokens, 100);
         assert_eq!(codex_only.sessions_this_week, 7);
 
-        let everything = compute_routed("today", "both", stub_codex, stub_claude, Vec::new());
+        let everything = routed("today", "both", stub_codex, stub_claude, Vec::new());
         assert_eq!(everything.total_tokens, 300);
         assert_eq!(everything.sessions_this_week, 7);
     }
@@ -754,14 +960,14 @@ mod tests {
 
     #[test]
     fn month_range_spans_thirty_daily_buckets() {
-        let a = compute_routed("month", "claude", no_codex, stub_recent(3), Vec::new());
+        let a = routed("month", "claude", no_codex, stub_recent(3), Vec::new());
         assert_eq!(a.daily.len(), 30);
         assert_eq!(a.total_tokens, 300); // 3 days × 100
     }
 
     #[test]
     fn month_range_reports_actual_start_when_history_is_short() {
-        let a = compute_routed("month", "claude", no_codex, stub_recent(3), Vec::new());
+        let a = routed("month", "claude", no_codex, stub_recent(3), Vec::new());
         // daily runs oldest→newest over 30 buckets: today is [29], so the
         // earliest of the last three active days is [27].
         assert_eq!(a.range_start_day, a.daily[27].date);
@@ -773,7 +979,7 @@ mod tests {
 
     #[test]
     fn range_start_day_is_window_start_when_no_activity() {
-        let a = compute_routed("month", "claude", no_codex, |_, _| {}, Vec::new());
+        let a = routed("month", "claude", no_codex, |_, _| {}, Vec::new());
         assert_eq!(a.range_start_day, a.daily.first().unwrap().date);
     }
 
@@ -819,7 +1025,7 @@ mod tests {
 
     #[test]
     fn by_kind_aggregates_claude_activity_sorted_desc() {
-        let a = compute_routed("today", "claude", no_codex, stub_activity, Vec::new());
+        let a = routed("today", "claude", no_codex, stub_activity, Vec::new());
         assert_eq!(a.by_kind[0].kind, "edit"); // 130 > 50
         assert_eq!(a.by_kind[0].tokens, 130);
         let read = a.by_kind.iter().find(|k| k.kind == "read").unwrap();
@@ -828,7 +1034,7 @@ mod tests {
 
     #[test]
     fn by_project_aggregates_and_sorts() {
-        let a = compute_routed("today", "claude", no_codex, stub_activity, Vec::new());
+        let a = routed("today", "claude", no_codex, stub_activity, Vec::new());
         assert_eq!(a.by_project[0].name, "proj-a"); // 150 > 30
         assert_eq!(a.by_project[0].tokens, 150);
         assert_eq!(a.by_project[1].name, "proj-b");
@@ -841,7 +1047,7 @@ mod tests {
             acc.add(acc.now, "gpt-5-codex", CODEX_AGENT, "proj-x", None, 100, 0, 0, 0);
             1
         }
-        let a = compute_routed("today", "codex", codex_only, |_, _| {}, Vec::new());
+        let a = routed("today", "codex", codex_only, |_, _| {}, Vec::new());
         assert!(a.by_kind.is_empty(), "Codex must not produce activity kinds");
         assert_eq!(a.by_project[0].name, "proj-x");
     }
@@ -863,7 +1069,7 @@ mod tests {
                 );
             }
         }
-        let a = compute_routed("today", "claude", no_codex, many, Vec::new());
+        let a = routed("today", "claude", no_codex, many, Vec::new());
         assert_eq!(a.by_project.len(), 9, "8 named projects + merged remainder");
         assert_eq!(a.by_project.last().unwrap().name, "__other__");
         // The remainder holds the two smallest (p08=60, p09=55).
@@ -873,9 +1079,140 @@ mod tests {
     #[test]
     fn empty_project_is_not_recorded() {
         // A provider with no cwd ("") still counts its tokens but adds no project.
-        let a = compute_routed("today", "claude", no_codex, stub_recent(1), Vec::new());
+        let a = routed("today", "claude", no_codex, stub_recent(1), Vec::new());
         assert_eq!(a.total_tokens, 100);
         assert!(a.by_project.is_empty());
+    }
+
+    // ── 階段 E: OpenCode / Gemini parsers + toggles ──────────────────────
+    //
+    // The parsers are the unit under test (the dir walks read the real home
+    // dir); fake data proves a well-formed record parses and a broken/empty one
+    // is skipped rather than crashing.
+
+    #[test]
+    fn oc_record_parses_an_assistant_message() {
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{ "role": "assistant", "modelID": "claude-sonnet",
+                 "time": { "created": 1782590000000 },
+                 "tokens": { "input": 100, "output": 20, "reasoning": 5,
+                             "cache": { "read": 10, "write": 3 } } }"#,
+        )
+        .unwrap();
+        let (ts, model, input, cached, output, reasoning) = oc_record(&v).unwrap();
+        assert_eq!(ts, 1782590000); // ms → s
+        assert_eq!(model, "claude-sonnet");
+        assert_eq!(input, 100);
+        assert_eq!(cached, 13); // read + write
+        assert_eq!(output, 20);
+        assert_eq!(reasoning, 5);
+    }
+
+    #[test]
+    fn oc_record_skips_non_assistant_and_tokenless() {
+        // A user message: no usage to book.
+        let user = serde_json::json!({ "role": "user", "tokens": { "input": 5 } });
+        assert!(oc_record(&user).is_none());
+        // An assistant message whose tokens are all zero adds nothing.
+        let empty = serde_json::json!({ "role": "assistant", "tokens": { "input": 0 } });
+        assert!(oc_record(&empty).is_none());
+        // Missing the tokens object entirely.
+        let bare = serde_json::json!({ "role": "assistant" });
+        assert!(oc_record(&bare).is_none());
+    }
+
+    #[test]
+    fn gemini_record_parses_a_usage_line() {
+        let line = r#"{ "timestamp": 1782590000000, "model": "gemini-2.5-pro",
+                        "tokens": { "input": 200, "output": 40, "cached": 15, "thoughts": 8 } }"#;
+        let (ts, model, input, cached, output, reasoning) = gemini_record(line).unwrap();
+        assert_eq!(ts, 1782590000);
+        assert_eq!(model, "gemini-2.5-pro");
+        assert_eq!(input, 200);
+        assert_eq!(cached, 15);
+        assert_eq!(output, 40);
+        assert_eq!(reasoning, 8); // thoughts → reasoning
+    }
+
+    #[test]
+    fn gemini_record_parses_rfc3339_timestamp() {
+        let line = r#"{ "timestamp": "2026-07-10T06:19:59+00:00", "model": "gemini",
+                        "tokens": { "input": 10 } }"#;
+        let (ts, _, input, ..) = gemini_record(line).unwrap();
+        assert_eq!(input, 10);
+        assert!(ts > 0, "RFC3339 timestamp should parse to a positive epoch");
+    }
+
+    #[test]
+    fn gemini_record_skips_corrupt_and_empty_lines() {
+        assert!(gemini_record("").is_none());
+        assert!(gemini_record("   ").is_none());
+        assert!(gemini_record("{ not valid json").is_none()); // a truncated/broken line
+        // Valid JSON but no tokens → nothing to book.
+        assert!(gemini_record(r#"{ "timestamp": 1, "model": "gemini" }"#).is_none());
+        // Valid JSON, all-zero tokens → skipped.
+        assert!(gemini_record(r#"{ "timestamp": 1, "tokens": { "input": 0 } }"#).is_none());
+    }
+
+    /// The toggles gate the 階段 E scanners independently of the codex/claude
+    /// filter: off means the scanner never runs, so its tokens never appear.
+    #[test]
+    fn tool_toggles_gate_opencode_and_gemini_scans() {
+        fn oc(acc: &mut Acc, _s: i64) {
+            acc.add(acc.now, "oc-model", "OpenCode", "", None, 100, 0, 0, 0);
+        }
+        fn gem(acc: &mut Acc, _s: i64) {
+            acc.add(acc.now, "gemini", "Gemini CLI", "", None, 50, 0, 0, 0);
+        }
+
+        // Both on: both agents present, both quota-pool scans off so nothing else.
+        let on = compute_routed("today", "both", no_codex, |_, _| {}, oc, gem, true, true, Vec::new());
+        assert_eq!(on.by_agent.get("OpenCode"), Some(&100));
+        assert_eq!(on.by_agent.get("Gemini CLI"), Some(&50));
+
+        // Both off: neither scan runs, neither agent appears (no fake 0 card).
+        let off =
+            compute_routed("today", "both", no_codex, |_, _| {}, oc, gem, false, false, Vec::new());
+        assert!(off.by_agent.get("OpenCode").is_none());
+        assert!(off.by_agent.get("Gemini CLI").is_none());
+        assert_eq!(off.total_tokens, 0);
+    }
+
+    /// A tool with no local data must not surface (the empty-scan case): an
+    /// enabled-but-empty scanner contributes nothing, so no agent/legend entry.
+    #[test]
+    fn enabled_but_empty_tool_adds_nothing() {
+        let a =
+            compute_routed("today", "both", no_codex, |_, _| {}, |_, _| {}, |_, _| {}, true, true, Vec::new());
+        assert!(a.by_agent.is_empty());
+        assert_eq!(a.total_tokens, 0);
+    }
+
+    /// Accounts for the new tools follow their own toggle, not the provider
+    /// filter (which only narrows anthropic/codex).
+    #[test]
+    fn tool_accounts_follow_their_toggle() {
+        let accts = || {
+            vec![
+                Account {
+                    client: "OpenCode".into(),
+                    provider: "opencode".into(),
+                    account: "—".into(),
+                    plan: "—".into(),
+                },
+                Account {
+                    client: "Gemini CLI".into(),
+                    provider: "gemini".into(),
+                    account: "—".into(),
+                    plan: "—".into(),
+                },
+            ]
+        };
+        assert_eq!(filter_accounts("both", true, true, accts()).len(), 2);
+        assert_eq!(filter_accounts("both", false, false, accts()).len(), 0);
+        let only_oc = filter_accounts("both", true, false, accts());
+        assert_eq!(only_oc.len(), 1);
+        assert_eq!(only_oc[0].provider, "opencode");
     }
 }
 
@@ -898,5 +1235,10 @@ fn detect_accounts() -> Vec<Account> {
             plan: "—".into(),
         });
     }
+    // 階段 E: OpenCode/Gemini are intentionally NOT surfaced as accounts on mere
+    // directory existence — `~/.gemini/` in particular is shared with Antigravity
+    // and would fabricate a "Gemini CLI" card with no usage (the plan bans 0
+    // cards). They appear via usage-driven byAgent instead; `filter_accounts`
+    // still gates their `provider` keys should a future account source add them.
     out
 }

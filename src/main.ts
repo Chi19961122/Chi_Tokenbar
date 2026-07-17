@@ -514,6 +514,14 @@ async function renderSettings() {
           <option value="local" ${s.codex_usage_source !== "live" && s.codex_usage_source !== "auto" ? "selected" : ""}>${t("settings.codexLocal")}</option>
         </select>
       </label>
+      <label class="srow">
+        <span class="slabel">${t("settings.toolOpencode")}<span class="snote">${t("settings.toolNote")}</span></span>
+        <input type="checkbox" id="s-tool-opencode" ${s.tool_opencode ? "checked" : ""}/>
+      </label>
+      <label class="srow">
+        <span class="slabel">${t("settings.toolGemini")}<span class="snote">${t("settings.toolNote")}</span></span>
+        <input type="checkbox" id="s-tool-gemini" ${s.tool_gemini ? "checked" : ""}/>
+      </label>
     </div>`;
 }
 
@@ -538,6 +546,8 @@ function readSettingsForm(): Settings {
     island_pin_codex: ($("s-pin-codex") as HTMLSelectElement).value || "auto",
     island_aux: (($("s-aux") as HTMLSelectElement).value || "tok_per_min") as Settings["island_aux"],
     reset_display: (($("s-reset") as HTMLSelectElement).value || "relative") as Settings["reset_display"],
+    tool_opencode: v("s-tool-opencode").checked,
+    tool_gemini: v("s-tool-gemini").checked,
   };
 }
 

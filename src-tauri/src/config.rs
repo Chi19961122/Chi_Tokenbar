@@ -77,6 +77,20 @@ pub struct Settings {
     /// "today" | "week" | "month". Defaults to "week".
     #[serde(default = "default_share_range")]
     pub share_range: String,
+    /// 階段 E 多工具:whether OpenCode local usage is scanned into analytics.
+    /// Defaults to `true` (detect-and-show); off means it is never scanned and
+    /// never appears in byAgent/legend/accounts. Independent of `providers`
+    /// (which only narrows the anthropic/codex quota pools).
+    #[serde(default = "default_true")]
+    pub tool_opencode: bool,
+    /// 階段 E 多工具:whether Gemini CLI local usage is scanned. Defaults to
+    /// `true` (detect-and-show). See `tool_opencode`.
+    #[serde(default = "default_true")]
+    pub tool_gemini: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_locale() -> String {
@@ -127,6 +141,8 @@ impl Default for Settings {
             reset_display: default_reset_display(),
             share_style: default_share_style(),
             share_range: default_share_range(),
+            tool_opencode: true,
+            tool_gemini: true,
         }
     }
 }
@@ -340,6 +356,39 @@ mod tests {
         let back = load_from_str(&json);
         assert_eq!(back.share_style, "fuel");
         assert_eq!(back.share_range, "month");
+    }
+
+    // ── 階段 E fields (tool_opencode / tool_gemini) ────────────────────
+    //
+    // Every settings.json written before 階段 E lacks these keys; `#[serde(default
+    // = "default_true")]` must fill each with `true` so an existing install
+    // keeps detect-and-show behaviour rather than silently hiding a tool.
+
+    #[test]
+    fn defaults_for_stage_e_fields() {
+        let d = Settings::default();
+        assert!(d.tool_opencode);
+        assert!(d.tool_gemini);
+    }
+
+    #[test]
+    fn missing_stage_e_fields_deserialize_to_true() {
+        let s = load_from_str(r#"{ "autostart": true }"#);
+        assert!(s.tool_opencode);
+        assert!(s.tool_gemini);
+    }
+
+    #[test]
+    fn explicit_stage_e_fields_survive_a_save_load_round_trip() {
+        let s = Settings {
+            tool_opencode: false,
+            tool_gemini: false,
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back = load_from_str(&json);
+        assert!(!back.tool_opencode, "OpenCode 關閉被存檔洗掉了");
+        assert!(!back.tool_gemini, "Gemini 關閉被存檔洗掉了");
     }
 
     /// The whole point of the feature: an explicit opt-out must survive a

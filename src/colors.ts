@@ -39,6 +39,9 @@ const NAMED: Array<[string, string]> = [
   ["verifier", "#c2497a"],
   // codex spans both a model family and its agent
   ["codex", "#5b62d4"],
+  // 階段 E multi-tool clients (agent keys "OpenCode" / "Gemini CLI")
+  ["opencode", "#2ba3a0"],
+  ["gemini", "#c2497a"],
 ];
 
 /** Color for a named series (model/agent), falling back to the index palette. */

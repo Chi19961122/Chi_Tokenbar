@@ -85,13 +85,13 @@ fn get_analytics(data: State<'_, AppData>, range: String) -> analytics::Analytic
     // Read the live in-memory setting, not config::load(): set_settings updates
     // this immediately, so switching the filter reflects on the next fetch
     // instead of waiting for a disk round-trip.
-    let filter = data
+    let (filter, tool_opencode, tool_gemini) = data
         .settings
         .lock()
         .ok()
-        .map(|s| s.providers.clone())
-        .unwrap_or_else(|| "both".into());
-    analytics::compute_with(&range, &filter)
+        .map(|s| (s.providers.clone(), s.tool_opencode, s.tool_gemini))
+        .unwrap_or_else(|| ("both".into(), true, true));
+    analytics::compute_with(&range, &filter, tool_opencode, tool_gemini)
 }
 
 #[tauri::command]
@@ -207,6 +207,20 @@ fn sanitize_share_filename(raw: &str) -> Option<String> {
     }
     // A remaining `..` (e.g. embedded) or NUL would be a path-trick smell.
     if base.contains("..") || base.contains('\0') {
+        return None;
+    }
+    // Windows reserved device names (CON, NUL, COM1…) address devices, not files,
+    // even with an extension ("con.png"); an ADS colon or trailing dot/space also
+    // changes the write target. Reject them all — app-generated names never hit this.
+    if base.contains(':') || base.ends_with('.') || base.ends_with(' ') {
+        return None;
+    }
+    let stem = base.split('.').next().unwrap_or("").to_ascii_uppercase();
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    if RESERVED.contains(&stem.as_str()) {
         return None;
     }
     Some(base.to_string())
@@ -464,7 +478,9 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
                     );
                 }
                 if first {
-                    let a = analytics::compute_with("today", &providers_filter);
+                    // Debug log only: include the 階段 E tools (true/true) so the
+                    // dump reflects the full picture.
+                    let a = analytics::compute_with("today", &providers_filter, true, true);
                     eprintln!(
                         "[tb] analytics today: total_tokens={} by_agent={:?} sessions={} tok/min={}",
                         a.total_tokens, a.by_agent, a.sessions_this_week, a.tok_per_min
@@ -735,6 +751,24 @@ mod tests {
         assert_eq!(
             sanitize_share_filename("tokenbar-week-20260717.png").as_deref(),
             Some("tokenbar-week-20260717.png"),
+        );
+    }
+
+    #[test]
+    fn sanitize_rejects_windows_reserved_device_names() {
+        // "con.png" 這類名字在 Windows 指向裝置而非檔案;ADS 冒號與結尾點/空白
+        // 也會改寫入目標。全部拒絕(app 自產檔名永不觸發)。
+        for bad in [
+            "con.png", "CON", "nul.png", "aux.PNG", "com1.png", "lpt9.png", "card.png:ads",
+            "card.png.",
+        ] {
+            assert_eq!(sanitize_share_filename(bad), None, "should reject {bad}");
+        }
+        // 結尾空白被既有 trim 消毒成安全名(而非拒絕);保留名前綴的正常檔名放行。
+        assert_eq!(sanitize_share_filename("card.png ").as_deref(), Some("card.png"));
+        assert_eq!(
+            sanitize_share_filename("console.png").as_deref(),
+            Some("console.png"),
         );
     }
 

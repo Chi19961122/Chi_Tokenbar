@@ -1,5 +1,15 @@
 # HANDOFF — 進度快照(2026-07-17)
 
+## 2026-07-17:三樣態優化 階段 E — 多工具(v0.5.0,計畫全階段收官;程式碼完成、未打包)
+
+- **勘察結論(全文在 data-sources-findings.md §4)**:OpenCode 本機未裝(文件化格式:storage/message/*/​*.json,tokens 欄位有;無官方 limit 檔 → 僅 Usage);Gemini CLI 本機無用量檔(~/.gemini/ 是 Antigravity IDE 的 .pb,不採用;預設無 token 落檔;僅 Usage)。**兩家 Limits 判準都不成立,只做 Usage。**
+- scanner 依文件化格式實作(oc_record/gemini_record 純函式 + 假資料測試 11 個);執行期目錄不存在回空;**Gemini 只吃 *.jsonl 天然避開 oauth_creds.json**;不以目錄存在列帳號卡(~/.gemini/ 與 Antigravity 共用,會出 0 假卡)。
+- settings `tool_opencode`/`tool_gemini`(default true=偵測到就顯示);**tool_* 與 providers 是兩條軸**(client vs 額度池),互不縮限,已註明。agent key 用顯示名(OpenCode/Gemini CLI)與既有一致。
+- **順手硬化(補驗 LOW)**:`sanitize_share_filename` 拒絕 Windows 保留裝置名(con/nul/com1…)、ADS 冒號、結尾點;結尾空白由既有 trim 消毒。+1 測試。
+- **測試 139 Rust + 75 前端**;C+/D 補跑對抗驗證皆 CONFIRMED。
+- 尚未真人驗證:實裝 OpenCode/Gemini 機器上的真實 schema 比對(目前依文件化假設);全計畫的實機驗證清單見各階段段落。
+- **打包待使用者決定**(build:release 會 taskkill 執行中的 tokenbar.exe)。
+
 ## 2026-07-17:三樣態優化 階段 D — 戰報 Share(v0.4.0,程式碼完成、未打包)
 
 - **入口**:Usage 第 5 個 subtab「Share / 戰報」,渲染進既有 300px `#analytics` 盒(沿用視窗尺寸/locale 重繪機制,零額外佈線)。獨立 `shareCache` 綁 `ui.shareRange`,與分析的 `ui.range` 分離。
