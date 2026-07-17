@@ -1,5 +1,5 @@
 # T-fix-002 — Codex 累計轉增量 + fork replay 防重
-nstatus: done
+status: done
 
 `只實作本票行為與資料。可沿用現有樣式。禁止大規模 redesign。對照 PLAN flow。`
 
