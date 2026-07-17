@@ -1,4 +1,5 @@
 # T-feat-005 — 3D 熱力圖（three.js 柱體、2D/3D toggle、預設 2D）
+status: done
 
 `只實作本票行為與資料。可沿用現有樣式。禁止大規模 redesign。對照 PLAN flow。`
 

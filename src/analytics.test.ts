@@ -4,7 +4,17 @@
 // condition or the denominator must turn one of these red.
 
 import { describe, expect, it } from "vitest";
-import { heatCells, monthStartNote, renderAnalytics, sharePct, shareLabel } from "./analytics";
+import {
+  heatBarHeight,
+  heatCells,
+  monthStartNote,
+  parseHeatmapView,
+  readHeatmapView,
+  renderAnalytics,
+  sharePct,
+  shareLabel,
+  writeHeatmapView,
+} from "./analytics";
 import type { Analytics, DayPoint } from "./types";
 import { mockAnalytics } from "./mock";
 
@@ -200,6 +210,33 @@ describe("personal records", () => {
     expect(root.querySelector(".records")?.textContent).toContain("800.0K");
     expect(root.querySelector(".records")?.textContent).toContain("07-16 09:00");
     expect(root.querySelector(".pr-now")?.textContent).toBe("PR NOW");
+  });
+});
+
+describe("3D heatmap decisions", () => {
+  it("defaults invalid persisted values to 2D and accepts only 3D", () => {
+    expect(parseHeatmapView(null)).toBe("2d");
+    expect(parseHeatmapView("invalid")).toBe("2d");
+    expect(parseHeatmapView("3d")).toBe("3d");
+  });
+
+  it("reads and writes through the supplied persistence adapter", () => {
+    let value: string | null = null;
+    const storage = {
+      getItem: () => value,
+      setItem: (_key: string, next: string) => { value = next; },
+    };
+    expect(readHeatmapView(storage)).toBe("2d");
+    expect(writeHeatmapView("3d", storage)).toBe("3d");
+    expect(readHeatmapView(storage)).toBe("3d");
+  });
+
+  it("keeps zero activity visible and clamps heights to the scene range", () => {
+    expect(heatBarHeight(0)).toBeCloseTo(0.08);
+    expect(heatBarHeight(1)).toBeCloseTo(2.5);
+    expect(heatBarHeight(-1)).toBeCloseTo(0.08);
+    expect(heatBarHeight(2)).toBeCloseTo(2.5);
+    expect(heatBarHeight(Number.NaN)).toBeCloseTo(0.08);
   });
 });
 

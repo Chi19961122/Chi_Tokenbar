@@ -1,5 +1,4 @@
-// Layer ③ analytics (UX Spec v3 §11): stat tiles, 2D charts, breakdown.
-// Charts are hand-rolled SVG — 2D only (§14 excludes 3D).
+// Layer ③ analytics (UX Spec v3 §11): stat tiles, charts, breakdown.
 
 import type { Analytics, DayPoint, KindCount, ProjectCount } from "./types";
 import { fmtTokens, fmtUsd } from "./format";
@@ -24,6 +23,40 @@ function esc(s: string): string {
 export type SubTab = "overview" | "hourly" | "share" | "stats" | "report";
 export type Metric = "tokens" | "price";
 export type Group = "model" | "agent";
+export type HeatmapView = "2d" | "3d";
+
+const HEATMAP_VIEW_KEY = "tokenbar.heatmap_view";
+
+/** Invalid or absent persisted values deliberately fall back to the cheap 2D view. */
+export function parseHeatmapView(value: string | null): HeatmapView {
+  return value === "3d" ? "3d" : "2d";
+}
+
+export function readHeatmapView(storage: Pick<Storage, "getItem"> = localStorage): HeatmapView {
+  try {
+    return parseHeatmapView(storage.getItem(HEATMAP_VIEW_KEY));
+  } catch {
+    return "2d";
+  }
+}
+
+export function writeHeatmapView(
+  view: HeatmapView,
+  storage: Pick<Storage, "setItem"> = localStorage,
+): HeatmapView {
+  try {
+    storage.setItem(HEATMAP_VIEW_KEY, view);
+  } catch {
+    // Storage may be disabled in hardened WebViews. The current render still works.
+  }
+  return view;
+}
+
+/** Maps normalized activity onto a visible slab..scene-height range. */
+export function heatBarHeight(intensity: number): number {
+  const normalized = Number.isFinite(intensity) ? Math.max(0, Math.min(1, intensity)) : 0;
+  return 0.08 + normalized * 2.42;
+}
 
 /** Whole-number "share of range total" percent, guarding a zero denominator. */
 export function sharePct(value: number, total: number): number {
@@ -155,6 +188,75 @@ function heatmap(a: Analytics): string {
     <div class="hm-grid">${cellDivs}</div>
     ${legend}
   </div>`;
+}
+
+type Heat3dModule = typeof import("./heat3d");
+let heat3dModule: Heat3dModule | null = null;
+let heat3dLoad: Promise<Heat3dModule> | null = null;
+let heat3dUnavailable = false;
+let renderEpoch = 0;
+const renderState = new WeakMap<HTMLElement, { a: Analytics; opts: AnalyticsOpts }>();
+const wiredContainers = new WeakSet<HTMLElement>();
+
+function heatTotals(a: Analytics): Record<string, number> {
+  return Object.fromEntries(
+    a.daily.map((d) => [d.date, Object.values(d.byAgent).reduce((sum, value) => sum + value, 0)]),
+  );
+}
+
+function heatmapSection(a: Analytics): string {
+  const view = readHeatmapView();
+  const two = view === "2d";
+  return `<div class="sub-sec heatmap-sec">
+    <div class="sub-sec-head"><div class="sub-sec-h">${t("analytics.heatmapTitle")}</div>
+      <div class="heatmap-toggle"${heat3dUnavailable ? " hidden" : ""} role="group" aria-label="${t("analytics.heatmapViewLabel")}">
+        <button type="button" data-heat-view="2d" class="${two ? "on" : ""}">${t("analytics.heatmapView2d")}</button>
+        <button type="button" data-heat-view="3d" class="${two ? "" : "on"}">${t("analytics.heatmapView3d")}</button>
+      </div>
+    </div>
+    <div class="heatmap-2d"${two ? "" : " hidden"}>${heatmap(a)}</div>
+    <div id="analytics-heat3d" class="heat3d"${two ? " hidden" : ""}></div>
+  </div>`;
+}
+
+function wireHeatmapToggle(container: HTMLElement): void {
+  if (wiredContainers.has(container)) return;
+  wiredContainers.add(container);
+  container.addEventListener("click", (event) => {
+    const button = (event.target as Element | null)?.closest<HTMLButtonElement>("[data-heat-view]");
+    if (!button || !container.contains(button)) return;
+    const state = renderState.get(container);
+    if (!state) return;
+    writeHeatmapView(parseHeatmapView(button.dataset.heatView ?? null));
+    renderAnalytics(container, state.a, state.opts);
+  });
+}
+
+async function syncHeat3d(container: HTMLElement, a: Analytics, epoch: number): Promise<void> {
+  const stage = container.querySelector<HTMLElement>("#analytics-heat3d");
+  if (!stage || readHeatmapView() !== "3d") {
+    heat3dModule?.disposeHeat3d();
+    return;
+  }
+  try {
+    heat3dLoad ??= import("./heat3d");
+    heat3dModule = await heat3dLoad;
+    if (epoch !== renderEpoch || !stage.isConnected || readHeatmapView() !== "3d") return;
+    const mounted = heat3dModule.mountHeat3d(stage, heatCells(a.daily), heatTotals(a));
+    if (!mounted) {
+      heat3dUnavailable = true;
+      writeHeatmapView("2d");
+      heat3dModule.disposeHeat3d();
+      renderAnalytics(container, a, renderState.get(container)?.opts ?? { subtab: "overview", metric: "tokens", group: "agent" });
+      container.querySelector<HTMLElement>(".heatmap-toggle")?.setAttribute("hidden", "");
+    }
+  } catch {
+    heat3dUnavailable = true;
+    writeHeatmapView("2d");
+    heat3dModule?.disposeHeat3d();
+    renderAnalytics(container, a, renderState.get(container)?.opts ?? { subtab: "overview", metric: "tokens", group: "agent" });
+    container.querySelector<HTMLElement>(".heatmap-toggle")?.setAttribute("hidden", "");
+  }
 }
 
 // ── activity-type donut + project bars (階段 C+, Breakdown) ────────────────
@@ -403,6 +505,9 @@ function statsView(a: Analytics): string {
 }
 
 export function renderAnalytics(container: HTMLElement, a: Analytics, opts: AnalyticsOpts): void {
+  renderState.set(container, { a, opts });
+  wireHeatmapToggle(container);
+  const epoch = ++renderEpoch;
   let body = "";
   switch (opts.subtab) {
     case "hourly":
@@ -429,7 +534,7 @@ export function renderAnalytics(container: HTMLElement, a: Analytics, opts: Anal
       body = stackedDaily(a, opts);
       if (a.range === "month") {
         const hm = heatmap(a);
-        if (hm) body += section(t("analytics.heatmapTitle"), hm);
+        if (hm) body += heatmapSection(a);
       }
     }
   }
@@ -437,4 +542,5 @@ export function renderAnalytics(container: HTMLElement, a: Analytics, opts: Anal
   const start = monthStartNote(a);
   const note = start ? `<div class="chart-note">${t("analytics.since", { date: start.slice(5) })}</div>` : "";
   container.innerHTML = tiles(a) + note + `<div class="chart-wrap">${body}</div>`;
+  void syncHeat3d(container, a, epoch);
 }
