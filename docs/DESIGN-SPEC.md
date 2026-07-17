@@ -1,5 +1,7 @@
 # DESIGN-SPEC — TokenBar v0.6 視覺改版（方向 D 極簡編輯部）
 
+> **定稿 2026-07-17**：使用者確認四裁決（Geist 代 Inter、gauge 改狀態色、面板玻璃廢止、圖表全灰階）＋第五裁決（供應商識別用 providerIcon 彩色真 icon）。
+
 > 這份是「合同」：跟任何文件、圖、skill 打架時，以這份為準。所有數值**從 v0.app 匯出碼抽**（非 Stitch；圖只拿來理解意圖）。
 > 行為/狀態機仍歸 `Ai_Assistant/TokenBar UX Spec v3.md`；本檔只管視覺。
 
@@ -102,7 +104,7 @@
 | gauge 軌 | `#E4E4E7` 3px 圓頭 | 同 | 同 | 同 | 同 |
 | 動態 | 填充 700ms transition | 同 | 同 | 無 | 無 |
 
-工具識別：名稱 + 單色 glyph（◆ Claude、○ Codex、其餘工具依現有 icon 單色化 `#18181B`）；**gauge 不再用 provider 家族色**（emerald/tanzanite 廢止，改狀態色示意）。
+工具識別：名稱 + **真實彩色品牌 icon**（`providerIcon()` 同源：`src/assets/claude-color.svg` 橘、`codex-color.svg` 藍紫漸層，lobehub/lobe-icons 本地 bundle；v0 稿的 ◆/○ 占位 glyph 不採用）。品牌色**僅限 icon 本體**；**gauge/數字/圖表不再用 provider 家族色**（emerald/tanzanite 廢止，改狀態色示意）。（2026-07-17 使用者裁決）
 
 ## 視圖 → 元件對照表（Tauri app，無 route；驗收走 1420 mock）
 
@@ -134,7 +136,7 @@
 * Do: 髮絲線 `#E4E4E7` 是唯一分區手段；數字一律 tabular-nums；粉紅每視圖最多一處。
 * Do: 圖表一律灰階 5 級 + 粉紅 today，不上彩色。
 * Don't: 漸層、玻璃模糊（面板玻璃廢止）、卡片陰影（只有面板外框有影）。
-* Don't: gauge/圖表用 provider 家族色或品牌橘（`--claude` 橘仍僅限 providerIcon）。
+* Don't: gauge/數字/圖表用 provider 家族色——品牌色僅限 providerIcon 彩色 icon 本體（Claude 橘、Codex 藍紫漸層照真）。
 * Don't: 動 island、動戰報版面結構、發明匯出碼沒有的新元件形態。
 
 ## 對比度自檢

@@ -77,7 +77,7 @@
     - 可換: 面板排版節奏、區塊分隔形態
     - 成功: 五視圖像新方向，舊功能全可點；三發行版外觀一致（CONFIG.md §7）
     - 樣式現況: 集中（styles.css :root tokens + 共用 class）→ 不需收攏票
-    - 基準圖: design/screenshots/baseline/（Wave2 開工前用 mock preview 補截五視圖）
+    - 基準: git tag `pre-redesign-v06`（取代截圖——CLAUDE.md 記載本 app 截圖因 1s tick 常逾時不穩；tag 可完整重現舊視覺。2026-07-17 偏差記錄）
 
 ## （情境 C 部分）功能 Delta
 
