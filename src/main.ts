@@ -371,18 +371,20 @@ function sizeAnalytics(): void {
 
 /** Collapsed island width depends on layout (dual providers need more room).
  *  Mirrors island.ts's branching: only an exact claude/codex renders one
- *  group, so only those get the narrow width — an unknown value shows both
- *  and must keep the wide one. */
-function collapsedW(): number {
+ *  group, so only those get the narrow width — an unknown value shows both.
+ *  "both" now stacks the two providers vertically (2026-07-18 試行), so it is
+ *  the narrow-but-tall case and the single-provider pill keeps the flat one. */
+function collapsedSize(): { w: number; h: number } {
   const p = settings?.providers ?? "both";
-  return p === "claude" || p === "codex" ? 270 : SIZE.collapsed.w;
+  if (p === "claude" || p === "codex") return { w: 270, h: SIZE.collapsed.h };
+  return { w: 250, h: 72 };
 }
 
 /** Resize the OS window for the current mode (no-op in browser). */
 function fitWindow() {
   const { w, h } = ui.expanded
     ? { w: SIZE.expanded.w, h: contentHeight() }
-    : { w: collapsedW(), h: SIZE.collapsed.h };
+    : collapsedSize();
   resizeAnchored(w, h);
 }
 

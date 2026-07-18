@@ -41,7 +41,7 @@ export const isTauri = () =>
 
 // Island vs expanded panel window sizes (logical px).
 // Expanded height is measured once per mode entry; collapsed width shrinks
-// to 270 when the island shows a single provider (see main.ts collapsedW).
+// to 270 when the island shows a single provider (see main.ts collapsedSize).
 export const SIZE = {
   collapsed: { w: 340, h: 52 },
   expanded: { w: 380 },

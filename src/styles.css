@@ -289,6 +289,35 @@ body.expanded #island {
   color: var(--muted);
 }
 
+/* 直式堆疊(使用者 2026-07-18 試行):both 模式兩個 provider 上下排,aux 與
+   隱藏鈕靠右、縱向置中。單一 provider 模式維持原橫式膠囊。 */
+.island.island-both {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  justify-items: start;
+  align-items: center;
+  height: auto;
+  padding: 7px 13px;
+  column-gap: 10px;
+  row-gap: 5px;
+}
+.island-both .igroup:nth-of-type(1) {
+  grid-row: 1;
+  grid-column: 1;
+}
+.island-both .igroup:nth-of-type(2) {
+  grid-row: 2;
+  grid-column: 1;
+}
+.island-both .iaux {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+.island-both .ihide {
+  grid-row: 1 / span 2;
+  grid-column: 3;
+}
+
 /* Hide-to-tray button: only on hover. The island's whole job is an
    at-a-glance readout on a 340px pill, so a permanently lit button would
    compete with the numbers. Its slot is reserved at all times (revealed with
