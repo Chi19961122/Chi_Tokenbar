@@ -1,0 +1,461 @@
+<style>
+/* Atoll share-card redesign preview. Six directions, each in 16:9 (1200x675) and
+   9:16 (360x640). Ring/lagoon (環礁) motif. Fonts approximated with system faces
+   in this standalone build. Taste: zero em/en dashes, rationed middots, one accent.
+   Cards use a pinned light palette (theme-invariant; they rasterize to PNG). */
+:root{
+  --geist:'Geist','Inter',-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono:'Geist Mono','Cascadia Code','SF Mono','Consolas',ui-monospace,monospace;
+  --serif:'GT Sectra','Tiempos Headline',Georgia,'Times New Roman',serif;
+}
+*{ box-sizing:border-box; }
+html,body{ margin:0; }
+body{ background:#0b0b0d; color:#e6e6e9; font-family:var(--geist);
+  -webkit-font-smoothing:antialiased; padding:52px 40px 120px; line-height:1.5; }
+.page{ max-width:1400px; margin:0 auto; }
+.intro{ max-width:880px; margin-bottom:56px; }
+.intro h1{ font-size:29px; font-weight:800; letter-spacing:-.02em; margin:0 0 12px; color:#fafafa; }
+.intro p{ font-size:14px; color:#a1a1aa; margin:0 0 9px; }
+.intro .note{ font-size:12.5px; color:#7c7c85; border-left:2px solid #EC4899; padding-left:14px; margin-top:16px; }
+.intro code{ font-family:var(--mono); font-size:12px; color:#d4d4d8; background:#1a1a1e; padding:1px 6px; border-radius:4px; }
+section.tpl{ margin-bottom:72px; }
+.tpl-head{ display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
+.tpl-head .idx{ font-family:var(--mono); font-size:12px; color:#EC4899; letter-spacing:.14em; }
+.tpl-head h2{ font-size:20px; font-weight:700; letter-spacing:-.01em; margin:0; color:#fafafa; }
+.tpl-head .flag{ font-family:var(--mono); font-size:10px; color:#EC4899; letter-spacing:.1em; border:1px solid #EC4899; border-radius:4px; padding:1px 6px; }
+.tpl-rationale{ max-width:940px; font-size:13px; color:#9a9aa2; margin:0 0 24px; }
+.tpl-rationale b{ color:#d4d4d8; font-weight:600; }
+.cards{ display:flex; gap:34px; align-items:flex-start; flex-wrap:wrap; }
+.cardwrap{ display:flex; flex-direction:column; gap:9px; }
+.cardwrap .cap{ font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; color:#6b6b73; text-transform:uppercase; }
+.stage16{ width:624px; height:351px; position:relative; }
+.stage16 > .card{ position:absolute; top:0; left:0; transform:scale(.52); transform-origin:top left; }
+.stage916{ width:360px; height:640px; position:relative; }
+.stage916 > .card{ position:absolute; top:0; left:0; }
+
+.card{
+  --bg:#FAFAFA; --surface:#FFFFFF; --ink:#09090B; --primary:#18181B;
+  --secondary:#52525B; --muted:#71717A; --faint:#A1A1AA; --border:#E4E4E7;
+  --soft:#F4F4F5; --mid:#D4D4D8; --accent:#EC4899;
+  font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased;
+}
+.tnum{ font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1,"lnum" 1; }
+.sig{ display:flex; align-items:center; gap:10px; }
+.sig .rm{ width:20px; height:20px; flex:none; color:var(--accent); }
+.sig .bn{ font-size:18px; font-weight:700; letter-spacing:-.01em; color:var(--ink); }
+.sig-r{ font-family:var(--mono); font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); }
+
+/* ═ 1 · ATOLL ring gauge (flagship) ═ */
+.at{ width:1200px; height:675px; border-radius:18px; padding:52px 60px; overflow:hidden;
+  background:var(--bg); color:var(--ink); font-family:var(--geist); position:relative;
+  box-shadow:0 8px 40px rgba(0,0,0,.10),inset 0 0 0 1px var(--border);
+  display:grid; grid-template-columns:1fr 470px; align-items:center; column-gap:44px; }
+.at-l{ display:flex; flex-direction:column; height:100%; }
+.at-top{ display:flex; align-items:center; justify-content:space-between; }
+.at-pill{ display:inline-flex; align-items:center; gap:12px; background:var(--ink); border-radius:999px; padding:10px 20px 10px 14px; }
+.at-pill .rm{ width:20px; height:20px; color:#FAFAFA; }
+.at-pill b{ font-size:15px; letter-spacing:.4px; color:#FAFAFA; font-weight:600; }
+.at-pill .sep{ width:1px; height:14px; background:#3f3f46; }
+.at-pill .liv{ font-size:12px; color:#EC4899; font-weight:600; }
+.at-period{ font-size:14px; color:var(--muted); }
+.at-hero{ margin-top:auto; margin-bottom:auto; }
+.at-eyebrow{ font-size:10.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.at-big{ font-weight:800; font-size:112px; line-height:.82; letter-spacing:-.05em; margin-top:14px; }
+.at-big em{ font-style:normal; font-weight:700; font-size:48px; color:var(--muted); margin-left:4px; }
+.at-sub{ font-size:14px; color:var(--secondary); margin-top:20px; display:flex; align-items:center; gap:18px; }
+.at-sub .cost{ font-weight:700; color:var(--primary); font-size:19px; }
+.at-sub .cost u{ text-decoration:none; font-size:12px; color:var(--muted); margin-left:5px; }
+.at-sub .sp{ width:4px; height:4px; border-radius:50%; background:var(--mid); }
+.at-foot{ margin-top:auto; display:flex; justify-content:space-between; align-items:center; padding-top:18px; }
+.at-r{ display:flex; flex-direction:column; align-items:center; gap:24px; }
+.at-ring{ position:relative; width:330px; height:330px; }
+.at-ring svg{ transform:rotate(-90deg); }
+.at-ring .lag{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.at-ring .lag .k{ font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--faint); font-weight:700; }
+.at-ring .lag .v{ font-weight:800; font-size:28px; letter-spacing:-.02em; margin-top:4px; }
+.at-legend{ width:100%; display:flex; flex-direction:column; gap:12px; }
+.at-lrow{ display:grid; grid-template-columns:14px 1fr auto; align-items:center; column-gap:12px; }
+.at-lrow .dot{ width:11px; height:11px; border-radius:3px; }
+.at-lrow .nm{ font-size:13.5px; color:var(--secondary); }
+.at-lrow .nm small{ color:var(--faint); }
+.at-lrow .pv{ font-size:14px; font-weight:700; color:var(--primary); }
+.at-lrow .pv small{ font-weight:500; color:var(--muted); font-size:11px; }
+/* atoll 9:16 */
+.at.p{ display:flex; flex-direction:column; width:360px; height:640px; padding:36px 30px 28px; column-gap:0; }
+.at.p .at-l{ height:auto; flex:none; }
+.at.p .at-top{ justify-content:flex-start; }
+.at.p .at-period{ margin-top:10px; }
+.at.p .at-hero{ margin:18px 0 6px; }
+.at.p .at-big{ font-size:64px; margin-top:10px; }
+.at.p .at-big em{ font-size:30px; }
+.at.p .at-sub{ margin-top:14px; }
+.at.p .at-r{ flex:1; justify-content:center; gap:20px; }
+.at.p .at-ring{ width:184px; height:184px; }
+.at.p .at-ring .lag .v{ font-size:20px; }
+.at.p .at-foot{ padding-top:0; }
+
+/* ═ 2 · LEDGER ═ */
+.lg{ width:1200px; height:675px; border-radius:18px; padding:58px 62px 50px; overflow:hidden;
+  background:var(--surface); color:var(--ink); font-family:var(--geist); position:relative;
+  box-shadow:0 8px 40px rgba(0,0,0,.10),inset 0 0 0 1px var(--border); display:flex; flex-direction:column; }
+.lg-mast{ display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:18px; border-bottom:2px solid var(--ink); }
+.lg-mast .ttl{ font-family:var(--serif); font-size:33px; font-weight:700; letter-spacing:-.01em; line-height:1; }
+.lg-mast .sub{ font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--muted); margin-top:12px; font-weight:600; }
+.lg-mast .meta{ text-align:right; }
+.lg-mast .meta .pd{ font-size:15px; color:var(--secondary); }
+.lg-mast .meta .no{ font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--faint); margin-top:8px; }
+.lg-hero{ display:grid; grid-template-columns:1.5fr 1fr; margin-top:28px; }
+.lg-hero .cell.cost{ padding-left:44px; border-left:1px solid var(--border); }
+.lg-lbl{ font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; font-weight:700; color:var(--muted); margin-bottom:14px; }
+.lg-tok{ font-weight:800; font-size:78px; line-height:.84; letter-spacing:-.04em; }
+.lg-tok em{ font-style:normal; font-size:34px; color:var(--muted); font-weight:700; margin-left:4px; }
+.lg-tsub{ font-size:12.5px; color:var(--secondary); margin-top:16px; }
+.lg-cost{ font-weight:800; font-size:50px; line-height:.86; letter-spacing:-.03em; color:var(--primary); }
+.lg-cost i{ font-style:normal; font-size:26px; color:var(--muted); vertical-align:top; margin-right:2px; }
+.lg-cost small{ display:block; font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin-top:12px; font-weight:600; }
+.lg-ledger{ margin-top:auto; }
+.lg-lhead{ display:grid; grid-template-columns:1fr 60px 160px; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding-bottom:8px; border-bottom:1px solid var(--ink); font-weight:600; }
+.lg-lhead span:nth-child(2),.lg-lhead span:nth-child(3){ text-align:right; }
+.lg-lrow{ display:grid; grid-template-columns:auto 1fr auto 160px; align-items:baseline; padding:9px 0; border-bottom:1px solid var(--soft); }
+.lg-lrow .nm{ font-size:17px; font-weight:600; color:var(--primary); }
+.lg-lrow .lead{ border-bottom:1px dotted var(--mid); transform:translateY(-5px); margin:0 16px; }
+.lg-lrow .pct{ font-size:12px; color:var(--muted); text-align:right; width:52px; }
+.lg-lrow .val{ font-size:19px; font-weight:700; text-align:right; letter-spacing:-.01em; }
+.lg-foot{ display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:15px; border-top:2px solid var(--ink); }
+/* ledger 9:16 */
+.lg.p{ width:360px; height:640px; padding:40px 34px 32px; }
+.lg.p .lg-mast{ flex-direction:column; gap:12px; padding-bottom:14px; }
+.lg.p .lg-mast .ttl{ font-size:27px; }
+.lg.p .lg-mast .meta{ text-align:left; }
+.lg.p .lg-hero{ grid-template-columns:1fr; margin-top:22px; row-gap:20px; }
+.lg.p .lg-hero .cell.cost{ padding-left:0; border-left:0; padding-top:18px; border-top:1px solid var(--border); }
+.lg.p .lg-tok{ font-size:56px; }
+.lg.p .lg-tok em{ font-size:26px; }
+.lg.p .lg-cost{ font-size:42px; }
+.lg.p .lg-lrow{ grid-template-columns:auto 1fr auto 96px; }
+.lg.p .lg-lrow .nm{ font-size:15px; }
+.lg.p .lg-lrow .val{ font-size:16px; }
+.lg.p .lg-lhead{ grid-template-columns:1fr 44px 96px; }
+
+/* ═ 3 · TERMINAL ═ */
+.tm{ width:1200px; height:675px; border-radius:18px; padding:0; overflow:hidden;
+  font-family:var(--mono); background:var(--surface); color:var(--ink);
+  display:flex; flex-direction:column; position:relative;
+  box-shadow:0 8px 40px rgba(0,0,0,.10),inset 0 0 0 1px var(--border); }
+.tm-bar{ height:40px; flex:none; display:flex; align-items:center; padding:0 18px; background:var(--soft); border-bottom:1px solid var(--border); }
+.tm-bar .dots{ display:flex; gap:8px; }
+.tm-bar .dots i{ width:11px; height:11px; border-radius:50%; background:var(--mid); }
+.tm-bar .dots i:first-child{ background:var(--accent); }
+.tm-bar .win{ margin:0 auto; font-size:12px; letter-spacing:.06em; color:var(--muted); }
+.tm-body{ flex:1; padding:32px 46px 26px; display:flex; flex-direction:column; }
+.tm-cmd{ font-size:18px; color:var(--primary); }
+.tm-cmd .p{ color:var(--accent); }
+.tm-cmd .fl{ color:var(--muted); }
+.tm-cmd .cur{ display:inline-block; width:9px; height:19px; background:var(--accent); vertical-align:-3px; margin-left:3px; }
+.tm-cmt{ font-size:12.5px; color:var(--faint); margin-top:8px; }
+.tm-focal{ margin-top:26px; display:flex; align-items:flex-end; gap:44px; }
+.tm-focal .k{ font-size:11px; letter-spacing:.14em; color:var(--muted); }
+.tm-focal .big .v{ font-size:64px; font-weight:700; letter-spacing:-.03em; line-height:.9; margin-top:8px; }
+.tm-focal .big .v em{ font-style:normal; color:var(--muted); font-size:30px; }
+.tm-focal .kv{ display:flex; gap:38px; padding-bottom:8px; }
+.tm-focal .kv .v{ font-size:26px; font-weight:700; color:var(--primary); margin-top:7px; }
+.tm-focal .kv .v small{ font-size:12px; color:var(--muted); font-weight:500; }
+.tm-spark{ margin-top:26px; }
+.tm-spark .lbl{ font-size:10.5px; letter-spacing:.14em; color:var(--muted); display:flex; justify-content:space-between; margin-bottom:8px; }
+.tm-spark .lbl b{ color:var(--secondary); font-weight:600; }
+.tm-spark .bars{ display:flex; align-items:flex-end; gap:3px; height:46px; }
+.tm-spark .bars i{ flex:1; background:var(--mid); }
+.tm-spark .bars i.pk{ background:var(--accent); }
+.tm-tbl{ margin-top:24px; border-top:1px solid var(--border); padding-top:14px; }
+.tm-tbl .hd,.tm-tbl .tr{ display:grid; grid-template-columns:20px 160px 1fr 130px 56px; align-items:center; column-gap:14px; font-size:15px; padding:6px 0; }
+.tm-tbl .hd{ font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+.tm-tbl .hd span:nth-child(4),.tm-tbl .hd span:nth-child(5){ text-align:right; }
+.tm-tbl .g{ color:var(--accent); }
+.tm-tbl .nm{ color:var(--primary); }
+.tm-tbl .tr.dim .nm{ color:var(--muted); }
+.tm-tbl .barcell{ height:9px; background:var(--soft); position:relative; }
+.tm-tbl .barcell i{ position:absolute; left:0; top:0; height:100%; background:var(--primary); }
+.tm-tbl .tr.dim .barcell i{ background:var(--faint); }
+.tm-tbl .num{ text-align:right; color:var(--primary); font-weight:700; }
+.tm-tbl .pc{ text-align:right; color:var(--muted); }
+.tm-foot{ margin-top:auto; padding-top:18px; display:flex; justify-content:space-between; align-items:center; }
+.tm-foot .eof{ font-size:12px; letter-spacing:.3em; color:var(--faint); }
+/* terminal 9:16 */
+.tm.p{ width:360px; height:640px; }
+.tm.p .tm-body{ padding:26px 26px 22px; }
+.tm.p .tm-cmd{ font-size:14px; }
+.tm.p .tm-cmt{ font-size:11px; }
+.tm.p .tm-focal{ flex-direction:column; align-items:flex-start; gap:18px; margin-top:22px; }
+.tm.p .tm-focal .big .v{ font-size:50px; }
+.tm.p .tm-focal .big .v em{ font-size:24px; }
+.tm.p .tm-focal .kv{ gap:30px; padding-bottom:0; }
+.tm.p .tm-focal .kv .v{ font-size:22px; }
+.tm.p .tm-spark{ margin-top:22px; }
+.tm.p .tm-tbl .hd,.tm.p .tm-tbl .tr{ grid-template-columns:14px 1fr 78px 42px; column-gap:8px; font-size:13px; }
+.tm.p .tm-tbl .barcell{ display:none; }
+
+/* ═ 4 · MINIMAL ═ */
+.mn{ width:1200px; height:675px; border-radius:18px; padding:70px 76px 60px; overflow:hidden;
+  font-family:var(--geist); background:var(--bg); color:var(--ink); position:relative;
+  box-shadow:0 8px 40px rgba(0,0,0,.10),inset 0 0 0 1px var(--border); display:flex; flex-direction:column; }
+.mn-top{ display:flex; justify-content:space-between; align-items:center; }
+.mn-top .tag{ font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+.mn-top .rt{ font-size:13px; color:var(--muted); }
+.mn-top .rt b{ color:var(--primary); font-weight:700; }
+.mn-hero{ margin:auto 0; }
+.mn-big{ font-weight:800; font-size:220px; line-height:.8; letter-spacing:-.06em; }
+.mn-big span{ color:var(--accent); }
+.mn-cap{ font-size:16px; color:var(--secondary); margin-top:24px; display:flex; gap:14px; align-items:center; }
+.mn-cap b{ color:var(--primary); font-weight:600; }
+.mn-cap .sp{ width:4px; height:4px; border-radius:50%; background:var(--mid); }
+.mn-split{ margin-top:42px; display:grid; grid-template-columns:1fr 1fr; column-gap:56px; row-gap:16px; max-width:900px; }
+.mn-brow{ display:flex; align-items:center; gap:16px; }
+.mn-brow .nm{ font-size:13px; color:var(--secondary); width:100px; }
+.mn-brow .tr{ flex:1; height:2px; background:var(--border); position:relative; }
+.mn-brow .tr i{ position:absolute; left:0; top:-1px; height:4px; background:var(--primary); }
+.mn-brow .tk{ font-size:12px; color:var(--muted); width:64px; text-align:right; }
+.mn-foot{ margin-top:50px; display:flex; justify-content:space-between; align-items:center; }
+/* minimal 9:16 */
+.mn.p{ width:360px; height:640px; padding:46px 36px 36px; }
+.mn.p .mn-big{ font-size:92px; letter-spacing:-.05em; }
+.mn.p .mn-cap{ font-size:13px; margin-top:16px; flex-wrap:wrap; gap:8px; }
+.mn.p .mn-split{ grid-template-columns:1fr; max-width:none; margin-top:30px; row-gap:13px; }
+.mn.p .mn-brow .nm{ width:92px; font-size:12px; }
+.mn.p .mn-foot{ margin-top:34px; }
+
+/* ═ 5 · SOUNDING ═ */
+.sd{ width:1200px; height:675px; border-radius:18px; padding:0; overflow:hidden;
+  font-family:var(--geist); background:var(--bg); color:var(--ink); position:relative;
+  box-shadow:0 8px 40px rgba(0,0,0,.10),inset 0 0 0 1px var(--border); display:flex; flex-direction:column; }
+.sd-top{ padding:44px 56px 0; display:flex; justify-content:space-between; align-items:flex-start; }
+.sd-eyebrow{ font-size:10.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.sd-big{ font-weight:800; font-size:84px; line-height:.84; letter-spacing:-.04em; margin-top:12px; }
+.sd-big em{ font-style:normal; font-size:36px; color:var(--muted); font-weight:700; margin-left:4px; }
+.sd-sub{ font-size:13px; color:var(--secondary); margin-top:14px; }
+.sd-sub .cost{ font-weight:700; color:var(--primary); }
+.sd-meta{ text-align:right; }
+.sd-meta .pd{ font-size:14px; color:var(--secondary); }
+.sd-meta .peak{ font-family:var(--mono); font-size:11px; letter-spacing:.1em; color:var(--muted); margin-top:8px; }
+.sd-chart{ flex:1; position:relative; margin-top:8px; min-height:0; }
+.sd-chart svg{ position:absolute; inset:0; width:100%; height:100%; }
+.sd-axis{ position:absolute; left:56px; right:56px; bottom:70px; display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--faint); }
+.sd-foot{ padding:0 56px 40px; display:flex; justify-content:space-between; align-items:center; }
+.sd-layers{ display:flex; gap:24px; }
+.sd-lay{ display:flex; align-items:center; gap:9px; }
+.sd-lay .bar{ width:22px; height:8px; border-radius:2px; }
+.sd-lay .t{ font-size:12px; color:var(--secondary); }
+.sd-lay .t b{ color:var(--primary); font-weight:700; }
+/* sounding 9:16 */
+.sd.p{ width:360px; height:640px; }
+.sd.p .sd-top{ padding:36px 32px 0; flex-direction:column; gap:14px; }
+.sd.p .sd-big{ font-size:60px; }
+.sd.p .sd-big em{ font-size:28px; }
+.sd.p .sd-meta{ text-align:left; }
+.sd.p .sd-axis{ left:32px; right:32px; bottom:96px; }
+.sd.p .sd-foot{ padding:0 32px 30px; flex-direction:column; align-items:flex-start; gap:14px; }
+
+/* ═ 6 · SEAL ═ */
+.sl{ width:1200px; height:675px; border-radius:18px; overflow:hidden; position:relative;
+  color:var(--ink); background:var(--bg); font-family:var(--geist);
+  box-shadow:0 8px 40px rgba(0,0,0,.10),inset 0 0 0 1px var(--border); }
+.sl-rule{ position:absolute; top:64px; bottom:64px; left:214px; width:1px; background:var(--mid); }
+.sl-side{ position:absolute; left:70px; top:62px; bottom:58px; width:130px; display:flex; flex-direction:column; }
+.sl-brand{ display:flex; align-items:center; gap:10px; }
+.sl-brand .rm{ width:20px; height:20px; color:var(--accent); }
+.sl-brand b{ font-size:15px; letter-spacing:.5px; color:var(--primary); font-weight:700; }
+.sl-vert{ margin-top:26px; writing-mode:vertical-rl; text-orientation:mixed; font-family:var(--serif); font-size:15px; letter-spacing:.24em; color:var(--secondary); }
+.sl-vsub{ margin-top:auto; writing-mode:vertical-rl; font-family:var(--mono); font-size:10px; letter-spacing:.2em; color:var(--faint); }
+.sl-in{ position:relative; height:100%; padding:62px 70px 56px 262px; display:flex; flex-direction:column; }
+.sl-kicker{ font-size:10.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.sl-period{ font-family:var(--serif); font-size:20px; color:var(--secondary); margin-top:9px; }
+.sl-main{ flex:1; display:flex; flex-direction:column; justify-content:center; }
+.sl-num{ font-family:var(--serif); font-weight:700; font-size:96px; line-height:.86; letter-spacing:-.03em; }
+.sl-num em{ font-style:normal; font-size:32px; font-weight:600; color:var(--muted); margin-left:14px; }
+.sl-cost{ margin-top:18px; font-size:21px; color:var(--primary); font-weight:600; }
+.sl-cost u{ text-decoration:none; font-size:12px; color:var(--muted); margin-left:8px; text-transform:uppercase; letter-spacing:.14em; }
+.sl-split{ margin-top:34px; display:flex; flex-direction:column; gap:13px; max-width:600px; }
+.sl-srow{ display:grid; grid-template-columns:110px 1fr 70px; align-items:center; column-gap:18px; }
+.sl-slbl{ font-size:13px; color:var(--secondary); }
+.sl-strack{ height:1px; background:var(--border); position:relative; }
+.sl-sfill{ position:absolute; left:0; top:-1.5px; height:4px; background:var(--primary); }
+.sl-sval{ font-family:var(--mono); font-size:13px; color:var(--secondary); text-align:right; }
+.sl-foot{ position:absolute; left:262px; bottom:56px; }
+.sl-seal{ position:absolute; right:70px; bottom:64px; width:112px; height:112px; border-radius:12px; background:var(--accent);
+  display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 3px rgba(255,255,255,.32),inset 0 0 0 6px rgba(255,255,255,.5); }
+.sl-seal svg{ width:64px; height:64px; color:#FFF; }
+/* seal 9:16 */
+.sl.p{ width:360px; height:640px; }
+.sl.p .sl-rule{ display:none; }
+.sl.p .sl-side{ position:static; width:auto; flex-direction:row; align-items:center; justify-content:space-between; padding:40px 34px 0; }
+.sl.p .sl-vert{ writing-mode:horizontal-tb; margin-top:0; font-size:13px; letter-spacing:.16em; }
+.sl.p .sl-vsub{ writing-mode:horizontal-tb; margin-top:0; }
+.sl.p .sl-in{ position:static; height:auto; padding:26px 34px 0; }
+.sl.p .sl-num{ font-size:52px; }
+.sl.p .sl-num em{ font-size:22px; margin-left:8px; }
+.sl.p .sl-cost{ font-size:18px; margin-top:12px; }
+.sl.p .sl-split{ margin-top:28px; max-width:none; gap:12px; }
+.sl.p .sl-srow{ grid-template-columns:92px 1fr 60px; column-gap:12px; }
+.sl.p .sl-foot{ position:static; margin-top:24px; padding:0 34px 34px; }
+.sl.p .sl-seal{ right:34px; bottom:30px; width:78px; height:78px; }
+.sl.p .sl-seal svg{ width:44px; height:44px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="intro">
+    <h1>Atoll 分享卡片 — 六款 × 16:9 + 9:16</h1>
+    <p>App 更名 <b style="color:#e6e6e9">Atoll</b>,環礁(ring / lagoon)母題。六款各自不同版面家族,共用 Geist、單一洋紅 <span style="color:#EC4899">#EC4899</span>、統一 18px 圓角、◎ 環記號署名。旗艦 = <b style="color:#e6e6e9">環礁儀表</b>。每款皆 16:9(1200×675)與 9:16(360×640)。硬編數據示意。</p>
+    <p class="note">字型以系統字近似 Geist;真機換回 bundle。全卡零 em/en dash、中點節制。此檔不動任何真 code。</p>
+  </div>
+
+  <!-- 1 ATOLL -->
+  <section class="tpl">
+    <div class="tpl-head"><span class="idx">01</span><h2>環礁儀表 · Atoll</h2><span class="flag">旗艦 / 預設</span></div>
+    <p class="tpl-rationale">名字即視覺:三條<b>同心額度弧</b>(Claude 5h / Claude 週 / Codex 週,已用%)組成珊瑚礁環,中央<b>礁湖</b>放總 token。唯一露出訂閱額度的卡。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9</span><div class="stage16"><div class="card at">
+        <div class="at-l">
+          <div class="at-top"><div class="at-pill"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg><b>Atoll</b><span class="sep"></span><span class="liv">LIVE</span></div><div class="at-period">This week · Jul 12 - 18</div></div>
+          <div class="at-hero"><div class="at-eyebrow">Cumulative usage</div><div class="at-big tnum">324.9<em>M</em></div><div class="at-sub"><span class="cost tnum">$310.42<u>est</u></span><span class="sp"></span>37 sessions<span class="sp"></span>streak 12d</div></div>
+          <div class="at-foot"><div class="sig"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><span class="bn">Atoll</span></div><div class="sig-r">JUL 2026</div></div>
+        </div>
+        <div class="at-r">
+          <div class="at-ring"><svg width="330" height="330" viewBox="0 0 340 340"><g fill="none" stroke-width="15" stroke-linecap="round"><circle cx="170" cy="170" r="150" stroke="#F0F0F1"/><circle cx="170" cy="170" r="150" stroke="#18181B" pathLength="100" stroke-dasharray="38 100"/><circle cx="170" cy="170" r="125" stroke="#F0F0F1"/><circle cx="170" cy="170" r="125" stroke="#52525B" pathLength="100" stroke-dasharray="42 100"/><circle cx="170" cy="170" r="100" stroke="#F0F0F1"/><circle cx="170" cy="170" r="100" stroke="#71717A" pathLength="100" stroke-dasharray="55 100"/></g></svg><div class="lag"><div class="k">Quota used</div><div class="v tnum">this cycle</div></div></div>
+          <div class="at-legend">
+            <div class="at-lrow"><span class="dot" style="background:#18181B"></span><span class="nm">Claude <small>· 5h</small></span><span class="pv tnum">38%<small> used</small></span></div>
+            <div class="at-lrow"><span class="dot" style="background:#52525B"></span><span class="nm">Claude <small>· week</small></span><span class="pv tnum">42%<small> used</small></span></div>
+            <div class="at-lrow"><span class="dot" style="background:#71717A"></span><span class="nm">Codex <small>· week</small></span><span class="pv tnum">55%<small> used</small></span></div>
+          </div>
+        </div>
+      </div></div></div>
+      <div class="cardwrap"><span class="cap">9 : 16</span><div class="stage916"><div class="card at p">
+        <div class="at-l">
+          <div class="at-top"><div class="at-pill"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg><b>Atoll</b><span class="sep"></span><span class="liv">LIVE</span></div></div>
+          <div class="at-period">This week · Jul 12 - 18</div>
+          <div class="at-hero"><div class="at-eyebrow">Cumulative usage</div><div class="at-big tnum">324.9<em>M</em></div><div class="at-sub"><span class="cost tnum">$310.42<u>est</u></span><span class="sp"></span>37 sessions</div></div>
+        </div>
+        <div class="at-r">
+          <div class="at-ring"><svg width="184" height="184" viewBox="0 0 340 340"><g fill="none" stroke-width="15" stroke-linecap="round"><circle cx="170" cy="170" r="150" stroke="#F0F0F1"/><circle cx="170" cy="170" r="150" stroke="#18181B" pathLength="100" stroke-dasharray="38 100"/><circle cx="170" cy="170" r="125" stroke="#F0F0F1"/><circle cx="170" cy="170" r="125" stroke="#52525B" pathLength="100" stroke-dasharray="42 100"/><circle cx="170" cy="170" r="100" stroke="#F0F0F1"/><circle cx="170" cy="170" r="100" stroke="#71717A" pathLength="100" stroke-dasharray="55 100"/></g></svg><div class="lag"><div class="k">Quota</div><div class="v tnum">cycle</div></div></div>
+          <div class="at-legend">
+            <div class="at-lrow"><span class="dot" style="background:#18181B"></span><span class="nm">Claude <small>· 5h</small></span><span class="pv tnum">38%</span></div>
+            <div class="at-lrow"><span class="dot" style="background:#52525B"></span><span class="nm">Claude <small>· wk</small></span><span class="pv tnum">42%</span></div>
+            <div class="at-lrow"><span class="dot" style="background:#71717A"></span><span class="nm">Codex <small>· wk</small></span><span class="pv tnum">55%</span></div>
+          </div>
+          <div class="at-foot"><div class="sig"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><span class="bn">Atoll</span></div><div class="sig-r">JUL 2026</div></div>
+        </div>
+      </div></div></div>
+    </div>
+  </section>
+
+  <!-- 2 LEDGER -->
+  <section class="tpl">
+    <div class="tpl-head"><span class="idx">02</span><h2>結算單 · Ledger</h2></div>
+    <p class="tpl-rationale">財務對帳單的權威感,克制:僅刊頭一處襯線,主數字 78px,成本退右欄,分帳點狀引導線串到同一數字軸。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9</span><div class="stage16"><div class="card lg">
+        <div class="lg-mast"><div><div class="ttl">Usage Statement</div><div class="sub">Cumulative for period</div></div><div class="meta"><div class="pd">This week · Jul 12 - 18</div><div class="no">NO. AT-2026-0718</div></div></div>
+        <div class="lg-hero"><div class="cell"><div class="lg-lbl">Total tokens</div><div class="lg-tok tnum">324.9<em>M</em></div><div class="lg-tsub">across 2 agents · 37 sessions · streak 12d</div></div><div class="cell cost"><div class="lg-lbl">Est. cost</div><div class="lg-cost tnum"><i>$</i>310.42</div><small>est. usd</small></div></div>
+        <div class="lg-ledger"><div class="lg-lhead"><span>Agent</span><span>Share</span><span>Tokens</span></div><div class="lg-lrow"><span class="nm">Claude Code</span><span class="lead"></span><span class="pct">66%</span><span class="val tnum">213,400,000</span></div><div class="lg-lrow"><span class="nm">Codex CLI</span><span class="lead"></span><span class="pct">34%</span><span class="val tnum">111,500,000</span></div></div>
+        <div class="lg-foot"><div class="sig"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><span class="bn">Atoll</span></div><div class="sig-r">Generated · JUL 2026</div></div>
+      </div></div></div>
+      <div class="cardwrap"><span class="cap">9 : 16</span><div class="stage916"><div class="card lg p">
+        <div class="lg-mast"><div><div class="ttl">Usage Statement</div><div class="sub">Cumulative for period</div></div><div class="meta"><div class="pd">This week · Jul 12 - 18</div><div class="no">NO. AT-2026-0718</div></div></div>
+        <div class="lg-hero"><div class="cell"><div class="lg-lbl">Total tokens</div><div class="lg-tok tnum">324.9<em>M</em></div><div class="lg-tsub">2 agents · 37 sessions · streak 12d</div></div><div class="cell cost"><div class="lg-lbl">Est. cost</div><div class="lg-cost tnum"><i>$</i>310.42</div><small>est. usd</small></div></div>
+        <div class="lg-ledger"><div class="lg-lhead"><span>Agent</span><span>Share</span><span>Tokens</span></div><div class="lg-lrow"><span class="nm">Claude Code</span><span class="lead"></span><span class="pct">66%</span><span class="val tnum">213.4M</span></div><div class="lg-lrow"><span class="nm">Codex CLI</span><span class="lead"></span><span class="pct">34%</span><span class="val tnum">111.5M</span></div></div>
+        <div class="lg-foot"><div class="sig"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><span class="bn">Atoll</span></div><div class="sig-r">JUL 2026</div></div>
+      </div></div></div>
+    </div>
+  </section>
+
+  <!-- 3 TERMINAL -->
+  <section class="tpl">
+    <div class="tpl-head"><span class="idx">03</span><h2>終端 · Terminal</h2></div>
+    <p class="tpl-rationale">開發者原生。<code>atoll --report</code> 命令列 + 洋紅游標,64px 主數字 + KV,24h sparkline 尖峰洋紅,等寬表格。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9</span><div class="stage16"><div class="card tm">
+        <div class="tm-bar"><div class="dots"><i></i><i></i><i></i></div><div class="win">atoll — report — 80×24</div></div>
+        <div class="tm-body">
+          <div class="tm-cmd"><span class="p">$ </span>atoll <span class="fl">--report --range week</span><span class="cur"></span></div>
+          <div class="tm-cmt"># This week · Jul 12 - 18 · streak 12d · peak 12.4M/day</div>
+          <div class="tm-focal"><div class="big"><div class="k tnum">TOTAL_TOKENS</div><div class="v tnum">324.9<em>M</em></div></div><div class="kv"><div><div class="k">EST_COST_USD</div><div class="v tnum">310.42 <small>est</small></div></div><div><div class="k">SESSIONS</div><div class="v tnum">37</div></div></div></div>
+          <div class="tm-spark"><div class="lbl"><span>HOURLY_LOAD [00-23]</span><span>peak <b>14:00</b></span></div><div class="bars"><i style="height:3%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:3%"></i><i style="height:6%"></i><i style="height:13%"></i><i style="height:28%"></i><i style="height:44%"></i><i style="height:52%"></i><i style="height:58%"></i><i style="height:63%"></i><i style="height:74%"></i><i class="pk" style="height:100%"></i><i style="height:88%"></i><i style="height:74%"></i><i style="height:66%"></i><i style="height:70%"></i><i style="height:61%"></i><i style="height:48%"></i><i style="height:33%"></i><i style="height:20%"></i><i style="height:9%"></i></div></div>
+          <div class="tm-tbl"><div class="hd"><span></span><span>agent</span><span>load</span><span>tokens</span><span>%</span></div><div class="tr"><span class="g">&gt;</span><span class="nm">Claude Code</span><span class="barcell"><i style="width:100%"></i></span><span class="num tnum">213.4M</span><span class="pc tnum">66%</span></div><div class="tr dim"><span class="g">&gt;</span><span class="nm">Codex CLI</span><span class="barcell"><i style="width:52%"></i></span><span class="num tnum">111.5M</span><span class="pc tnum">34%</span></div></div>
+          <div class="tm-foot"><div class="eof">- EOF -</div><div class="sig"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><span class="bn" style="font-size:16px">Atoll</span><span class="sig-r">JUL 2026</span></div></div>
+        </div>
+      </div></div></div>
+      <div class="cardwrap"><span class="cap">9 : 16</span><div class="stage916"><div class="card tm p">
+        <div class="tm-bar"><div class="dots"><i></i><i></i><i></i></div><div class="win">atoll</div></div>
+        <div class="tm-body">
+          <div class="tm-cmd"><span class="p">$ </span>atoll <span class="fl">--report</span><span class="cur"></span></div>
+          <div class="tm-cmt"># Jul 12 - 18 · streak 12d</div>
+          <div class="tm-focal"><div class="big"><div class="k tnum">TOTAL_TOKENS</div><div class="v tnum">324.9<em>M</em></div></div><div class="kv"><div><div class="k">COST_USD</div><div class="v tnum">310.42</div></div><div><div class="k">SESSIONS</div><div class="v tnum">37</div></div></div></div>
+          <div class="tm-spark"><div class="lbl"><span>HOURLY [00-23]</span><span>peak <b>14:00</b></span></div><div class="bars"><i style="height:3%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:3%"></i><i style="height:6%"></i><i style="height:13%"></i><i style="height:28%"></i><i style="height:44%"></i><i style="height:52%"></i><i style="height:58%"></i><i style="height:63%"></i><i style="height:74%"></i><i class="pk" style="height:100%"></i><i style="height:88%"></i><i style="height:74%"></i><i style="height:66%"></i><i style="height:70%"></i><i style="height:61%"></i><i style="height:48%"></i><i style="height:33%"></i><i style="height:20%"></i><i style="height:9%"></i></div></div>
+          <div class="tm-tbl"><div class="hd"><span></span><span>agent</span><span>tokens</span><span>%</span></div><div class="tr"><span class="g">&gt;</span><span class="nm">Claude Code</span><span class="num tnum">213.4M</span><span class="pc tnum">66%</span></div><div class="tr dim"><span class="g">&gt;</span><span class="nm">Codex CLI</span><span class="num tnum">111.5M</span><span class="pc tnum">34%</span></div></div>
+          <div class="tm-foot"><div class="eof">- EOF -</div><div class="sig"><span class="bn" style="font-size:15px">Atoll</span></div></div>
+        </div>
+      </div></div></div>
+    </div>
+  </section>
+
+  <!-- 4 MINIMAL -->
+  <section class="tpl">
+    <div class="tpl-head"><span class="idx">04</span><h2>極簡 · Minimal</h2></div>
+    <p class="tpl-rationale">大到縮圖也能一眼讀出量級。主數字佔滿重心,<span style="color:#EC4899">M</span> 洋紅收尾為唯一色彩事件。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9</span><div class="stage16"><div class="card mn">
+        <div class="mn-top"><div class="tag">Usage report</div><div class="rt"><b>$310.42</b> est · 37 sessions</div></div>
+        <div class="mn-hero"><div class="mn-big tnum">324.9<span>M</span></div><div class="mn-cap"><b>tokens</b><span class="sp"></span>This week · Jul 12 - 18<span class="sp"></span>streak 12d</div><div class="mn-split"><div class="mn-brow"><span class="nm">Claude Code</span><span class="tr"><i style="width:100%"></i></span><span class="tk tnum">213.4M</span></div><div class="mn-brow"><span class="nm">Codex CLI</span><span class="tr"><i style="width:52%"></i></span><span class="tk tnum">111.5M</span></div></div></div>
+        <div class="mn-foot"><div class="sig-r">Peak 14:00</div><div class="sig"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><span class="bn">Atoll · JUL 2026</span></div></div>
+      </div></div></div>
+      <div class="cardwrap"><span class="cap">9 : 16</span><div class="stage916"><div class="card mn p">
+        <div class="mn-top"><div class="tag">Usage report</div><div class="rt"><b>$310.42</b> est</div></div>
+        <div class="mn-hero"><div class="mn-big tnum">324.9<span>M</span></div><div class="mn-cap"><b>tokens</b><span class="sp"></span>Jul 12 - 18<span class="sp"></span>37 sessions</div><div class="mn-split"><div class="mn-brow"><span class="nm">Claude Code</span><span class="tr"><i style="width:100%"></i></span><span class="tk tnum">213.4M</span></div><div class="mn-brow"><span class="nm">Codex CLI</span><span class="tr"><i style="width:52%"></i></span><span class="tk tnum">111.5M</span></div></div></div>
+        <div class="mn-foot"><div class="sig-r">Peak 14:00</div><div class="sig"><span class="bn">Atoll</span></div></div>
+      </div></div></div>
+    </div>
+  </section>
+
+  <!-- 5 SOUNDING -->
+  <section class="tpl">
+    <div class="tpl-head"><span class="idx">05</span><h2>測深 · Sounding</h2></div>
+    <p class="tpl-rationale">24h 用量化為<b>礁湖水深剖面</b>,尖峰插測深標記;底部 agent 當深度層。海圖氣質,與礁湖同源。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9</span><div class="stage16"><div class="card sd">
+        <div class="sd-top"><div><div class="sd-eyebrow">Cumulative usage · lagoon depth</div><div class="sd-big tnum">324.9<em>M</em></div><div class="sd-sub"><span class="cost tnum">$310.42</span> est · 37 sessions</div></div><div class="sd-meta"><div class="pd">This week · Jul 12 - 18</div><div class="peak">DEEPEST 14:00 · 12.4M</div></div></div>
+        <div class="sd-chart"><svg viewBox="0 0 1088 320" preserveAspectRatio="none"><defs><linearGradient id="lag1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E9E9EB"/><stop offset="1" stop-color="#F7F7F8"/></linearGradient></defs><path d="M0,40 L47,44 94,44 141,45 188,44 235,40 282,30 329,18 376,-10 423,-40 470,-58 517,-70 564,-84 611,-96 658,-118 705,-150 752,-118 799,-84 846,-60 893,-40 940,-8 987,20 1034,44 1088,58 L1088,320 L0,320 Z" transform="translate(0,150)" fill="url(#lag1)"/><path d="M0,40 L47,44 94,44 141,45 188,44 235,40 282,30 329,18 376,-10 423,-40 470,-58 517,-70 564,-84 611,-96 658,-118 705,-150 752,-118 799,-84 846,-60 893,-40 940,-8 987,20 1034,44 1088,58" transform="translate(0,150)" fill="none" stroke="#A1A1AA" stroke-width="2"/><line x1="705" y1="0" x2="705" y2="290" stroke="#EC4899" stroke-width="2" stroke-dasharray="4 4"/><circle cx="705" cy="0" r="5" fill="#EC4899"/></svg></div>
+        <div class="sd-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+        <div class="sd-foot"><div class="sd-layers"><div class="sd-lay"><span class="bar" style="background:#18181B"></span><span class="t">Claude Code <b>66%</b></span></div><div class="sd-lay"><span class="bar" style="background:#71717A"></span><span class="t">Codex CLI <b>34%</b></span></div></div><div class="sig"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><span class="bn" style="font-size:16px">Atoll</span><span class="sig-r">JUL 2026</span></div></div>
+      </div></div></div>
+      <div class="cardwrap"><span class="cap">9 : 16</span><div class="stage916"><div class="card sd p">
+        <div class="sd-top"><div><div class="sd-eyebrow">Lagoon depth</div><div class="sd-big tnum">324.9<em>M</em></div><div class="sd-sub"><span class="cost tnum">$310.42</span> est · 37 sessions</div></div><div class="sd-meta"><div class="pd">This week · Jul 12 - 18</div><div class="peak">DEEPEST 14:00 · 12.4M</div></div></div>
+        <div class="sd-chart"><svg viewBox="0 0 296 320" preserveAspectRatio="none"><defs><linearGradient id="lag2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E9E9EB"/><stop offset="1" stop-color="#F7F7F8"/></linearGradient></defs><path d="M0,50 L38,44 64,30 90,10 116,-24 142,-58 168,-98 194,-150 220,-96 246,-52 272,-16 296,20 L296,320 L0,320 Z" transform="translate(0,150)" fill="url(#lag2)"/><path d="M0,50 L38,44 64,30 90,10 116,-24 142,-58 168,-98 194,-150 220,-96 246,-52 272,-16 296,20" transform="translate(0,150)" fill="none" stroke="#A1A1AA" stroke-width="2"/><line x1="194" y1="0" x2="194" y2="290" stroke="#EC4899" stroke-width="2" stroke-dasharray="4 4"/><circle cx="194" cy="0" r="5" fill="#EC4899"/></svg></div>
+        <div class="sd-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+        <div class="sd-foot"><div class="sd-layers"><div class="sd-lay"><span class="bar" style="background:#18181B"></span><span class="t">Claude <b>66%</b></span></div><div class="sd-lay"><span class="bar" style="background:#71717A"></span><span class="t">Codex <b>34%</b></span></div></div><div class="sig"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><span class="bn" style="font-size:15px">Atoll</span></div></div>
+      </div></div></div>
+    </div>
+  </section>
+
+  <!-- 6 SEAL -->
+  <section class="tpl">
+    <div class="tpl-head"><span class="idx">06</span><h2>環印 · Seal</h2></div>
+    <p class="tpl-rationale">禪帳直排欄 + 縱貫細規線,主數字襯線特大;右下 <b>環礁環印</b>(同心圓 seal)呼應品牌記號,與署名對角平衡。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9</span><div class="stage16"><div class="card sl">
+        <div class="sl-rule"></div>
+        <div class="sl-side"><div class="sl-brand"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><b>Atoll</b></div><div class="sl-vert">Cumulative Ledger</div><div class="sl-vsub">JUL 2026</div></div>
+        <div class="sl-in"><div><div class="sl-kicker">Total tokens</div><div class="sl-period">This week · Jul 12 - 18</div></div><div class="sl-main"><div class="sl-num tnum">324.9<em>M</em></div><div class="sl-cost tnum">$310.42<u>est. usd</u></div><div class="sl-split"><div class="sl-srow"><span class="sl-slbl">Claude Code</span><span class="sl-strack"><span class="sl-sfill" style="width:100%"></span></span><span class="sl-sval tnum">213.4M</span></div><div class="sl-srow"><span class="sl-slbl">Codex CLI</span><span class="sl-strack"><span class="sl-sfill" style="width:52%"></span></span><span class="sl-sval tnum">111.5M</span></div></div></div></div>
+        <div class="sl-foot"><span class="sig-r">Atoll · Share · 37 sessions · streak 12d</span></div>
+        <div class="sl-seal"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="5.4" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg></div>
+      </div></div></div>
+      <div class="cardwrap"><span class="cap">9 : 16</span><div class="stage916"><div class="card sl p">
+        <div class="sl-side"><div class="sl-brand"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg><b>Atoll</b></div><div class="sl-vert">Cumulative Ledger</div></div>
+        <div class="sl-in"><div><div class="sl-kicker">Total tokens</div><div class="sl-period">This week · Jul 12 - 18</div></div><div class="sl-main"><div class="sl-num tnum">324.9<em>M</em></div><div class="sl-cost tnum">$310.42<u>est. usd</u></div><div class="sl-split"><div class="sl-srow"><span class="sl-slbl">Claude Code</span><span class="sl-strack"><span class="sl-sfill" style="width:100%"></span></span><span class="sl-sval tnum">213.4M</span></div><div class="sl-srow"><span class="sl-slbl">Codex CLI</span><span class="sl-strack"><span class="sl-sfill" style="width:52%"></span></span><span class="sl-sval tnum">111.5M</span></div></div></div></div>
+        <div class="sl-foot"><span class="sig-r">Atoll · JUL 2026</span></div>
+        <div class="sl-seal"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="5.4" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg></div>
+      </div></div></div>
+    </div>
+  </section>
+
+</div>
+
+

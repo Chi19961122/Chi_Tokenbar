@@ -1,0 +1,298 @@
+<style>
+/* Atoll branding on the Limits + Analytics pages (Artifact preview).
+   Dual-theme like the real app (T-901): tokens on :root, redefined under
+   prefers-color-scheme dark and under :root[data-theme] so the viewer's toggle
+   wins both ways. Real palette from styles.css. Geist approximated with system
+   fonts in this standalone build (CSP blocks font CDNs). Taste-lite: brand shows
+   in ONE strong place (header ◎ Atoll lockup) plus the donut read as the natural
+   ring/atoll echo. Zero em/en dashes, rationed middots, one accent. */
+.ap{
+  --bg:#EDEDEF; --panel:#FAFAFA; --card:#FFFFFF; --text:#09090B; --dim:#52525B;
+  --muted:#5D5D65; --faint:#8A8A92; --hairline:#E4E4E7;
+  --ink900:#18181B; --ink700:#52525B; --ink500:#71717A; --ink400:#A1A1AA; --ink300:#D4D4D8; --ink100:#F4F4F5;
+  --accent:#EC4899; --safe:#16A34A; --warn:#D97706; --danger:#DC2626;
+  --provClaude:#2fa87e; --provCodex:#5b62d4;
+  --tileBg:#09090B; --tileFg:#FAFAFA; --tileSub:#8A8A92;
+  --shadow:0 18px 50px rgba(0,0,0,.16),0 2px 8px rgba(0,0,0,.06);
+  --geist:'Geist','Inter',-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono:'Geist Mono','Cascadia Code','SF Mono','Consolas',ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){
+  .ap{
+    --bg:#0A0A0C; --panel:#141417; --card:#1A1A1E; --text:#F4F4F5; --dim:#B0B0B8;
+    --muted:#9A9AA3; --faint:#78787F; --hairline:rgba(255,255,255,.08);
+    --ink900:#ECECEF; --ink700:#C4C4CC; --ink500:#9A9AA3; --ink400:#78787F; --ink300:#55555C; --ink100:#3A3A40;
+    --accent:#F472B6; --safe:#2F9D57; --warn:#E0A64B; --danger:#E5645A;
+    --tileBg:#ECECEF; --tileFg:#131316; --tileSub:#52525B;
+    --shadow:0 18px 50px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"] .ap{
+  --bg:#0A0A0C; --panel:#141417; --card:#1A1A1E; --text:#F4F4F5; --dim:#B0B0B8;
+  --muted:#9A9AA3; --faint:#78787F; --hairline:rgba(255,255,255,.08);
+  --ink900:#ECECEF; --ink700:#C4C4CC; --ink500:#9A9AA3; --ink400:#78787F; --ink300:#55555C; --ink100:#3A3A40;
+  --accent:#F472B6; --safe:#2F9D57; --warn:#E0A64B; --danger:#E5645A;
+  --tileBg:#ECECEF; --tileFg:#131316; --tileSub:#52525B;
+  --shadow:0 18px 50px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.4);
+}
+:root[data-theme="light"] .ap{
+  --bg:#EDEDEF; --panel:#FAFAFA; --card:#FFFFFF; --text:#09090B; --dim:#52525B;
+  --muted:#5D5D65; --faint:#8A8A92; --hairline:#E4E4E7;
+  --ink900:#18181B; --ink700:#52525B; --ink500:#71717A; --ink400:#A1A1AA; --ink300:#D4D4D8; --ink100:#F4F4F5;
+  --accent:#EC4899; --safe:#16A34A; --warn:#D97706; --danger:#DC2626;
+  --tileBg:#09090B; --tileFg:#FAFAFA; --tileSub:#8A8A92;
+  --shadow:0 18px 50px rgba(0,0,0,.16),0 2px 8px rgba(0,0,0,.06);
+}
+
+.ap{ background:var(--bg); color:var(--text); font-family:var(--geist);
+  -webkit-font-smoothing:antialiased; padding:48px 32px 96px; min-height:100vh; line-height:1.5; }
+.ap *{ box-sizing:border-box; }
+.ap .wrap{ max-width:1080px; margin:0 auto; }
+.ap .lead h1{ font-size:26px; font-weight:800; letter-spacing:-.02em; margin:0 0 12px; text-wrap:balance; }
+.ap .lead p{ font-size:14px; color:var(--muted); max-width:70ch; margin:0 0 8px; }
+.ap .lead .mk{ color:var(--accent); font-weight:700; }
+.ap .lead .hint{ font-size:12.5px; color:var(--faint); margin-top:14px; }
+
+.ap .stage{ display:flex; gap:40px; flex-wrap:wrap; justify-content:center; margin-top:44px; }
+.ap .col{ display:flex; flex-direction:column; gap:12px; }
+.ap .col .tag{ font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); text-align:center; }
+
+/* ── app window ─────────────────────────────────────────────────── */
+.ap .win{ width:420px; max-width:100%; background:var(--panel); border-radius:16px; overflow:hidden;
+  box-shadow:var(--shadow); border:1px solid var(--hairline); }
+
+/* header: brand lockup + tabs + icons */
+.ap .phead{ display:flex; align-items:center; gap:10px; height:48px; padding:0 12px 0 14px;
+  border-bottom:1px solid var(--hairline); background:var(--panel); }
+.ap .brand{ display:flex; align-items:center; gap:7px; }
+.ap .brand .rm{ width:17px; height:17px; color:var(--accent); }
+.ap .brand b{ font-size:13.5px; font-weight:700; letter-spacing:-.01em; }
+.ap .brand-div{ width:1px; height:16px; background:var(--hairline); margin:0 2px; }
+.ap .ptabs{ display:flex; gap:2px; }
+.ap .ptabs button{ font:inherit; font-size:12.5px; font-weight:600; color:var(--muted); background:none; border:0;
+  padding:5px 9px; border-radius:7px; cursor:pointer; }
+.ap .ptabs button.on{ color:var(--text); background:var(--ink100); }
+.ap .hspace{ flex:1; }
+.ap .hicon{ width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center;
+  color:var(--muted); border-radius:6px; font-size:14px; }
+.ap .hicon.sh svg{ width:13px; height:13px; }
+
+/* panel body */
+.ap .pbody{ padding:14px; display:flex; flex-direction:column; gap:12px; }
+
+/* ── Limits: gauge cards ────────────────────────────────────────── */
+.ap .gcard{ background:var(--card); border:1px solid var(--hairline); border-radius:13px; padding:14px 15px; }
+.ap .gc-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.ap .gc-prov{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
+.ap .gc-prov .pdot{ width:9px; height:9px; border-radius:50%; }
+.ap .gc-status{ display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
+.ap .gc-status .sdot{ width:7px; height:7px; border-radius:50%; background:var(--safe); }
+.ap .gc-status.warn .sdot{ background:var(--warn); }
+.ap .gc-status.warn{ color:var(--warn); }
+.ap .grow{ padding:11px 0; border-top:1px solid var(--hairline); }
+.ap .grow:first-child{ border-top:0; padding-top:2px; }
+.ap .g-kicker{ font-size:11px; letter-spacing:.03em; color:var(--muted); }
+.ap .g-hero{ display:flex; align-items:baseline; gap:4px; margin:5px 0 9px; }
+.ap .g-val{ font-size:34px; font-weight:800; letter-spacing:-.03em; line-height:1; }
+.ap .g-unit{ font-size:17px; font-weight:700; color:var(--muted); }
+.ap .g-left{ font-size:12px; color:var(--muted); margin-left:3px; }
+.ap .g-track{ height:6px; border-radius:99px; background:var(--ink100); overflow:hidden; }
+.ap .g-fill{ height:100%; border-radius:99px; background:var(--safe); }
+.ap .grow.warn .g-fill{ background:var(--warn); }
+.ap .g-note{ font-size:11px; color:var(--faint); margin-top:9px; }
+.ap .g-note.warnbadge span{ color:var(--warn); font-weight:600; }
+
+/* ── Analytics: subtabs, toggles, tiles, charts ─────────────────── */
+.ap .subtabs{ display:flex; gap:3px; }
+.ap .subtabs button{ font:inherit; font-size:12px; font-weight:600; color:var(--muted); background:none; border:0;
+  padding:5px 10px; border-radius:7px; cursor:pointer; }
+.ap .subtabs button.on{ color:var(--text); background:var(--ink100); }
+.ap .seg{ display:inline-flex; background:var(--ink100); border-radius:8px; padding:2px; gap:2px; }
+.ap .seg button{ font:inherit; font-size:11px; font-weight:600; color:var(--muted); background:none; border:0;
+  padding:4px 10px; border-radius:6px; cursor:pointer; }
+.ap .seg button.on{ color:var(--text); background:var(--card); box-shadow:0 1px 2px rgba(0,0,0,.06); }
+.ap .togrow{ display:flex; justify-content:space-between; align-items:center; }
+
+.ap .tiles{ display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:9px; }
+.ap .tile{ background:var(--card); border:1px solid var(--hairline); border-radius:12px; padding:12px 13px; }
+.ap .tile .k{ font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.ap .tile .v{ font-size:22px; font-weight:800; letter-spacing:-.03em; margin-top:7px; }
+.ap .tile .v small{ font-size:12px; font-weight:600; color:var(--muted); }
+.ap .tile-accent{ background:var(--tileBg); border-color:transparent; }
+.ap .tile-accent .k{ color:var(--tileSub); }
+.ap .tile-accent .v{ color:var(--tileFg); }
+
+.ap .chartcard{ background:var(--card); border:1px solid var(--hairline); border-radius:12px; padding:14px 14px 10px; }
+.ap .chartcard .ct{ font-size:11px; letter-spacing:.03em; color:var(--muted); display:flex; justify-content:space-between; margin-bottom:6px; }
+.ap .chartcard .ct b{ color:var(--text); font-weight:600; }
+.ap .dchart{ width:100%; height:132px; display:block; }
+.ap .dchart .grid{ stroke:var(--hairline); stroke-width:1; }
+.ap .dchart .glabel{ fill:var(--faint); font-family:var(--mono); font-size:9px; }
+.ap .dchart .xlabel{ fill:var(--faint); font-family:var(--mono); font-size:9px; text-anchor:middle; }
+.ap .dchart .bar{ fill:var(--ink300); }
+.ap .dchart .bar.strong{ fill:var(--ink900); }
+.ap .dchart .bar.today{ fill:var(--accent); }
+
+/* donut = the ring/atoll echo */
+.ap .brk{ display:flex; align-items:center; gap:18px; }
+.ap .donut{ position:relative; width:112px; height:112px; flex:none; border-radius:50%;
+  background:conic-gradient(
+    var(--ink900) 0 34%, var(--ink300) 34% 58%, var(--provClaude) 58% 72%,
+    var(--ink700) 72% 84%, var(--accent) 84% 91%, var(--ink400) 91% 96%,
+    var(--provCodex) 96% 99%, var(--ink500) 99% 100%); }
+.ap .donut .hole{ position:absolute; inset:23px; border-radius:50%; background:var(--card);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.ap .donut .hole .n{ font-size:19px; font-weight:800; letter-spacing:-.02em; }
+.ap .donut .hole .l{ font-size:8.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); font-weight:700; margin-top:1px; }
+.ap .legend{ flex:1; display:grid; grid-template-columns:1fr 1fr; gap:5px 14px; }
+.ap .lg-item{ display:flex; align-items:center; gap:7px; font-size:11.5px; }
+.ap .lg-item .sw{ width:9px; height:9px; border-radius:3px; flex:none; }
+.ap .lg-item .nm{ color:var(--dim); flex:1; }
+.ap .lg-item .pc{ color:var(--muted); font-variant-numeric:tabular-nums; }
+
+/* brand footer signature */
+.ap .pfoot{ display:flex; align-items:center; justify-content:center; gap:7px; padding:11px 0 3px;
+  border-top:1px solid var(--hairline); margin-top:2px; }
+.ap .pfoot .rm{ width:13px; height:13px; color:var(--faint); }
+.ap .pfoot span{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); }
+
+.ap .notes{ margin-top:48px; max-width:70ch; }
+.ap .notes h3{ font-size:14px; font-weight:700; margin:0 0 10px; }
+.ap .notes li{ font-size:13px; color:var(--muted); margin-bottom:7px; }
+.ap .notes b{ color:var(--text); }
+</style>
+
+<div class="ap">
+<div class="wrap">
+
+  <div class="lead">
+    <h1>Atoll 品牌置入 — 限額 &amp; 分析頁預覽</h1>
+    <p>島嶼維持原樣;品牌只加進兩個頁面。手法 taste-lite:品牌只在一個「強」的位置出現 <span class="mk">◎ Atoll</span> header 字標,其餘靠<b style="color:var(--text)">環礁母題的自然回響</b>(分析的甜甜圈本身就是環)。限額 gauge 維持橫向 % left 不動隱喻,與島嶼一致。真實色票、雙主題。</p>
+    <p class="hint">用右上主題切換看亮/暗(兩頁本來就雙主題)。字型在此預覽以系統字近似 Geist;真機換回 bundle。資料為示意。</p>
+  </div>
+
+  <div class="stage">
+
+    <!-- ── LIMITS ──────────────────────────────────────────────── -->
+    <div class="col">
+      <div class="tag">限額 · Limits</div>
+      <div class="win">
+        <div class="phead">
+          <div class="brand"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.4" fill="currentColor"/></svg><b>Atoll</b></div>
+          <div class="brand-div"></div>
+          <div class="ptabs"><button class="on">Limits</button><button>Analytics</button></div>
+          <div class="hspace"></div>
+          <span class="hicon">⟳</span>
+          <span class="hicon sh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/></svg></span>
+          <span class="hicon">⚙</span>
+        </div>
+        <div class="pbody">
+          <div class="gcard">
+            <div class="gc-head">
+              <div class="gc-prov"><span class="pdot" style="background:var(--provClaude)"></span>Claude Code</div>
+              <div class="gc-status"><span class="sdot"></span>healthy</div>
+            </div>
+            <div class="grow">
+              <div class="g-kicker">5-hour window</div>
+              <div class="g-hero"><span class="g-val">58</span><span class="g-unit">%</span><span class="g-left">left</span></div>
+              <div class="g-track"><span class="g-fill" style="width:58%"></span></div>
+              <div class="g-note">Resets in 2h 41m</div>
+            </div>
+            <div class="grow warn">
+              <div class="g-kicker">Weekly window</div>
+              <div class="g-hero"><span class="g-val">18</span><span class="g-unit">%</span><span class="g-left">left</span></div>
+              <div class="g-track"><span class="g-fill" style="width:18%"></span></div>
+              <div class="g-note warnbadge"><span>Near limit</span> · resets Sun 00:00</div>
+            </div>
+          </div>
+          <div class="gcard">
+            <div class="gc-head">
+              <div class="gc-prov"><span class="pdot" style="background:var(--provCodex)"></span>Codex</div>
+              <div class="gc-status"><span class="sdot"></span>healthy</div>
+            </div>
+            <div class="grow">
+              <div class="g-kicker">Weekly window</div>
+              <div class="g-hero"><span class="g-val">45</span><span class="g-unit">%</span><span class="g-left">left</span></div>
+              <div class="g-track"><span class="g-fill" style="width:45%"></span></div>
+              <div class="g-note">Resets in 3d 6h</div>
+            </div>
+          </div>
+          <div class="pfoot"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.4" fill="currentColor"/></svg><span>Atoll</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ANALYTICS ───────────────────────────────────────────── -->
+    <div class="col">
+      <div class="tag">分析 · Analytics</div>
+      <div class="win">
+        <div class="phead">
+          <div class="brand"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.4" fill="currentColor"/></svg><b>Atoll</b></div>
+          <div class="brand-div"></div>
+          <div class="ptabs"><button>Limits</button><button class="on">Analytics</button></div>
+          <div class="hspace"></div>
+          <span class="hicon">⟳</span>
+          <span class="hicon sh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/></svg></span>
+          <span class="hicon">⚙</span>
+        </div>
+        <div class="pbody">
+          <div class="subtabs"><button class="on">Overview</button><button>Breakdown</button><button>Hourly</button><button>Stats</button></div>
+          <div class="togrow">
+            <div class="seg"><button class="on">Week</button><button>Today</button><button>Month</button></div>
+            <div class="seg"><button class="on">Tokens</button><button>Cost</button></div>
+          </div>
+          <div class="tiles">
+            <div class="tile tile-accent"><div class="k">Cost this month</div><div class="v">$310.42</div></div>
+            <div class="tile"><div class="k">Peak day</div><div class="v">12.4<small>M</small></div></div>
+            <div class="tile"><div class="k">Streak</div><div class="v">12<small>d</small></div></div>
+          </div>
+          <div class="chartcard">
+            <div class="ct"><span>Daily tokens</span><span>Jul 12 - 18 · <b>324.9M</b></span></div>
+            <svg class="dchart" viewBox="0 0 380 132" preserveAspectRatio="none">
+              <line class="grid" x1="30" y1="8" x2="380" y2="8"/><line class="grid" x1="30" y1="56" x2="380" y2="56"/><line class="grid" x1="30" y1="104" x2="380" y2="104"/>
+              <text class="glabel" x="26" y="11" text-anchor="end">12M</text><text class="glabel" x="26" y="59" text-anchor="end">6M</text><text class="glabel" x="26" y="107" text-anchor="end">0</text>
+              <rect class="bar" x="42" y="44" width="34" height="60"/>
+              <rect class="bar" x="90" y="66" width="34" height="38"/>
+              <rect class="bar strong" x="138" y="20" width="34" height="84"/>
+              <rect class="bar" x="186" y="32" width="34" height="72"/>
+              <rect class="bar" x="234" y="14" width="34" height="90"/>
+              <rect class="bar" x="282" y="54" width="34" height="50"/>
+              <rect class="bar today" x="330" y="76" width="34" height="28"/>
+              <text class="xlabel" x="59" y="126">Sat</text><text class="xlabel" x="203" y="126">Tue</text><text class="xlabel" x="347" y="126">Fri</text>
+            </svg>
+          </div>
+          <div class="chartcard">
+            <div class="ct"><span>Activity mix</span><span><b>8</b> types</span></div>
+            <div class="brk">
+              <div class="donut"><div class="hole"><span class="n">324.9M</span><span class="l">tokens</span></div></div>
+              <div class="legend">
+                <div class="lg-item"><span class="sw" style="background:var(--ink900)"></span><span class="nm">Edit</span><span class="pc">34%</span></div>
+                <div class="lg-item"><span class="sw" style="background:var(--ink300)"></span><span class="nm">Read</span><span class="pc">24%</span></div>
+                <div class="lg-item"><span class="sw" style="background:var(--provClaude)"></span><span class="nm">Search</span><span class="pc">14%</span></div>
+                <div class="lg-item"><span class="sw" style="background:var(--ink700)"></span><span class="nm">Run</span><span class="pc">12%</span></div>
+                <div class="lg-item"><span class="sw" style="background:var(--accent)"></span><span class="nm">Web</span><span class="pc">7%</span></div>
+                <div class="lg-item"><span class="sw" style="background:var(--ink400)"></span><span class="nm">Agent</span><span class="pc">5%</span></div>
+                <div class="lg-item"><span class="sw" style="background:var(--provCodex)"></span><span class="nm">MCP</span><span class="pc">3%</span></div>
+                <div class="lg-item"><span class="sw" style="background:var(--ink500)"></span><span class="nm">Other</span><span class="pc">1%</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="pfoot"><svg class="rm" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.4" fill="currentColor"/></svg><span>Atoll</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <h3>品牌置入處(taste-lite)</h3>
+    <ul>
+      <li><b>Header 字標 ◎ Atoll</b> — 唯一的「強」品牌點,環記號+字標放頁籤左側,細分隔隔開。整個 header 高度不變。</li>
+      <li><b>甜甜圈=環礁回響</b> — 分析的活動佔比環本來就是同心環,順勢當母題呼應,不另加裝飾環。</li>
+      <li><b>面板底部署名</b> — 極小 ◎ Atoll,收尾不搶戲。</li>
+      <li><b>不動的</b> — 限額 gauge 維持橫向 % left(與島嶼同隱喻);圖表色板、月成本黑 tile、數字排版全照舊。</li>
+    </ul>
+  </div>
+
+</div>
+</div>
