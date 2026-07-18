@@ -964,6 +964,18 @@ body.settings-open #gear {
   background: var(--seg-on-bg);
   color: var(--seg-on-fg);
 }
+/* Explicit checkmark on selected chips: with five independent toggles,色塊
+   alone read as "which one is active?" rather than on/off (使用者真的誤把已開
+   的 Grok 點成關)。 */
+.seg-multi button::before {
+  content: "";
+  display: inline-block;
+  width: 0;
+}
+.seg-multi button.on::before {
+  content: "✓ ";
+  width: auto;
+}
 
 #analytics {
   padding: 4px 20px 14px;

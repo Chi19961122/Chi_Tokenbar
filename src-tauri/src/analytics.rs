@@ -1235,7 +1235,13 @@ fn grok_event(line: &str) -> Option<(i64, u64, String)> {
         return None;
     }
     let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-    let meta = v.get("_meta")?;
+    // 實測 2026-07-18:同一個 updates.jsonl 裡 totalTokens 有兩種位置——多數行
+    // 在頂層 `_meta`,少數行的頂層 `_meta` 是空物件、值藏在 `params._meta`。
+    // 先讀頂層,沒有就 fallback,兩種都沒有才跳過該行。
+    let meta = match v.get("_meta").filter(|m| m.get("totalTokens").is_some()) {
+        Some(m) => m,
+        None => v.pointer("/params/_meta")?,
+    };
     let total = meta.get("totalTokens").and_then(|x| x.as_u64())?;
     // `timestamp` is documented as epoch *seconds*; parse_epoch leaves any value
     // below the millis threshold untouched, so a realistic seconds value is kept
@@ -2064,6 +2070,32 @@ mod tests {
             "_meta": { "totalTokens": total, "modelId": model }
         })
         .to_string()
+    }
+
+    #[test]
+    fn grok_event_falls_back_to_params_meta_when_top_meta_is_empty() {
+        // Real 2026-07-18 file shape: top-level `_meta` present but EMPTY, the
+        // usable payload nested under `params._meta`.
+        let line = serde_json::json!({
+            "timestamp": 1_784_343_597,
+            "method": "session/update",
+            "_meta": {},
+            "params": { "_meta": { "totalTokens": 10_093u64, "modelId": "grok-4.5" } }
+        })
+        .to_string();
+        let (ts, total, model) = grok_event(&line).unwrap();
+        assert_eq!(ts, 1_784_343_597);
+        assert_eq!(total, 10_093);
+        assert_eq!(model, "grok-4.5");
+
+        // Neither location has totalTokens → skipped, not fatal.
+        let empty = serde_json::json!({
+            "timestamp": 1_784_343_597,
+            "_meta": {},
+            "params": { "_meta": {}, "note": "totalTokens" }
+        })
+        .to_string();
+        assert!(grok_event(&empty).is_none());
     }
 
     fn scan_fake_grok_files(files: Vec<Vec<String>>) -> Acc {
