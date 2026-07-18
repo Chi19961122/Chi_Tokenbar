@@ -14,6 +14,9 @@
   /* Provider family colors — gem palette. Value colors for gauges/numbers. */
   --prov-claude: #2fa87e; /* emerald */
   --prov-codex: #5b62d4; /* tanzanite */
+  /* Grok: monochrome zinc, matching xAI's black/white identity — reads on both
+     themes (--prov-* are not overridden in dark). */
+  --prov-grok: #71717A;
   --prov-claude-hdr: #5cc39f; /* section-header tint */
   --prov-codex-hdr: #8d93e8;
 
@@ -156,6 +159,12 @@
 }
 .prov-codex {
   --fam: var(--prov-codex);
+}
+.prov-grok {
+  --fam: var(--prov-grok);
+}
+.prov-grok {
+  --fam: var(--prov-grok);
 }
 
 * {

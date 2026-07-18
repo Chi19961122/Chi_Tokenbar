@@ -9,6 +9,11 @@ use serde::Serialize;
 pub enum Provider {
     Anthropic,
     Codex,
+    /// T-917: Grok's local context-fill limit (providers/grok.rs). Unlike the
+    /// two subscription-quota providers this measures how full the current
+    /// session's context window is, so it never reaches the island (which is
+    /// quota-sources-only) — only the expanded panel and the Usage digest.
+    Grok,
 }
 
 /// Seven-state machine from UX Spec v3 §7.

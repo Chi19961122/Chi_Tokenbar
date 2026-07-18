@@ -256,6 +256,11 @@ impl Acc {
     /// `project` = a bare folder name ("" to skip project attribution).
     /// `kind` = an activity kind for classifiable providers (Claude); None for
     /// providers whose tokens aren't per-tool attributable (Codex).
+    ///
+    /// Test-only since T-917: the real scanners route through `add_with_cost`
+    /// (vendor-priced) or `add_total_only` (Grok); this blended-cost wrapper now
+    /// only backs the aggregation test stubs.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     fn add(
         &mut self,
@@ -435,8 +440,6 @@ fn filter_accounts(sources: &[String], accounts: Vec<Account>) -> Vec<Account> {
         .filter(|a| match a.provider.as_str() {
             "anthropic" => wants(sources, "claude"),
             "codex" => wants(sources, "codex"),
-            "opencode" => wants(sources, "opencode"),
-            "gemini" => wants(sources, "gemini"),
             "grok" => wants(sources, "grok"),
             _ => true,
         })
@@ -453,8 +456,6 @@ pub fn compute_with(range: &str, sources: &[String]) -> Analytics {
         sources,
         scan_codex,
         scan_claude,
-        scan_opencode,
-        scan_gemini,
         scan_grok,
         detect_accounts(),
     )
@@ -467,21 +468,17 @@ pub fn compute_with(range: &str, sources: &[String]) -> Analytics {
 /// scanners read the real home dir, so a test that cannot replace them can only
 /// re-assert `wants`, which proves nothing about which branch runs.
 #[allow(clippy::too_many_arguments)]
-fn compute_routed<C, L, O, G, K>(
+fn compute_routed<C, L, K>(
     range: &str,
     sources: &[String],
     scan_codex_fn: C,
     scan_claude_fn: L,
-    scan_opencode_fn: O,
-    scan_gemini_fn: G,
     scan_grok_fn: K,
     accounts: Vec<Account>,
 ) -> Analytics
 where
     C: FnOnce(&mut Acc, i64) -> u32,
     L: FnOnce(&mut Acc, i64),
-    O: FnOnce(&mut Acc, i64),
-    G: FnOnce(&mut Acc, i64),
     K: FnOnce(&mut Acc, i64),
 {
     let now = chrono::Utc::now().timestamp();
@@ -504,12 +501,6 @@ where
     };
     if wants(sources, "claude") {
         scan_claude_fn(&mut acc, start);
-    }
-    if wants(sources, "opencode") {
-        scan_opencode_fn(&mut acc, start);
-    }
-    if wants(sources, "gemini") {
-        scan_gemini_fn(&mut acc, start);
     }
     if wants(sources, "grok") {
         scan_grok_fn(&mut acc, start);
@@ -1016,162 +1007,6 @@ fn scan_claude_lines(
     }
 }
 
-// ── OpenCode: one JSON file per message (階段 E) ──────────────────────────
-//
-// 勘察結論(2026-07-17,見 data-sources-findings.md §4.1):本機**未安裝**
-// OpenCode。scanner 依「文件化格式」實作,執行期目錄不存在即回空:
-//   storage/message/<sessionID>/<messageID>.json —— assistant 訊息帶 `role`、
-//   `modelID`、`time.created`(epoch 毫秒)、`tokens.{input,output,reasoning,
-//   cache.read,cache.write}`。基底目錄取 XDG data + 常見備援。
-// Limits:OpenCode 本機無官方 limit 檔(額度歸後端 provider)→ 僅 Usage。
-
-/// Candidate OpenCode storage roots (first existing wins is *not* assumed — all
-/// are scanned so a mirrored/legacy layout is still picked up).
-fn opencode_bases() -> Vec<PathBuf> {
-    let mut v = Vec::new();
-    if let Some(home) = dirs::home_dir() {
-        v.push(home.join(".local/share/opencode"));
-        v.push(home.join(".opencode"));
-        v.push(home.join(".config/opencode"));
-    }
-    if let Some(local) = dirs::data_local_dir() {
-        v.push(local.join("opencode"));
-    }
-    v
-}
-
-/// Parse one OpenCode message object into `(ts_secs, model, input, cached,
-/// output, reasoning)`. `None` for non-assistant messages, malformed objects,
-/// or ones with no token counts — the scanner then skips them.
-fn oc_record(v: &serde_json::Value) -> Option<(i64, String, u64, u64, u64, u64)> {
-    if v.get("role").and_then(|r| r.as_str()) != Some("assistant") {
-        return None;
-    }
-    let tokens = v.get("tokens")?;
-    let get = |k: &str| tokens.get(k).and_then(|x| x.as_u64()).unwrap_or(0);
-    let input = get("input");
-    let output = get("output");
-    let reasoning = get("reasoning");
-    let cache = tokens.get("cache");
-    let cache_get = |k: &str| {
-        cache
-            .and_then(|c| c.get(k))
-            .and_then(|x| x.as_u64())
-            .unwrap_or(0)
-    };
-    let cached = cache_get("read") + cache_get("write");
-    if input + output + reasoning + cached == 0 {
-        return None;
-    }
-    let ts = v
-        .get("time")
-        .and_then(|t| t.get("created"))
-        .and_then(parse_epoch)
-        .unwrap_or(0);
-    let model = v
-        .get("modelID")
-        .and_then(|m| m.as_str())
-        .unwrap_or("opencode")
-        .to_string();
-    Some((ts, model, input, cached, output, reasoning))
-}
-
-fn scan_opencode(acc: &mut Acc, start: i64) {
-    for base in opencode_bases() {
-        let pattern = base
-            .join("storage/message/**/*.json")
-            .to_string_lossy()
-            .replace('\\', "/");
-        let Ok(paths) = glob::glob(&pattern) else {
-            continue;
-        };
-        for p in paths.filter_map(Result::ok) {
-            if mtime_secs(&p) < start {
-                continue;
-            }
-            let Ok(text) = fs::read_to_string(&p) else {
-                continue;
-            };
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
-                continue;
-            };
-            if let Some((ts, model, i, ca, o, r)) = oc_record(&v) {
-                if ts < start {
-                    continue;
-                }
-                // kind = None: OpenCode tokens aren't per-tool attributable here;
-                // project = "": message files don't carry cwd (see findings §4.1).
-                acc.add(ts, &model, "OpenCode", "", None, i, ca, o, r);
-            }
-        }
-    }
-}
-
-// ── Gemini CLI: documented JSONL usage records (階段 E) ────────────────────
-//
-// 勘察結論(2026-07-17,見 data-sources-findings.md §4.2):本機 `~/.gemini/`
-// 只有 Antigravity IDE 的 protobuf 資料,**無** Gemini CLI 用量 log。scanner 依
-// 一個文件化的 JSONL 用量形狀掃 `~/.gemini/**/*.jsonl`(每行 `{timestamp,model,
-// tokens:{input,output,cached,thoughts}}`),掃不到即回空。**只吃 *.jsonl**,因此
-// 天然避開 `oauth_creds.json` / `settings.json`(憑證/設定,鐵則:連讀都不讀)。
-// Limits:Gemini CLI 本機無官方 limit 檔 → 僅 Usage。
-
-/// Parse one Gemini usage log line into `(ts_secs, model, input, cached,
-/// output, reasoning)`. `None` for a blank/corrupt line or one with no tokens,
-/// so a malformed line is skipped rather than aborting the file.
-fn gemini_record(line: &str) -> Option<(i64, String, u64, u64, u64, u64)> {
-    let line = line.trim();
-    if line.is_empty() {
-        return None;
-    }
-    let v: serde_json::Value = serde_json::from_str(line).ok()?;
-    let tokens = v.get("tokens")?;
-    let get = |k: &str| tokens.get(k).and_then(|x| x.as_u64()).unwrap_or(0);
-    let input = get("input");
-    let output = get("output");
-    let cached = get("cached");
-    let thoughts = get("thoughts"); // Gemini's reasoning-equivalent field
-    if input + output + cached + thoughts == 0 {
-        return None;
-    }
-    let ts = v.get("timestamp").and_then(parse_epoch)?;
-    let model = v
-        .get("model")
-        .and_then(|m| m.as_str())
-        .unwrap_or("gemini")
-        .to_string();
-    Some((ts, model, input, cached, output, thoughts))
-}
-
-fn scan_gemini(acc: &mut Acc, start: i64) {
-    let Some(home) = dirs::home_dir() else {
-        return;
-    };
-    let pattern = home
-        .join(".gemini/**/*.jsonl")
-        .to_string_lossy()
-        .replace('\\', "/");
-    let Ok(paths) = glob::glob(&pattern) else {
-        return;
-    };
-    for p in paths.filter_map(Result::ok) {
-        if mtime_secs(&p) < start {
-            continue;
-        }
-        let Ok(file) = File::open(&p) else {
-            continue;
-        };
-        for line in BufReader::new(file).lines().map_while(Result::ok) {
-            if let Some((ts, model, i, ca, o, r)) = gemini_record(&line) {
-                if ts < start {
-                    continue;
-                }
-                acc.add(ts, &model, "Gemini CLI", "", None, i, ca, o, r);
-            }
-        }
-    }
-}
-
 // ── Grok CLI: cumulative session totals (T-916) ───────────────────────────
 //
 // 資料源(勘察已定案,見 T-916 brief):
@@ -1340,9 +1175,9 @@ mod tests {
         ids.iter().map(|s| s.to_string()).collect()
     }
 
-    /// Convenience wrapper: run `compute_routed` with OpenCode/Gemini/Grok
-    /// scanners disabled, so every codex/claude test reads exactly as before.
-    /// The 階段 E and Grok tests call `compute_routed` directly.
+    /// Convenience wrapper: run `compute_routed` with the Grok scanner disabled,
+    /// so every codex/claude test reads exactly as before. The Grok tests call
+    /// `compute_routed` directly.
     fn routed<C, L>(
         range: &str,
         sources: &[&str],
@@ -1359,8 +1194,6 @@ mod tests {
             &to_sources(sources),
             codex,
             claude,
-            |_, _| {},
-            |_, _| {},
             |_, _| {},
             accounts,
         )
@@ -1384,7 +1217,7 @@ mod tests {
 
         // Empty means nothing is scanned — an honest empty page, no fallback.
         let none: Vec<String> = Vec::new();
-        for id in ["claude", "codex", "opencode", "gemini", "grok"] {
+        for id in ["claude", "codex", "grok"] {
             assert!(!wants(&none, id), "empty sources must not scan {id}");
         }
     }
@@ -1902,160 +1735,21 @@ mod tests {
         assert_eq!(ak, ack, "by_agent_cost keys must match by_agent");
     }
 
-    // ── 階段 E: OpenCode / Gemini parsers + toggles ──────────────────────
-    //
-    // The parsers are the unit under test (the dir walks read the real home
-    // dir); fake data proves a well-formed record parses and a broken/empty one
-    // is skipped rather than crashing.
-
-    #[test]
-    fn oc_record_parses_an_assistant_message() {
-        let v: serde_json::Value = serde_json::from_str(
-            r#"{ "role": "assistant", "modelID": "claude-sonnet",
-                 "time": { "created": 1782590000000 },
-                 "tokens": { "input": 100, "output": 20, "reasoning": 5,
-                             "cache": { "read": 10, "write": 3 } } }"#,
-        )
-        .unwrap();
-        let (ts, model, input, cached, output, reasoning) = oc_record(&v).unwrap();
-        assert_eq!(ts, 1782590000); // ms → s
-        assert_eq!(model, "claude-sonnet");
-        assert_eq!(input, 100);
-        assert_eq!(cached, 13); // read + write
-        assert_eq!(output, 20);
-        assert_eq!(reasoning, 5);
-    }
-
-    #[test]
-    fn oc_record_skips_non_assistant_and_tokenless() {
-        // A user message: no usage to book.
-        let user = serde_json::json!({ "role": "user", "tokens": { "input": 5 } });
-        assert!(oc_record(&user).is_none());
-        // An assistant message whose tokens are all zero adds nothing.
-        let empty = serde_json::json!({ "role": "assistant", "tokens": { "input": 0 } });
-        assert!(oc_record(&empty).is_none());
-        // Missing the tokens object entirely.
-        let bare = serde_json::json!({ "role": "assistant" });
-        assert!(oc_record(&bare).is_none());
-    }
-
-    #[test]
-    fn gemini_record_parses_a_usage_line() {
-        let line = r#"{ "timestamp": 1782590000000, "model": "gemini-2.5-pro",
-                        "tokens": { "input": 200, "output": 40, "cached": 15, "thoughts": 8 } }"#;
-        let (ts, model, input, cached, output, reasoning) = gemini_record(line).unwrap();
-        assert_eq!(ts, 1782590000);
-        assert_eq!(model, "gemini-2.5-pro");
-        assert_eq!(input, 200);
-        assert_eq!(cached, 15);
-        assert_eq!(output, 40);
-        assert_eq!(reasoning, 8); // thoughts → reasoning
-    }
-
-    #[test]
-    fn gemini_record_parses_rfc3339_timestamp() {
-        let line = r#"{ "timestamp": "2026-07-10T06:19:59+00:00", "model": "gemini",
-                        "tokens": { "input": 10 } }"#;
-        let (ts, _, input, ..) = gemini_record(line).unwrap();
-        assert_eq!(input, 10);
-        assert!(ts > 0, "RFC3339 timestamp should parse to a positive epoch");
-    }
-
-    #[test]
-    fn gemini_record_skips_corrupt_and_empty_lines() {
-        assert!(gemini_record("").is_none());
-        assert!(gemini_record("   ").is_none());
-        assert!(gemini_record("{ not valid json").is_none()); // a truncated/broken line
-                                                              // Valid JSON but no tokens → nothing to book.
-        assert!(gemini_record(r#"{ "timestamp": 1, "model": "gemini" }"#).is_none());
-        // Valid JSON, all-zero tokens → skipped.
-        assert!(gemini_record(r#"{ "timestamp": 1, "tokens": { "input": 0 } }"#).is_none());
-    }
-
-    /// Membership gates the OpenCode/Gemini scanners independently of the
-    /// codex/claude quota pair: absent from `sources` means the scanner never
-    /// runs, so its tokens never appear.
-    #[test]
-    fn membership_gates_opencode_and_gemini_scans() {
-        fn oc(acc: &mut Acc, _s: i64) {
-            acc.add(acc.now, "oc-model", "OpenCode", "", None, 100, 0, 0, 0);
-        }
-        fn gem(acc: &mut Acc, _s: i64) {
-            acc.add(acc.now, "gemini", "Gemini CLI", "", None, 50, 0, 0, 0);
-        }
-
-        // Both selected: both agents present, quota-pool scans absent so nothing else.
-        let on = compute_routed(
-            "today",
-            &to_sources(&["opencode", "gemini"]),
-            no_codex,
-            |_, _| {},
-            oc,
-            gem,
-            |_, _| {},
-            Vec::new(),
-        );
-        assert_eq!(on.by_agent.get("OpenCode"), Some(&100));
-        assert_eq!(on.by_agent.get("Gemini CLI"), Some(&50));
-
-        // Neither selected: neither scan runs, neither agent appears (no fake 0 card).
-        let off = compute_routed(
-            "today",
-            &[],
-            no_codex,
-            |_, _| {},
-            oc,
-            gem,
-            |_, _| {},
-            Vec::new(),
-        );
-        assert!(off.by_agent.get("OpenCode").is_none());
-        assert!(off.by_agent.get("Gemini CLI").is_none());
-        assert_eq!(off.total_tokens, 0);
-    }
-
-    /// A source with no local data must not surface (the empty-scan case): a
-    /// selected-but-empty scanner contributes nothing, so no agent/legend entry.
+    /// A selected source with no local data must not surface (the empty-scan
+    /// case): a selected-but-empty scanner contributes nothing, so no
+    /// agent/legend entry and no fake 0 card.
     #[test]
     fn selected_but_empty_source_adds_nothing() {
         let a = compute_routed(
             "today",
-            &to_sources(&["opencode", "gemini", "grok"]),
+            &to_sources(&["grok"]),
             no_codex,
-            |_, _| {},
-            |_, _| {},
             |_, _| {},
             |_, _| {},
             Vec::new(),
         );
         assert!(a.by_agent.is_empty());
         assert_eq!(a.total_tokens, 0);
-    }
-
-    /// Accounts for the usage-only tools follow their own source membership.
-    #[test]
-    fn tool_accounts_follow_their_source() {
-        let accts = || {
-            vec![
-                Account {
-                    client: "OpenCode".into(),
-                    provider: "opencode".into(),
-                    account: "—".into(),
-                    plan: "—".into(),
-                },
-                Account {
-                    client: "Gemini CLI".into(),
-                    provider: "gemini".into(),
-                    account: "—".into(),
-                    plan: "—".into(),
-                },
-            ]
-        };
-        assert_eq!(filter_accounts(&to_sources(&["opencode", "gemini"]), accts()).len(), 2);
-        assert_eq!(filter_accounts(&[], accts()).len(), 0);
-        let only_oc = filter_accounts(&to_sources(&["opencode"]), accts());
-        assert_eq!(only_oc.len(), 1);
-        assert_eq!(only_oc[0].provider, "opencode");
     }
 
     // ── T-916 Grok: cumulative deltas, reset guard, total-only mapping ───
@@ -2297,10 +1991,10 @@ fn detect_accounts() -> Vec<Account> {
             plan: "—".into(),
         });
     }
-    // 階段 E: OpenCode/Gemini are intentionally NOT surfaced as accounts on mere
-    // directory existence — `~/.gemini/` in particular is shared with Antigravity
-    // and would fabricate a "Gemini CLI" card with no usage (the plan bans 0
-    // cards). They appear via usage-driven byAgent instead; `filter_accounts`
-    // still gates their `provider` keys should a future account source add them.
+    // Grok is intentionally NOT surfaced as an account on mere directory
+    // existence (the plan bans 0 cards); it appears via usage-driven byAgent
+    // instead, and its context-fill limit shows on the limits page.
+    // `filter_accounts` still gates a "grok" provider key should a future
+    // account source add one.
     out
 }

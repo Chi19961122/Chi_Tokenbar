@@ -572,6 +572,7 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             // empty UI).
             let want_codex = sources.iter().any(|s| s == "codex");
             let want_claude = sources.iter().any(|s| s == "claude");
+            let want_grok = sources.iter().any(|s| s == "grok");
 
             let live = if want_codex && matches!(codex_source.as_str(), "live" | "auto") {
                 codex_live.poll(now, force, refresh_secs)
@@ -595,6 +596,13 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             };
             if want_claude {
                 limits.extend(anthropic.poll(now, force, allow_refresh, refresh_secs));
+            }
+            // Grok's context-fill limit: a cheap local file stat + small JSON
+            // read every round (no network, no backoff needed). Always yields
+            // exactly one grok.ctx limit — a real reading, Stale, or an
+            // InsufficientData placeholder — so a selected Grok always has a card.
+            if want_grok {
+                limits.extend(providers::grok::read_limits());
             }
             // The single filter node for the whole app (§ see apply_provider_filter).
             // Skipping polls above is an optimisation; this is the correctness
@@ -667,13 +675,15 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
     });
 }
 
-/// Filter quota limits to the selected `sources` (T-916). Anthropic limits show
-/// iff "claude" is selected, Codex limits iff "codex" — the usage-only sources
-/// (opencode/gemini/grok) never produce a limit, so they don't appear here.
+/// Filter limits to the selected `sources`. Anthropic limits show iff "claude"
+/// is selected, Codex iff "codex", and Grok's context-fill limit iff "grok"
+/// (T-917 — Grok is no longer usage-only; it produces one `grok.ctx` limit).
 ///
-/// Unlike the pre-T-916 string filter, membership is explicit: an unselected
-/// quota provider is dropped, and an empty selection yields an empty island (an
-/// honest empty UI is the intended result of deselecting everything).
+/// Membership is explicit: an unselected provider is dropped, and an empty
+/// selection yields an empty island (an honest empty UI is the intended result
+/// of deselecting everything). The island itself renders only the two quota
+/// providers, so a Grok limit surviving this filter reaches the panel/digest
+/// but never the island pill (island.ts filters by provider).
 ///
 /// This is the single filter node for the whole app: it runs in the scheduler
 /// between merging the providers' limits and `engine.ingest()`, so the island,
@@ -686,6 +696,7 @@ pub fn apply_provider_filter(sources: &[String], limits: Vec<Limit>) -> Vec<Limi
         .filter(|l| match l.provider {
             model::Provider::Anthropic => want("claude"),
             model::Provider::Codex => want("codex"),
+            model::Provider::Grok => want("grok"),
         })
         .collect()
 }
@@ -847,6 +858,11 @@ fn fire_notifications(
             (model::Provider::Codex, true) => "切換到 mini 模型以延長額度。",
             (model::Provider::Anthropic, false) => "Try /compact or switch to Sonnet.",
             (model::Provider::Anthropic, true) => "試試 /compact 或切換到 Sonnet。",
+            // Grok is a context window, not a subscription quota: it empties when
+            // a new session starts, so the remedy is a fresh session, not a model
+            // swap or /compact.
+            (model::Provider::Grok, false) => "Start a new session to reset the context window.",
+            (model::Provider::Grok, true) => "開新對話以清空 context 視窗。",
         };
         let body = if matches!(l.status, LimitStatus::Locked) {
             if zh {
@@ -890,6 +906,15 @@ mod tests {
         vec![
             limit("codex.5h", Provider::Codex),
             limit("cc.5h", Provider::Anthropic),
+        ]
+    }
+
+    /// The three providers together, including Grok's context-fill limit (T-917).
+    fn all_three() -> Vec<Limit> {
+        vec![
+            limit("codex.5h", Provider::Codex),
+            limit("cc.5h", Provider::Anthropic),
+            limit("grok.ctx", Provider::Grok),
         ]
     }
 
@@ -969,11 +994,31 @@ mod tests {
             apply_provider_filter(&srcs(&["claude", "codex"]), both_providers()).len(),
             2
         );
-        // Usage-only sources riding along don't change the quota limits shown.
+        // Grok riding along doesn't change the quota limits shown when there is
+        // no Grok limit present.
         assert_eq!(
             apply_provider_filter(&srcs(&["claude", "codex", "grok"]), both_providers()).len(),
             2
         );
+    }
+
+    /// T-917: Grok's context-fill limit passes iff "grok" is selected, and is
+    /// dropped otherwise — exactly like the two quota providers.
+    #[test]
+    fn grok_limit_follows_its_source() {
+        // All three selected → all three limits pass.
+        assert_eq!(
+            apply_provider_filter(&srcs(&["claude", "codex", "grok"]), all_three()).len(),
+            3
+        );
+        // Grok deselected → its context limit is dropped, quota pair stays.
+        let no_grok = apply_provider_filter(&srcs(&["claude", "codex"]), all_three());
+        assert_eq!(no_grok.len(), 2);
+        assert!(no_grok.iter().all(|l| l.provider != Provider::Grok));
+        // Only grok selected → only the context limit survives.
+        let only_grok = apply_provider_filter(&srcs(&["grok"]), all_three());
+        assert_eq!(only_grok.len(), 1);
+        assert_eq!(only_grok[0].provider, Provider::Grok);
     }
 
     #[test]
@@ -990,12 +1035,13 @@ mod tests {
         assert_eq!(out[0].provider, Provider::Codex);
     }
 
-    /// Empty selection (or one with only usage-only sources) blanks the quota
-    /// limits — an honest empty island, the intended result of deselecting the
-    /// quota providers.
+    /// Empty selection blanks every limit; a Grok-only selection keeps no quota
+    /// limit (the quota pair is deselected) — both are honest empty islands.
     #[test]
-    fn no_quota_source_yields_empty_limits() {
+    fn no_quota_source_yields_empty_quota_limits() {
         assert!(apply_provider_filter(&[], both_providers()).is_empty());
+        // "grok" selected but the snapshot only has the quota pair → nothing (the
+        // island still renders empty; Grok has no island presence anyway).
         assert!(apply_provider_filter(&srcs(&["grok"]), both_providers()).is_empty());
     }
 

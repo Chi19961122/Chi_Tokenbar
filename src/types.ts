@@ -9,7 +9,7 @@ export type Status =
   | "source_failed"
   | "idle";
 
-export type Provider = "anthropic" | "codex";
+export type Provider = "anthropic" | "codex" | "grok";
 
 /**
  * A remedy the *backend* decided is applicable (model.rs `LimitAction`).
@@ -77,10 +77,10 @@ export interface Settings {
   warn_pct: number;
   crit_pct: number;
   compact: boolean;
-  /** T-916: the unified multi-select of usage/quota sources — read this, not the
-   *  deprecated `providers`/`tool_*` fields below. Any of "claude" | "codex" |
-   *  "opencode" | "gemini" | "grok"; empty means nothing shown (honest empty
-   *  UI). Mirrors config.rs `Settings::sources`. */
+  /** The unified multi-select of sources (T-916, slimmed T-917) — read this, not
+   *  the deprecated `providers` field below. Any of "claude" | "codex" | "grok";
+   *  empty means nothing shown (honest empty UI). Mirrors config.rs
+   *  `Settings::sources`. */
   sources: string[];
   /** DEPRECATED (T-916): folded into `sources`. Still present because the
    *  backend writes it for one-version downgrade safety; not read at runtime. */
@@ -110,12 +110,6 @@ export interface Settings {
   /** T-905 戰報尺寸: last-used share-card size ("auto"|"story"). "story" is the
    *  9:16 portrait. Defaults to "auto". */
   share_size: string;
-  /** DEPRECATED (T-916): folded into `sources` ("opencode"). Kept for downgrade
-   *  write-back only; not read at runtime. */
-  tool_opencode: boolean;
-  /** DEPRECATED (T-916): folded into `sources` ("gemini"). Kept for downgrade
-   *  write-back only; not read at runtime. */
-  tool_gemini: boolean;
   /** T-910 更新頻率: quota-API poll cadence in seconds. One of 30 | 60 | 180.
    *  Defaults to 180 (mirrors config.rs `Settings::default()`); the backend
    *  clamps to those three and applies 429 backoff on the Anthropic side. */

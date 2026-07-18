@@ -16,15 +16,18 @@ pub struct Settings {
     pub crit_pct: f64,
     /// Expanded panel starts in compact mode (limits only, no analytics).
     pub compact: bool,
-    /// T-916 供應商多選: the unified list of usage/quota sources to poll and
-    /// scan. One canonical multi-select replacing the old 3-way `providers`
-    /// filter plus the two `tool_*` checkboxes. Any of "claude" | "codex" |
-    /// "opencode" | "gemini" | "grok"; unknown values are dropped on load and an
-    /// empty vec is allowed (means: nothing polled/scanned — an honest empty UI).
+    /// 供應商多選 (T-916, slimmed in T-917): the unified list of sources to poll
+    /// and scan. Any of "claude" | "codex" | "grok"; unknown values (including the
+    /// removed "opencode"/"gemini") are dropped on load and an empty vec is
+    /// allowed (means: nothing polled/scanned — an honest empty UI).
+    ///
+    /// Claude/Codex are subscription-quota providers; Grok contributes both a
+    /// local context-fill limit (providers/grok.rs) and usage analytics
+    /// (analytics::scan_grok), both gated on "grok" membership.
     ///
     /// This is the runtime source of truth (scheduler + analytics gate on it);
-    /// `providers` / `tool_opencode` / `tool_gemini` below are kept only for
-    /// write-back so a one-version downgrade still reads a sane file.
+    /// `providers` below is kept only for write-back so a one-version downgrade
+    /// still reads a sane file.
     #[serde(default = "default_sources")]
     pub sources: Vec<String>,
     /// DEPRECATED (read for migration, written for downgrade-safety only): the
@@ -96,14 +99,6 @@ pub struct Settings {
     /// "auto" (1200×675 landscape) | "story" (9:16 portrait). Defaults to "auto".
     #[serde(default = "default_share_size")]
     pub share_size: String,
-    /// DEPRECATED (T-916): folded into `sources` ("opencode" membership). Kept
-    /// for downgrade write-back only; `save` re-derives it from `sources`.
-    #[serde(default = "default_true")]
-    pub tool_opencode: bool,
-    /// DEPRECATED (T-916): folded into `sources` ("gemini" membership). Kept for
-    /// downgrade write-back only; `save` re-derives it from `sources`.
-    #[serde(default = "default_true")]
-    pub tool_gemini: bool,
     /// T-910 更新頻率: how often the quota APIs are polled over the network, in
     /// seconds. One of {30, 60, 180}; serde default 180 (the conservative
     /// cadence). Clamped on read via `refresh_secs_clamped` so a hand-edited
@@ -115,16 +110,13 @@ pub struct Settings {
     pub refresh_secs: u32,
 }
 
-fn default_true() -> bool {
-    true
-}
-
-/// The five known sources, in canonical display/order. Anything outside this set
-/// is dropped by `sanitize_sources` on load.
-pub const KNOWN_SOURCES: [&str; 5] = ["claude", "codex", "opencode", "gemini", "grok"];
+/// The known sources, in canonical display/order (T-917: OpenCode/Gemini removed
+/// as sources). Anything outside this set — including the removed ids — is
+/// dropped by `sanitize_sources` on load.
+pub const KNOWN_SOURCES: [&str; 3] = ["claude", "codex", "grok"];
 
 /// Fresh-install default: every source on (detect-and-show). Grok is included —
-/// T-916 was requested specifically to add it.
+/// T-916/T-917 was requested specifically to add it.
 fn default_sources() -> Vec<String> {
     KNOWN_SOURCES.iter().map(|s| s.to_string()).collect()
 }
@@ -142,17 +134,17 @@ fn sanitize_sources(sources: Vec<String>) -> Vec<String> {
     out
 }
 
-/// Derive `sources` from the legacy fields when a stored file predates T-916.
+/// Derive `sources` from the legacy fields when a stored file predates the
+/// multi-select (no `sources` key).
 ///
-/// Migration matrix (providers × tool flags → sources):
+/// Migration matrix (T-917 — OpenCode/Gemini are no longer sources, so the old
+/// `tool_opencode`/`tool_gemini` flags are ignored):
 ///   · providers "claude" → ["claude"]  (only the Claude half of the quota pair)
 ///   · providers "codex"  → ["codex"]
 ///   · anything else/"both"/unknown → ["claude","codex"]
-///   · then append "opencode" / "gemini" per the tool flags (absent key = true,
-///     matching their `default_true` serde default)
 ///   · then append "grok". Grok would normally default OFF on migration (the
-///     user never had it), but T-916 exists *because* this user asked for Grok,
-///     so migrating it ON is the request, not a surprise. Noted in the report.
+///     user never had it), but this ticket exists *because* this user asked for
+///     Grok, so migrating it ON is the request, not a surprise. Noted in report.
 fn derive_sources_from_legacy(obj: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
     let providers = obj.get("providers").and_then(|p| p.as_str()).unwrap_or("both");
     let mut out: Vec<String> = match providers {
@@ -160,13 +152,6 @@ fn derive_sources_from_legacy(obj: &serde_json::Map<String, serde_json::Value>) 
         "codex" => vec!["codex".into()],
         _ => vec!["claude".into(), "codex".into()],
     };
-    let tool_on = |key: &str| obj.get(key).and_then(|b| b.as_bool()).unwrap_or(true);
-    if tool_on("tool_opencode") {
-        out.push("opencode".into());
-    }
-    if tool_on("tool_gemini") {
-        out.push("gemini".into());
-    }
     out.push("grok".into());
     out
 }
@@ -239,9 +224,8 @@ impl Settings {
         self.sources.iter().any(|s| s == id)
     }
 
-    /// Re-derive the deprecated `providers` / `tool_opencode` / `tool_gemini`
-    /// fields from `sources` so a written file stays readable by a one-version
-    /// downgrade. Called from `save`.
+    /// Re-derive the deprecated `providers` field from `sources` so a written
+    /// file stays readable by a one-version downgrade. Called from `save`.
     ///
     /// `providers`: both quota providers selected → "both"; exactly one → that
     /// one; neither → "both" (the least-broken value for an old build, which has
@@ -255,8 +239,6 @@ impl Settings {
             _ => "both",
         }
         .into();
-        self.tool_opencode = self.has_source("opencode");
-        self.tool_gemini = self.has_source("gemini");
     }
 }
 
@@ -283,8 +265,6 @@ impl Default for Settings {
             share_style: default_share_style(),
             share_range: default_share_range(),
             share_size: default_share_size(),
-            tool_opencode: true,
-            tool_gemini: true,
             refresh_secs: default_refresh_secs(),
         }
     }
@@ -550,103 +530,63 @@ mod tests {
         assert_eq!(back.share_size, "story");
     }
 
-    // ── 階段 E fields (tool_opencode / tool_gemini) ────────────────────
-    //
-    // Every settings.json written before 階段 E lacks these keys; `#[serde(default
-    // = "default_true")]` must fill each with `true` so an existing install
-    // keeps detect-and-show behaviour rather than silently hiding a tool.
+    // ── 供應商多選 + migration (T-916, slimmed T-917) ──────────────────
 
     #[test]
-    fn defaults_for_stage_e_fields() {
-        let d = Settings::default();
-        assert!(d.tool_opencode);
-        assert!(d.tool_gemini);
+    fn fresh_default_has_three_sources_including_grok() {
+        assert_eq!(Settings::default().sources, vec!["claude", "codex", "grok"]);
     }
 
+    /// Migration matrix (T-917): a legacy file (no `sources`) derives the list
+    /// from the old `providers` filter and always migrates grok ON. The old
+    /// `tool_opencode`/`tool_gemini` flags are ignored — those sources are gone.
     #[test]
-    fn missing_stage_e_fields_deserialize_to_true() {
-        let s = load_from_str(r#"{ "autostart": true }"#);
-        assert!(s.tool_opencode);
-        assert!(s.tool_gemini);
-    }
-
-    #[test]
-    fn explicit_stage_e_fields_survive_a_save_load_round_trip() {
-        let s = Settings {
-            tool_opencode: false,
-            tool_gemini: false,
-            ..Settings::default()
-        };
-        let json = serde_json::to_string(&s).unwrap();
-        let back = load_from_str(&json);
-        assert!(!back.tool_opencode, "OpenCode 關閉被存檔洗掉了");
-        assert!(!back.tool_gemini, "Gemini 關閉被存檔洗掉了");
-    }
-
-    // ── T-916 sources multi-select + migration ─────────────────────────
-
-    #[test]
-    fn fresh_default_has_all_five_sources_including_grok() {
-        assert_eq!(
-            Settings::default().sources,
-            vec!["claude", "codex", "opencode", "gemini", "grok"]
-        );
-    }
-
-    /// Migration matrix: a legacy file (no `sources`) derives the list from the
-    /// old providers filter + tool flags, and always migrates grok ON (T-916 was
-    /// requested to add it).
-    #[test]
-    fn migrates_legacy_providers_and_tools_to_sources() {
-        // providers "both" + both tools on (the pre-T-916 default) → all five.
-        let s = load_from_str(r#"{ "providers": "both", "tool_opencode": true, "tool_gemini": true }"#);
-        assert_eq!(s.sources, vec!["claude", "codex", "opencode", "gemini", "grok"]);
-
-        // providers "claude" keeps only the Claude half of the quota pair.
-        let s = load_from_str(r#"{ "providers": "claude" }"#);
-        assert_eq!(s.sources, vec!["claude", "opencode", "gemini", "grok"]);
-
-        // providers "codex" keeps only Codex of the quota pair.
-        let s = load_from_str(r#"{ "providers": "codex" }"#);
-        assert_eq!(s.sources, vec!["codex", "opencode", "gemini", "grok"]);
-
-        // Tool flags off drop opencode / gemini; grok still migrates ON.
-        let s = load_from_str(
-            r#"{ "providers": "both", "tool_opencode": false, "tool_gemini": false }"#,
-        );
+    fn migrates_legacy_providers_to_sources() {
+        // providers "both" (the pre-multi-select default) → the quota pair + grok.
+        let s = load_from_str(r#"{ "providers": "both" }"#);
         assert_eq!(s.sources, vec!["claude", "codex", "grok"]);
 
-        // Only one tool off.
-        let s = load_from_str(r#"{ "providers": "both", "tool_gemini": false }"#);
-        assert_eq!(s.sources, vec!["claude", "codex", "opencode", "grok"]);
-    }
+        // providers "claude" keeps only the Claude half of the quota pair (+ grok).
+        let s = load_from_str(r#"{ "providers": "claude" }"#);
+        assert_eq!(s.sources, vec!["claude", "grok"]);
 
-    /// A legacy file with no tool keys at all: they default true (matching
-    /// `default_true`), so opencode/gemini migrate ON.
-    #[test]
-    fn migration_treats_missing_tool_flags_as_on() {
-        let s = load_from_str(r#"{ "providers": "both" }"#);
-        assert_eq!(s.sources, vec!["claude", "codex", "opencode", "gemini", "grok"]);
+        // providers "codex" keeps only Codex of the quota pair (+ grok).
+        let s = load_from_str(r#"{ "providers": "codex" }"#);
+        assert_eq!(s.sources, vec!["codex", "grok"]);
+
+        // The removed tool flags no longer add sources — they are simply ignored.
+        let s = load_from_str(
+            r#"{ "providers": "both", "tool_opencode": true, "tool_gemini": true }"#,
+        );
+        assert_eq!(s.sources, vec!["claude", "codex", "grok"]);
     }
 
     /// An empty settings file (a brand-new install writing {} first) migrates to
-    /// the full set — providers defaults to "both", tools to on, grok on.
+    /// the quota pair + grok — providers defaults to "both", grok on.
     #[test]
     fn empty_file_migrates_to_all_sources() {
-        assert_eq!(
-            load_from_str("{}").sources,
-            vec!["claude", "codex", "opencode", "gemini", "grok"]
-        );
+        assert_eq!(load_from_str("{}").sources, vec!["claude", "codex", "grok"]);
     }
 
     /// An explicit `sources` array always wins over the legacy fields and is only
-    /// sanitized (unknown ids dropped, duplicates collapsed, order preserved).
+    /// sanitized: unknown ids — including the removed "opencode"/"gemini" — are
+    /// dropped, duplicates collapsed, order preserved.
     #[test]
     fn explicit_sources_wins_and_is_sanitized() {
         let s = load_from_str(
             r#"{ "providers": "both", "sources": ["grok", "codex", "bogus", "grok", "gemini"] }"#,
         );
-        assert_eq!(s.sources, vec!["grok", "codex", "gemini"]);
+        assert_eq!(s.sources, vec!["grok", "codex"]);
+    }
+
+    /// A T-916 file still listing opencode/gemini loads with those dropped, so an
+    /// upgrade slims the selection to the surviving sources automatically.
+    #[test]
+    fn removed_sources_are_dropped_on_load() {
+        let s = load_from_str(
+            r#"{ "sources": ["claude", "codex", "opencode", "gemini", "grok"] }"#,
+        );
+        assert_eq!(s.sources, vec!["claude", "codex", "grok"]);
     }
 
     /// An explicit empty `sources` is honoured (nothing shown) — never re-filled
@@ -657,18 +597,16 @@ mod tests {
         assert!(s.sources.is_empty());
     }
 
-    /// `save` re-derives the deprecated fields from `sources` so a downgrade
-    /// reads a coherent file. Exercised via `sync_legacy_from_sources`.
+    /// `save` re-derives the deprecated `providers` field from `sources` so a
+    /// downgrade reads a coherent file. Exercised via `sync_legacy_from_sources`.
     #[test]
-    fn legacy_fields_track_sources_for_downgrade_safety() {
-        let mut s = Settings {
-            sources: vec!["claude".into(), "opencode".into()],
+    fn legacy_providers_tracks_sources_for_downgrade_safety() {
+        let mut claude_only = Settings {
+            sources: vec!["claude".into(), "grok".into()],
             ..Settings::default()
         };
-        s.sync_legacy_from_sources();
-        assert_eq!(s.providers, "claude");
-        assert!(s.tool_opencode);
-        assert!(!s.tool_gemini);
+        claude_only.sync_legacy_from_sources();
+        assert_eq!(claude_only.providers, "claude");
 
         let mut both = Settings {
             sources: vec!["claude".into(), "codex".into()],
@@ -684,7 +622,6 @@ mod tests {
         };
         none.sync_legacy_from_sources();
         assert_eq!(none.providers, "both");
-        assert!(!none.tool_opencode);
     }
 
     /// An explicit sources selection survives a save/load round-trip.

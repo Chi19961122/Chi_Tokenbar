@@ -42,9 +42,8 @@ const NAMED: Array<[string, string]> = [
   ["verifier", "var(--ink-300)"],
   // codex spans both a model family and its agent
   ["codex", "var(--ink-700)"],
-  // 階段 E multi-tool clients (agent keys "OpenCode" / "Gemini CLI")
-  ["opencode", "var(--ink-400)"],
-  ["gemini", "var(--ink-300)"],
+  // Grok usage (agent key "Grok CLI" / models "grok-*")
+  ["grok", "var(--ink-400)"],
 ];
 
 /** Color for a named series (model/agent), falling back to the index palette. */

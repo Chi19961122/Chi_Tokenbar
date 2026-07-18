@@ -137,6 +137,10 @@ export function pickIslandLimit(
 export function windowShort(l: Limit): string {
   if (l.id.endsWith(".5h")) return "5h";
   if (l.id.endsWith(".week")) return "wk";
+  // Grok's context-fill limit (T-917): a short "ctx" in the Usage digest. Grok
+  // never reaches the island itself (that's quota-sources-only), so this label
+  // only ever renders in the panel/digest, never on the pill.
+  if (l.id === "grok.ctx") return "ctx";
   if (l.id === "cc.opus") return "Opus";
   if (l.id === "cc.extra") return "Extra";
   if (l.id === "codex.credits") return "Cr";

@@ -37,6 +37,8 @@ export const SCENARIOS: Record<string, Snapshot> = {
     limit({ id: "cc.week", label: "Claude·Weekly", util: 41, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
     limit({ id: "cc.w.fable", label: "Claude·Fable", util: 5, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
     limit({ id: "cc.opus", label: "Claude·Opus", util: 18, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
+    // T-917: Grok's context-fill limit — panel/digest only, never the island.
+    limit({ id: "grok.ctx", label: "Grok·Context", util: 55, provider: "grok", status: "normal", resets_at: 0, window_secs: 0, absolute: [275_000, 500_000] }),
   ], "cc.week"),
 
   near: snap([
@@ -69,6 +71,8 @@ export const SCENARIOS: Record<string, Snapshot> = {
     limit({ id: "codex.5h", label: "Codex·5h", util: 0, provider: "codex", status: "idle", resets_at: 0, window_secs: 5 * 3600 }),
     limit({ id: "codex.week", label: "Codex·Weekly", util: 34, provider: "codex", status: "stale", resets_at: now + 2 * 86400, window_secs: 7 * 86400 }),
     limit({ id: "cc.week", label: "Claude·Weekly", util: 41, provider: "anthropic", status: "normal", resets_at: now + 5 * 86400, window_secs: 7 * 86400 }),
+    // Grok with no readable data yet → insufficient_data placeholder ("—", not 0%).
+    limit({ id: "grok.ctx", label: "Grok·Context", util: 0, provider: "grok", status: "insufficient_data", resets_at: 0, window_secs: 0 }),
   ], "cc.week"),
 
   empty: snap([], undefined),

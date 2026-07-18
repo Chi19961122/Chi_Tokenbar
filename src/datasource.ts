@@ -11,8 +11,9 @@ const DEFAULT_SETTINGS: Settings = {
   warn_pct: 75,
   crit_pct: 90,
   compact: false,
-  // T-916 default — every source on (mirrors config.rs `default_sources`).
-  sources: ["claude", "codex", "opencode", "gemini", "grok"],
+  // Default — every source on (mirrors config.rs `default_sources`; T-917
+  // slimmed the set to the two quota providers plus Grok).
+  sources: ["claude", "codex", "grok"],
   // DEPRECATED (T-916): kept only so the shape matches the backend's write-back.
   providers: "both",
   codex_usage_source: "local",
@@ -33,9 +34,6 @@ const DEFAULT_SETTINGS: Settings = {
   share_range: "week",
   // T-905 default — mirror config.rs `Settings::default()`.
   share_size: "auto",
-  // 階段 E defaults — mirror config.rs `Settings::default()` (detect-and-show).
-  tool_opencode: true,
-  tool_gemini: true,
   // T-910 default — conservative 180s cadence, mirror config.rs.
   refresh_secs: 180,
 };

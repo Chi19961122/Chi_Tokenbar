@@ -62,6 +62,26 @@ describe("buildQuotaSummary", () => {
     const groups = buildQuotaSummary([limit({ provider: "codex", id: "codex.5h" })]);
     expect(groups.map((g) => g.name)).toEqual(["Codex"]);
   });
+
+  // T-917: Grok's context-fill limit shows a "ctx" short in the digest, after
+  // the two quota providers, and renders "—" when there is no reading.
+  it("digests Grok's context limit as a trailing 'ctx' group", () => {
+    const groups = buildQuotaSummary([
+      ...LIMITS,
+      limit({ id: "grok.ctx", provider: "grok", label: "Grok·Context", util: 55 }),
+    ]);
+    expect(groups.map((g) => g.name)).toEqual(["Claude", "Codex", "Grok"]);
+    const grok = groups[2];
+    expect(grok.segs).toEqual([{ short: "ctx", pct: "45%" }]);
+  });
+
+  it("shows Grok '—' when the context reading is insufficient, never a fake 0%", () => {
+    const groups = buildQuotaSummary([
+      limit({ id: "grok.ctx", provider: "grok", util: 0, status: "insufficient_data" }),
+    ]);
+    expect(groups[0].name).toBe("Grok");
+    expect(groups[0].segs[0]).toEqual({ short: "ctx", pct: "—" });
+  });
 });
 
 describe("renderPanel summary variant", () => {
@@ -100,6 +120,24 @@ describe("renderPanel summary variant", () => {
     expect(root.querySelector(".gauge-row .gauge-value")?.textContent).toBe("62");
     expect(root.querySelector(".gauge-row .gauge-unit")?.textContent).toBe("%");
     expect(root.querySelector(".gauge-row .gauge-fill")?.getAttribute("style")).toContain("width:62%");
+  });
+
+  it("renders a Grok card with a per-session note instead of a reset time", () => {
+    const root = document.createElement("div");
+    renderPanel(root, snap([
+      limit({ id: "cc.5h", provider: "anthropic", util: 30 }),
+      limit({ id: "grok.ctx", provider: "grok", label: "Grok·Context", util: 55, resets_at: 0, window_secs: 0 }),
+    ]), { ...baseOpts, variant: "full" });
+
+    // Three cards? No — only Claude + Grok are present, each its own gauge card.
+    expect(root.querySelector(".gauge-card.prov-grok")).not.toBeNull();
+    // The Grok row shows the honest per-session note, never a "Resets…" line.
+    const grokRow = root.querySelector(".gauge-card.prov-grok .gauge-row");
+    const note = grokRow?.querySelector(".gauge-reset")?.textContent ?? "";
+    expect(note).toBe("Per-session; resets on new session");
+    expect(note).not.toContain("Resets");
+    // Context fill 55% → 45% left in the hero digits.
+    expect(grokRow?.querySelector(".gauge-value")?.textContent).toBe("45");
   });
 
   it("keeps unavailable data unknown and marks its provider degraded", () => {

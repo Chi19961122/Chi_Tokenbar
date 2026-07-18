@@ -6,7 +6,15 @@
 import claudeRaw from "./assets/claude-color.svg?raw";
 import codexRaw from "./assets/codex-color.svg?raw";
 
-export type ProviderKey = "anthropic" | "codex";
+export type ProviderKey = "anthropic" | "codex" | "grok";
+
+/** Grok's mark (T-917): the xAI / 𝕏 glyph, drawn monochrome in `currentColor`
+ *  so it inherits the row's provider color like the other icons — no bundled
+ *  brand asset needed. Built inline (not through `sized`) since it isn't a
+ *  1em-scaled lobe SVG with gradient ids to uniquify. */
+function grokIcon(size: number): string {
+  return `<svg class="picon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" fill="currentColor"/></svg>`;
+}
 
 // SVG paint servers (gradients) are looked up by document-global id, and defs
 // inside a display:none subtree don't render. The island and the panel each
@@ -27,5 +35,6 @@ function sized(raw: string, size: number): string {
 }
 
 export function providerIcon(p: ProviderKey, size = 12): string {
+  if (p === "grok") return grokIcon(size);
   return sized(p === "anthropic" ? claudeRaw : codexRaw, size);
 }

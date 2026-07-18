@@ -39,9 +39,12 @@ export const MANUAL_LOGIN_CMD = "claude auth login";
 const PROVIDER_META: Record<Provider, { name: string; cls: string }> = {
   anthropic: { name: "Claude Code", cls: "prov-claude" },
   codex: { name: "Codex", cls: "prov-codex" },
+  grok: { name: "Grok", cls: "prov-grok" },
 };
 const provClass = (l: Limit) => PROVIDER_META[l.provider].cls;
-const PROVIDER_ORDER: Provider[] = ["anthropic", "codex"];
+// Grok trails the two subscription-quota providers: its context-fill limit is a
+// different kind of reading, so it reads last in the list and the digest.
+const PROVIDER_ORDER: Provider[] = ["anthropic", "codex", "grok"];
 
 /** Display-name i18n keys per limit id (provider context comes from the group). */
 const LIMIT_NAME_KEYS = {
@@ -52,6 +55,7 @@ const LIMIT_NAME_KEYS = {
   "codex.5h": "limit.codex5h",
   "codex.week": "limit.codexWeek",
   "codex.credits": "limit.codexCredits",
+  "grok.ctx": "limit.grokCtx",
 } as const;
 const displayName = (l: Limit) => {
   const key = LIMIT_NAME_KEYS[l.id as keyof typeof LIMIT_NAME_KEYS];
@@ -123,6 +127,10 @@ function resetValue(l: Limit, opts: PanelOpts): string {
  */
 function rowNote(l: Limit, opts: PanelOpts): string {
   if (l.status === "source_failed") return l.hint ? escapeHtml(l.hint) : "";
+  // Grok's context fill has no reset schedule — it empties on a new session. Show
+  // that honestly instead of a reset countdown, so the semantic difference from a
+  // subscription quota is visible (T-917). Fixed copy, no interpolation.
+  if (l.provider === "grok") return t("note.grokSession");
   if (l.status === "locked") {
     if (l.resets_at <= 0) return t("note.locked");
     return opts.resetDisplay === "clock"
@@ -224,7 +232,7 @@ function list(limits: Limit[], opts: PanelOpts): string {
 
 /** Fixed-English provider labels for the summary line (mirrors the island's
  *  short labels — never localized, D1). */
-const SUMMARY_NAME: Record<Provider, string> = { anthropic: "Claude", codex: "Codex" };
+const SUMMARY_NAME: Record<Provider, string> = { anthropic: "Claude", codex: "Codex", grok: "Grok" };
 
 export interface QuotaSummarySeg {
   /** Fixed-English window short label ("5h", "wk", model name). */

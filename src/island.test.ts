@@ -64,6 +64,49 @@ describe("島嶼的隱藏鈕", () => {
   });
 });
 
+// ── T-917: Grok must never reach the island (quota-sources-only) ──────────
+
+describe("島嶼絕不顯示 Grok(額度來源限定)", () => {
+  /** Render the island for a snapshot that carries a Grok context-fill limit
+   *  alongside the quota pair, then read back what actually rendered. */
+  function islandWith(limits: Limit[]): HTMLElement {
+    const root = document.createElement("div");
+    renderIsland(root, { limits, worst_id: null, updated_at: 0, next_fetch_in: 30 }, {
+      mode: "both",
+      pinClaude: "auto",
+      pinCodex: "auto",
+      resetDisplay: "relative",
+      aux: "off",
+      tokPerMin: null,
+      costToday: null,
+      now: 0,
+      locale: "en",
+    });
+    return root;
+  }
+
+  it("快照含 grok.ctx 時,島嶼只畫 Claude/Codex,不畫 Grok", () => {
+    const root = islandWith([
+      lim({ id: "cc.5h", provider: "anthropic", util: 30 }),
+      lim({ id: "codex.5h", provider: "codex", util: 40 }),
+      // 55% context fill — a very visible number if it ever leaked in.
+      lim({ id: "grok.ctx", provider: "grok", util: 55, label: "Grok·Context" }),
+    ]);
+    // The Grok short label ("ctx") and its % must appear nowhere on the pill.
+    expect(root.textContent).not.toContain("ctx");
+    expect(root.textContent).not.toContain("45%"); // pctLeft(55)
+    // Exactly two provider capsule groups render (Claude + Codex), never a third.
+    expect(root.querySelectorAll(".igroup").length).toBe(2);
+    expect(root.querySelector(".prov-grok")).toBeNull();
+  });
+
+  it("只有 grok.ctx(額度對消失)時,島嶼是空膠囊,不畫 Grok", () => {
+    const root = islandWith([lim({ id: "grok.ctx", provider: "grok", util: 55 })]);
+    expect(root.textContent).not.toContain("ctx");
+    expect(root.querySelector(".prov-grok")).toBeNull();
+  });
+});
+
 describe("島嶼本體", () => {
   it("點島嶼(非按鈕處)仍然展開面板", () => {
     const pct = island().querySelector(".pct");

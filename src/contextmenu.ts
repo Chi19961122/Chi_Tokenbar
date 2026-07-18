@@ -77,9 +77,9 @@ function pinItems(
  * Quota-pair source toggles (T-916). The island only shows the two quota
  * providers, so the context menu keeps this minimal: independent Claude / Codex
  * toggles that add or remove the source from `settings.sources`. The full
- * five-source multi-select lives in Settings; the usage-only sources
- * (OpenCode/Gemini/Grok) never affect the island, so they are omitted here.
- * Brand names are shown verbatim (never localized — same rule as the chip row).
+ * source multi-select lives in Settings; Grok is a context-fill limit that never
+ * appears on the island, so it is omitted here (T-917). Brand names are shown
+ * verbatim (never localized — same rule as the chip row).
  */
 function providerItems(ctx: MenuCtx): Leaf[] {
   const src = ctx.settings.sources ?? [];

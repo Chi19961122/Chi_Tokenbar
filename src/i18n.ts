@@ -32,7 +32,7 @@ const en = {
   "settings.providersClaude": "Claude only",
   "settings.providersCodex": "Codex only",
   "settings.sources": "Sources",
-  "settings.sourcesNote": "Which tools to track. Quota for Claude/Codex; usage only for the rest.",
+  "settings.sourcesNote": "Which tools to track. Quota for Claude/Codex; context fill for Grok.",
   "settings.notifyAt": "Notify at",
   "settings.notifyNote": "Sends a system notification when usage crosses the threshold.",
   "settings.warn": "warn",
@@ -47,9 +47,6 @@ const en = {
   "settings.codexLive": "Live",
   "settings.codexAuto": "Auto (live first)",
   "settings.codexLocal": "Local session snapshot",
-  "settings.toolOpencode": "Include OpenCode",
-  "settings.toolGemini": "Include Gemini CLI",
-  "settings.toolNote": "Usage only, from local logs; shown when data is found.",
   "settings.refreshInterval": "Refresh interval",
   "settings.refreshIntervalNote": "Faster polling may hit rate limits; backs off automatically.",
   "settings.refreshInterval30": "30s",
@@ -136,6 +133,7 @@ const en = {
   "limit.codex5h": "5h window",
   "limit.codexWeek": "Weekly window",
   "limit.codexCredits": "Credits",
+  "limit.grokCtx": "Context window",
   "limit.weeklyModel": "Weekly · {name}",
 
   // Badges
@@ -149,6 +147,8 @@ const en = {
   "note.lockedResets": "Locked · resets {r}",
   "note.resets": "Resets {r}",
   "note.resetsIn": "Resets in {d}",
+  // Grok context-fill note — no reset schedule; empties on a new session (T-917).
+  "note.grokSession": "Per-session; resets on new session",
 
   // Island context menu (D4)
   "menu.pinClaude": "Pin Claude",
@@ -235,7 +235,7 @@ const zhTW = {
   "settings.providersClaude": "僅 Claude",
   "settings.providersCodex": "僅 Codex",
   "settings.sources": "供應商",
-  "settings.sourcesNote": "要追蹤哪些工具。Claude/Codex 有額度,其餘僅用量。",
+  "settings.sourcesNote": "要追蹤哪些工具。Claude/Codex 顯示額度,Grok 顯示 context 填充。",
   "settings.notifyAt": "通知門檻",
   "settings.notifyNote": "用量超過門檻時發送系統通知。",
   "settings.warn": "警告",
@@ -250,9 +250,6 @@ const zhTW = {
   "settings.codexLive": "即時",
   "settings.codexAuto": "自動(優先即時)",
   "settings.codexLocal": "本機工作階段快照",
-  "settings.toolOpencode": "納入 OpenCode",
-  "settings.toolGemini": "納入 Gemini CLI",
-  "settings.toolNote": "僅用量,取自本機記錄;有資料才顯示。",
   "settings.refreshInterval": "更新頻率",
   "settings.refreshIntervalNote": "更快=更容易被限流,遇 429 會自動放慢。",
   "settings.refreshInterval30": "30秒",
@@ -332,6 +329,7 @@ const zhTW = {
   "limit.codex5h": "5 小時視窗",
   "limit.codexWeek": "每週視窗",
   "limit.codexCredits": "點數",
+  "limit.grokCtx": "Context 視窗",
   "limit.weeklyModel": "每週 · {name}",
 
   "badge.unavailable": "無法取得",
@@ -343,6 +341,7 @@ const zhTW = {
   "note.lockedResets": "已鎖定 · {r} 重置",
   "note.resets": "{r} 重置",
   "note.resetsIn": "{d} 後重置",
+  "note.grokSession": "單一 session 用量,新對話歸零",
 
   "menu.pinClaude": "釘選 Claude",
   "menu.pinCodex": "釘選 Codex",

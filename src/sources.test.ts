@@ -10,10 +10,10 @@ describe("sources helpers (T-916)", () => {
 
   it("islandMode derives from the two quota providers only", () => {
     expect(islandMode(["claude", "codex", "grok"])).toBe("both");
-    expect(islandMode(["claude", "opencode"])).toBe("claude");
+    expect(islandMode(["claude", "grok"])).toBe("claude");
     expect(islandMode(["codex"])).toBe("codex");
-    // Usage-only sources produce no island quota → empty state.
-    expect(islandMode(["opencode", "gemini", "grok"])).toBe("none");
+    // Grok is a context-fill limit, not island quota → grok-only is empty state.
+    expect(islandMode(["grok"])).toBe("none");
     expect(islandMode([])).toBe("none");
   });
 

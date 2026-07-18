@@ -164,9 +164,15 @@ function renderIslandNow() {
 function visibleLimits(): Limit[] {
   const src = settings?.sources ?? ALL_SOURCES;
   const limits = lastSnap?.limits ?? [];
-  // Only the two quota providers surface as limits; gate each on its source.
+  // Gate each limit on its own source: Claude/Codex quota + Grok's context-fill
+  // limit (T-917). Grok limits reach the panel/digest but never the island (the
+  // island renderer filters to the two quota providers on its own).
   return limits.filter((l) =>
-    l.provider === "anthropic" ? hasSource(src, "claude") : hasSource(src, "codex"),
+    l.provider === "anthropic"
+      ? hasSource(src, "claude")
+      : l.provider === "codex"
+        ? hasSource(src, "codex")
+        : hasSource(src, "grok"),
   );
 }
 
@@ -579,8 +585,6 @@ async function renderSettings() {
         ${segMultiHtml("s-sources", s.sources ?? [], [
           ["claude", "Claude"],
           ["codex", "Codex"],
-          ["opencode", "OpenCode"],
-          ["gemini", "Gemini"],
           ["grok", "Grok"],
         ])}
       </div>
