@@ -28,6 +28,8 @@ const DEFAULT_SETTINGS: Settings = {
   // 階段 D defaults — mirror config.rs `Settings::default()`.
   share_style: "statement",
   share_range: "week",
+  // T-905 default — mirror config.rs `Settings::default()`.
+  share_size: "auto",
   // 階段 E defaults — mirror config.rs `Settings::default()` (detect-and-show).
   tool_opencode: true,
   tool_gemini: true,

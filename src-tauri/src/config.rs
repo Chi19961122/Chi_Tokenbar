@@ -82,6 +82,10 @@ pub struct Settings {
     /// "today" | "week" | "month". Defaults to "week".
     #[serde(default = "default_share_range")]
     pub share_range: String,
+    /// T-905 戰報尺寸: which share-card size the report panel last used —
+    /// "auto" (1200×675 landscape) | "story" (9:16 portrait). Defaults to "auto".
+    #[serde(default = "default_share_size")]
+    pub share_size: String,
     /// 階段 E 多工具:whether OpenCode local usage is scanned into analytics.
     /// Defaults to `true` (detect-and-show); off means it is never scanned and
     /// never appears in byAgent/legend/accounts. Independent of `providers`
@@ -130,6 +134,10 @@ fn default_share_range() -> String {
     "week".into()
 }
 
+fn default_share_size() -> String {
+    "auto".into()
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -151,6 +159,7 @@ impl Default for Settings {
             theme: default_theme(),
             share_style: default_share_style(),
             share_range: default_share_range(),
+            share_size: default_share_size(),
             tool_opencode: true,
             tool_gemini: true,
         }
@@ -373,6 +382,8 @@ mod tests {
         let d = Settings::default();
         assert_eq!(d.share_style, "statement");
         assert_eq!(d.share_range, "week");
+        // T-905: the new size field defaults to the original landscape.
+        assert_eq!(d.share_size, "auto");
     }
 
     #[test]
@@ -380,6 +391,8 @@ mod tests {
         let s = load_from_str(r#"{ "autostart": true }"#);
         assert_eq!(s.share_style, "statement");
         assert_eq!(s.share_range, "week");
+        // T-905: a pre-905 file lacks share_size → serde default "auto".
+        assert_eq!(s.share_size, "auto");
     }
 
     #[test]
@@ -387,12 +400,14 @@ mod tests {
         let s = Settings {
             share_style: "fuel".into(),
             share_range: "month".into(),
+            share_size: "story".into(),
             ..Settings::default()
         };
         let json = serde_json::to_string(&s).unwrap();
         let back = load_from_str(&json);
         assert_eq!(back.share_style, "fuel");
         assert_eq!(back.share_range, "month");
+        assert_eq!(back.share_size, "story");
     }
 
     // ── 階段 E fields (tool_opencode / tool_gemini) ────────────────────

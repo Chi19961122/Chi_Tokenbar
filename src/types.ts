@@ -100,6 +100,9 @@ export interface Settings {
   share_style: string;
   /** 階段 D 戰報 Share: last-used range ("today"|"week"|"month"). Defaults to "week". */
   share_range: string;
+  /** T-905 戰報尺寸: last-used share-card size ("auto"|"story"). "story" is the
+   *  9:16 portrait. Defaults to "auto". */
+  share_size: string;
   /** 階段 E 多工具: scan OpenCode local usage into analytics. Default true
    *  (detect-and-show). Independent of `providers`. */
   tool_opencode: boolean;

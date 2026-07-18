@@ -197,6 +197,8 @@ const en = {
   "share.style": "Style",
   "share.range": "Range",
   "share.quotaNote": "Quota line",
+  "share.size": "Size",
+  "share.sizeAuto": "Current",
 } as const;
 
 // ── 繁體中文 (checked exhaustively against `en`) ───────────────────────
@@ -369,6 +371,8 @@ const zhTW = {
   "share.style": "樣式",
   "share.range": "範圍",
   "share.quotaNote": "額度行",
+  "share.size": "尺寸",
+  "share.sizeAuto": "目前",
 } satisfies Record<keyof typeof en, string>;
 
 export type I18nKey = keyof typeof en;

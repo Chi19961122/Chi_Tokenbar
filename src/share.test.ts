@@ -246,4 +246,21 @@ describe("renderShareCard — all six styles", () => {
       expect(card.textContent ?? "").not.toContain("secret-project");
     }
   });
+
+  it("adds the sh-916 class only for the story size (T-905)", () => {
+    for (const style of ALL_STYLES) {
+      const auto = renderShareCard(style, data, "en", { fuelGroup: "model", size: "auto" });
+      expect(auto.classList.contains("sh-916"), `${style} auto`).toBe(false);
+      const story = renderShareCard(style, data, "en", { fuelGroup: "model", size: "story" });
+      expect(story.classList.contains("sh-916"), `${style} story`).toBe(true);
+      // The story variant keeps its template identity + the same content.
+      expect(story.className).toContain(auto.className.split(" ")[0]);
+      expect(story.textContent ?? "").not.toContain("secret-project");
+    }
+  });
+
+  it("defaults to auto (no sh-916) when size is omitted", () => {
+    const card = renderShareCard("statement", data, "en");
+    expect(card.classList.contains("sh-916")).toBe(false);
+  });
 });

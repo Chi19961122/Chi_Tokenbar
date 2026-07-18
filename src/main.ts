@@ -27,7 +27,7 @@ import { renderPanel } from "./panel";
 import { showIslandMenu } from "./contextmenu";
 import { renderAnalytics } from "./analytics";
 import { renderSharePanel } from "./share-panel";
-import type { ShareStyle } from "./share";
+import type { ShareStyle, ShareSize } from "./share";
 import { fmtTokens, nowSecs } from "./format";
 import { getLocale, resolveLocale, setLocale, t } from "./i18n";
 import { applyTheme, watchSystemTheme } from "./theme";
@@ -48,6 +48,8 @@ const ui = {
   // shareQuotaNote null → follow the style default (island_card on, else off).
   shareStyle: "statement" as ShareStyle,
   shareRange: "week" as "today" | "week" | "month",
+  // T-905 戰報尺寸: "auto" (1200×675) or "story" (9:16 portrait). Persisted.
+  shareSize: "auto" as ShareSize,
   shareFuelGroup: "model" as "model" | "agent",
   shareQuotaNote: null as boolean | null,
   // Usage-tab quota summary expanded? Session-only (not persisted): the Usage
@@ -221,6 +223,7 @@ function persistShare(): void {
   if (!settings) return;
   settings.share_style = ui.shareStyle;
   settings.share_range = ui.shareRange;
+  settings.share_size = ui.shareSize;
   void setSettings(settings);
 }
 
@@ -235,6 +238,7 @@ function paintReport(a: Analytics): void {
     locale: getLocale(),
     style,
     range: ui.shareRange,
+    size: ui.shareSize,
     fuelGroup: ui.shareFuelGroup,
     quotaNote,
     setStyle: (s) => {
@@ -247,6 +251,11 @@ function paintReport(a: Analytics): void {
       ui.shareRange = r;
       persistShare();
       void renderAnalyticsNow();
+    },
+    setSize: (s) => {
+      ui.shareSize = s;
+      persistShare();
+      paintReport(a);
     },
     setFuelGroup: (g) => {
       ui.shareFuelGroup = g;
@@ -941,6 +950,7 @@ async function boot() {
   )
     ? (settings.share_range as "today" | "week" | "month")
     : "week";
+  ui.shareSize = settings.share_size === "story" ? "story" : "auto";
   ui.compact = settings.compact;
   document.body.classList.toggle("compact", ui.compact);
   renderTabs();

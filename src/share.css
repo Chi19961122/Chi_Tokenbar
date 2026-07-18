@@ -231,6 +231,124 @@
 .shwa-seal span { font-family: 'Yu Mincho', 'Songti SC', 'SimSun', serif; font-weight: 900; font-size: 76px; line-height: 1; color: var(--share-surface); }
 .shwa-foot { position: absolute; left: 244px; bottom: 56px; font-weight: 500; font-size: 11px; letter-spacing: 2px; color: var(--share-muted); }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * T-905 — 9:16 story portrait variants (360×640 CSS px → export 1080×1920 @3×).
+ * Same markup as landscape; the `.sh-916` class re-lays-out each template for a
+ * phone-glanced story: hero numbers dominate, secondary rows breathe. Cards stay
+ * theme-invariant — everything below reads the self-pinned `--share-*` palette
+ * only, never a global token. Two-class selectors (`.xxx-card.sh-916` /
+ * `.sh-916 .child`) outrank the single-class landscape rules above.
+ * ═══════════════════════════════════════════════════════════════════════ */
+:is(.shst-card, .shdx-card, .shmn-card, .shfl-card, .shic-card, .shwa-card).sh-916 {
+  width: 360px; height: 640px;
+}
+
+/* ── statement · portrait ─────────────────────────────────────────────── */
+.shst-card.sh-916 { padding: 40px 32px 32px; }
+.sh-916 .shst-top { flex-direction: column; align-items: flex-start; gap: 8px; padding-bottom: 14px; }
+.sh-916 .shst-eyebrow { font-size: 13px; }
+.sh-916 .shst-eyebrow small { margin-top: 5px; }
+.sh-916 .shst-period { text-align: left; }
+.sh-916 .shst-hero { flex-direction: column; align-items: stretch; gap: 0; margin-top: 26px; }
+/* 50px keeps the grouped total dominant while leaving headroom for a heavy
+ * monthly figure (9-digit "100,000,000" still fits the 296px content width). */
+.sh-916 .shst-tokens .num { font-size: 50px; }
+.sh-916 .shst-tokens .sub { margin-top: 10px; }
+.sh-916 .shst-cost { padding-left: 0; border-left: none; margin-bottom: 0; margin-top: 22px; padding-top: 18px; border-top: 1.5px solid var(--share-border); }
+.sh-916 .shst-cost .num { font-size: 38px; }
+.sh-916 .shst-cost .num i { font-size: 22px; }
+.sh-916 .shst-table { padding-top: 20px; }
+.sh-916 .shst-thead { font-size: 10px; }
+.sh-916 .shst-row { padding: 6px 0; }
+.sh-916 .shst-row .nm { min-width: 70px; font-size: 14px; }
+.sh-916 .shst-row .lead { margin: 0 8px; }
+.sh-916 .shst-row .pct { width: 34px; margin-right: 8px; font-size: 12px; }
+.sh-916 .shst-row .val { width: 90px; font-size: 15px; }
+.sh-916 .shst-foot { margin-top: 20px; padding-top: 14px; }
+.sh-916 .shst-brand { font-size: 16px; }
+
+/* ── diagnostics · portrait ───────────────────────────────────────────── */
+.shdx-card.sh-916 { padding: 34px 28px 30px; }
+.sh-916 .shdx-body { margin-top: 40px; }
+.sh-916 .shdx-cmd { font-size: 15px; }
+.sh-916 .shdx-comment { font-size: 11px; }
+.sh-916 .shdx-kv { margin-top: 40px; gap: 15px; }
+.sh-916 .shdx-kv .line { font-size: 15px; }
+.sh-916 .shdx-kv .v.big { font-size: 25px; }
+.sh-916 .shdx-kv .u { font-size: 12px; }
+.sh-916 .shdx-tbl { margin-top: 40px; padding: 16px 0; }
+.sh-916 .shdx-tbl .hd, .sh-916 .shdx-tbl .tr { grid-template-columns: 14px 84px 1fr 40px; column-gap: 6px; font-size: 13px; padding: 8px 0; }
+.sh-916 .shdx-tbl .hd { font-size: 10px; padding-bottom: 9px; }
+.sh-916 .shdx-tbl .num { padding-right: 8px; }
+.sh-916 .shdx-foot { padding-top: 16px; }
+.sh-916 .shdx-brand { font-size: 15px; }
+
+/* ── minimal · portrait ───────────────────────────────────────────────── */
+.shmn-card.sh-916 { padding: 48px 36px 40px; }
+.sh-916 .shmn-tag { font-size: 12px; }
+.sh-916 .shmn-cost { font-size: 13px; }
+.sh-916 .shmn-big { font-size: 116px; }
+.sh-916 .shmn-cap { font-size: 14px; margin-top: 16px; }
+.sh-916 .shmn-split { margin-top: 30px; gap: 12px; max-width: none; }
+.sh-916 .shmn-brow { gap: 12px; }
+.sh-916 .shmn-brow .nm { width: 68px; font-size: 12px; }
+.sh-916 .shmn-brow .tk { width: 62px; }
+.sh-916 .shmn-foot { margin-top: 30px; }
+.sh-916 .shmn-brand { font-size: 15px; }
+
+/* ── fuel · portrait ──────────────────────────────────────────────────── */
+.shfl-card.sh-916 .shfl-inner { padding: 36px 30px 30px; }
+.sh-916 .shfl-head { flex-direction: column; align-items: stretch; gap: 16px; }
+.sh-916 .shfl-name b { font-size: 20px; letter-spacing: 3px; }
+.sh-916 .shfl-name span { font-size: 11px; letter-spacing: 2px; }
+.sh-916 .shfl-chip { align-self: flex-start; }
+.sh-916 .shfl-period { margin-top: 18px; font-size: 13px; }
+.sh-916 .shfl-board { margin-top: 12px; gap: 2px; }
+.sh-916 .shfl-row { grid-template-columns: 1fr auto; column-gap: 10px; padding: 9px 0; }
+.sh-916 .shfl-dots { display: none; }
+.sh-916 .shfl-mdl { font-size: 16px; letter-spacing: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sh-916 .shfl-nums { gap: 12px; }
+.sh-916 .shfl-tok { font-size: 25px; min-width: 0; }
+.sh-916 .shfl-tok em { font-size: 13px; }
+.sh-916 .shfl-usd { font-size: 19px; min-width: 0; }
+.sh-916 .shfl-usd:before { margin-right: 10px; }
+.sh-916 .shfl-total { margin-top: 14px; padding: 14px 18px; }
+.sh-916 .shfl-total .lbl { font-size: 12px; letter-spacing: 2px; }
+.sh-916 .shfl-total .val { font-size: 20px; }
+.sh-916 .shfl-total .val u { font-size: 12px; }
+
+/* ── island_card · portrait (sparse → centered, quota pinned bottom) ───── */
+.shic-card.sh-916 { padding: 48px 34px 40px; }
+.sh-916 .shic-hero { margin-top: auto; }
+.sh-916 .shic-htag { font-size: 12px; }
+.sh-916 .shic-big { flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 12px; }
+.sh-916 .shic-big b { font-size: 74px; }
+.sh-916 .shic-big b em { font-size: 34px; }
+.sh-916 .shic-big .cost { font-size: 26px; }
+.sh-916 .shic-bars { flex: none; margin-top: 40px; gap: 16px; }
+.sh-916 .shic-brow { grid-template-columns: 82px 1fr 62px; column-gap: 12px; }
+.sh-916 .shic-track { height: 14px; }
+.sh-916 .shic-foot { margin-top: auto; padding-top: 20px; }
+
+/* ── wa · portrait (drop the landscape side-rail; restack vertically) ──── */
+.shwa-card.sh-916 { display: flex; flex-direction: column; }
+.sh-916 .shwa-rule { display: none; }
+.sh-916 .shwa-side { position: static; width: auto; display: flex; align-items: center; justify-content: space-between; padding: 44px 30px 0; }
+.sh-916 .shwa-vert { writing-mode: horizontal-tb; text-orientation: mixed; margin-top: 0; font-size: 10px; letter-spacing: 3px; }
+.sh-916 .shwa-inner { position: static; height: auto; padding: 26px 30px 0; }
+.sh-916 .shwa-head { gap: 6px; }
+.sh-916 .shwa-main { flex: none; margin-top: 22px; }
+/* wa prints the full grouped total + inline "tok" on one line, so it needs a
+ * smaller hero than the abbreviated cards to clear the 300px content width. */
+.sh-916 .shwa-num { font-size: 42px; }
+.sh-916 .shwa-num em { font-size: 18px; margin-left: 8px; }
+.sh-916 .shwa-cost { font-size: 19px; margin-top: 12px; }
+.sh-916 .shwa-split { margin-top: 30px; max-width: none; gap: 11px; }
+.sh-916 .shwa-srow { grid-template-columns: 84px 1fr 56px; column-gap: 12px; }
+.sh-916 .shwa-foot { position: static; left: auto; bottom: auto; margin-top: auto; padding: 0 30px 40px; }
+.sh-916 .shwa-seal { right: 30px; bottom: 34px; width: 84px; height: 84px; }
+.sh-916 .shwa-seal span { font-size: 52px; }
+
 /* ── report panel (app UI — not the export card) ──────────────────────── */
 .sharep { display: flex; flex-direction: column; gap: 10px; color: var(--share-ink); }
 .sharep-preview { width: 100%; overflow: hidden; border-radius: 10px; background: var(--share-bg); border: 1px solid var(--share-border); }

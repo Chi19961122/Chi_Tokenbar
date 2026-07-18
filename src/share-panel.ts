@@ -10,7 +10,14 @@ import type { Analytics, AnalyticsRange, Limit } from "./types";
 import type { Locale } from "./i18n";
 import { tl } from "./i18n";
 import { isTauri } from "./datasource";
-import { buildShareData, renderShareCard, type ShareStyle } from "./share";
+import { buildShareData, renderShareCard, type ShareStyle, type ShareSize } from "./share";
+
+/** Card geometry per size. Landscape stays 1200×675; story is exact 9:16. The
+ *  export raster multiplies these by pixelRatio (1 landscape, 3 story → 1080×1920). */
+const CARD_DIM: Record<ShareSize, { w: number; h: number; ratio: number }> = {
+  auto: { w: 1200, h: 675, ratio: 1 },
+  story: { w: 360, h: 640, ratio: 3 },
+};
 
 const STYLES: [ShareStyle, string][] = [
   ["statement", "statement"],
@@ -27,11 +34,13 @@ export interface SharePanelOpts {
   locale: Locale;
   style: ShareStyle;
   range: AnalyticsRange;
+  size: ShareSize;
   fuelGroup: "model" | "agent";
   /** Effective quota-note flag (main.ts resolves the style default + override). */
   quotaNote: boolean;
   setStyle: (s: ShareStyle) => void;
   setRange: (r: AnalyticsRange) => void;
+  setSize: (s: ShareSize) => void;
   setFuelGroup: (g: "model" | "agent") => void;
   setQuotaNote: (on: boolean) => void;
 }
@@ -77,12 +86,18 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
          </div>`
       : "";
 
+  const sizeSeg = `<div class="seg" data-seg="ssize">
+      <button data-ssize="auto" class="${o.size === "auto" ? "on" : ""}">${T("share.sizeAuto")}</button>
+      <button data-ssize="story" class="${o.size === "story" ? "on" : ""}">9:16</button>
+    </div>`;
+
   container.innerHTML = `
     <div class="sharep">
       <div class="sharep-preview"><div class="sharep-scale" id="sharep-scale"></div></div>
       <div class="sharep-styles">${styleBtns}</div>
       <div class="sharep-row">
         <div class="seg" data-seg="srange">${rangeBtns}</div>
+        ${sizeSeg}
         ${fuelSeg}
       </div>
       <label class="sharep-toggle">
@@ -96,16 +111,25 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
       <div class="sharep-status" id="sharep-status"></div>
     </div>`;
 
-  // Live preview: render the real 1200×675 card, scale it to fit the box width.
+  // Live preview: render the real card at its native size, scale to fit the box
+  // width. The landscape card is wider than tall; the story card is taller, so
+  // we scale-to-width and let the mat grow to the scaled height (it scrolls with
+  // the panel — a story preview is tall but reads better full-width than shrunk
+  // to fit a fixed height).
+  const dim = CARD_DIM[o.size];
   const scaleHost = container.querySelector<HTMLElement>("#sharep-scale")!;
-  const preview = renderShareCard(o.style, data, o.locale, { fuelGroup: o.fuelGroup });
+  scaleHost.style.width = `${dim.w}px`;
+  const preview = renderShareCard(o.style, data, o.locale, {
+    fuelGroup: o.fuelGroup,
+    size: o.size,
+  });
   scaleHost.appendChild(preview);
   const fit = () => {
     const box = scaleHost.parentElement as HTMLElement;
     const w = box.clientWidth || 340;
-    const scale = w / 1200;
+    const scale = w / dim.w;
     scaleHost.style.transform = `scale(${scale})`;
-    scaleHost.style.height = `${675 * scale}px`;
+    scaleHost.style.height = `${dim.h * scale}px`;
   };
   fit();
   // Width is 0 until layout settles on first paint inside a freshly-shown panel.
@@ -125,6 +149,10 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
   container.querySelector("[data-seg='srange']")!.addEventListener("click", (e) => {
     const b = (e.target as HTMLElement).closest("[data-srange]");
     if (b) o.setRange(b.getAttribute("data-srange") as AnalyticsRange);
+  });
+  container.querySelector("[data-seg='ssize']")!.addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest("[data-ssize]");
+    if (b) o.setSize(b.getAttribute("data-ssize") as ShareSize);
   });
   const fuelSegEl = container.querySelector("[data-seg='fuelgroup']");
   if (fuelSegEl)
@@ -147,17 +175,18 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
     holder.style.left = "-99999px";
     holder.style.top = "0";
     document.body.appendChild(holder);
-    const card = renderShareCard(o.style, data, o.locale, { fuelGroup: o.fuelGroup });
+    const card = renderShareCard(o.style, data, o.locale, {
+      fuelGroup: o.fuelGroup,
+      size: o.size,
+    });
     holder.appendChild(card);
     try {
+      // Landscape → 1200×675 @1×; story → 360×640 @3× = 1080×1920 (social story).
+      const { w, h, ratio } = CARD_DIM[o.size];
+      const opts = { width: w, height: h, pixelRatio: ratio, cacheBust: true };
       const { toPng, toBlob } = await import("html-to-image");
-      const dataUrl = await toPng(card, {
-        width: 1200,
-        height: 675,
-        pixelRatio: 1,
-        cacheBust: true,
-      });
-      const blob = await toBlob(card, { width: 1200, height: 675, pixelRatio: 1, cacheBust: true });
+      const dataUrl = await toPng(card, opts);
+      const blob = await toBlob(card, opts);
       return { dataUrl, blob };
     } finally {
       holder.remove();
@@ -165,7 +194,8 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
   };
 
   container.querySelector("#sharep-save")!.addEventListener("click", async () => {
-    const filename = `tokenbar-${o.range}-${todayStamp()}.png`;
+    const sizeTag = o.size === "story" ? "-9x16" : "";
+    const filename = `tokenbar-${o.range}${sizeTag}-${todayStamp()}.png`;
     try {
       const { dataUrl } = await rasterize();
       if (isTauri()) {

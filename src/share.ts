@@ -25,6 +25,11 @@ export type ShareStyle =
   | "island_card"
   | "wa";
 
+/** Share-card aspect: "auto" is the original 1200×675 landscape; "story" is the
+ *  9:16 portrait (360×640 CSS px) social-story variant. Toggled in the report
+ *  panel and persisted as `share_size`. Adds the `sh-916` class to the card. */
+export type ShareSize = "auto" | "story";
+
 export interface ShareSplit {
   name: string;
   tokens: number;
@@ -231,25 +236,32 @@ export function renderShareCard(
   style: ShareStyle,
   data: ShareData,
   locale: Locale,
-  opts?: { fuelGroup?: "model" | "agent" },
+  opts?: { fuelGroup?: "model" | "agent"; size?: ShareSize },
 ): HTMLElement {
   const T = (key: Parameters<typeof tl>[1], vars?: Record<string, string | number>) =>
     tl(locale, key, vars);
 
-  switch (style) {
-    case "statement":
-      return statementCard(data, T);
-    case "diagnostics":
-      return diagnosticsCard(data, T);
-    case "minimal":
-      return minimalCard(data, T);
-    case "fuel":
-      return fuelCard(data, T, opts?.fuelGroup ?? "model");
-    case "island_card":
-      return islandCard(data, T);
-    case "wa":
-      return waCard(data, T);
-  }
+  const card = (() => {
+    switch (style) {
+      case "statement":
+        return statementCard(data, T);
+      case "diagnostics":
+        return diagnosticsCard(data, T);
+      case "minimal":
+        return minimalCard(data, T);
+      case "fuel":
+        return fuelCard(data, T, opts?.fuelGroup ?? "model");
+      case "island_card":
+        return islandCard(data, T);
+      case "wa":
+        return waCard(data, T);
+    }
+  })();
+
+  // Portrait 9:16 story variant: the same markup re-lays-out under the `sh-916`
+  // class (see share.css). Landscape ("auto") keeps the original geometry.
+  if ((opts?.size ?? "auto") === "story") card.classList.add("sh-916");
+  return card;
 }
 
 type TFn = (key: Parameters<typeof tl>[1], vars?: Record<string, string | number>) => string;
