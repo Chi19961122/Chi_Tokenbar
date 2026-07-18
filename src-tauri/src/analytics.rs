@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -290,11 +290,42 @@ impl Acc {
         cost: f64,
     ) {
         let total = input + cached + output + reasoning;
-        if total == 0 {
+        // `book` records every total dimension; breakdown/by_kind are added only
+        // when the row was actually booked (non-zero, valid timestamp).
+        if !self.book(ts, model, agent, project, total, cost) {
             return;
         }
+        self.breakdown.input += input;
+        self.breakdown.cached += cached;
+        self.breakdown.output += output;
+        self.breakdown.reasoning += reasoning;
+        if let Some(k) = kind {
+            *self.by_kind.entry(k.to_string()).or_default() += total;
+        }
+    }
+
+    /// T-916 Grok: a source that reports only a cumulative *total* per event with
+    /// no input/cached/output/reasoning split. Book the total into every total
+    /// dimension (total_tokens, by_model, by_agent, hourly, by_project, recent),
+    /// but deliberately NOT into `breakdown` or `by_kind` — inventing an
+    /// input/output category for Grok would be a lie (硬規定:無法拆分/無法分類
+    /// 就不出假類別). Caller passes cost 0.0 (no public Grok pricing), so est.
+    /// cost knowingly undercounts when Grok is selected.
+    fn add_total_only(&mut self, ts: i64, model: &str, agent: &str, project: &str, total: u64, cost: f64) {
+        self.book(ts, model, agent, project, total, cost);
+    }
+
+    /// Shared booking for every total dimension. Returns whether the row was
+    /// booked (false when the total is zero or the timestamp is invalid), so the
+    /// caller knows whether to add its breakdown/kind detail. This is exactly the
+    /// aggregation `add_with_cost` did inline before Grok needed a total-only path
+    /// — order preserved so existing behaviour is unchanged.
+    fn book(&mut self, ts: i64, model: &str, agent: &str, project: &str, total: u64, cost: f64) -> bool {
+        if total == 0 {
+            return false;
+        }
         let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) else {
-            return;
+            return false;
         };
         let day = self
             .days
@@ -316,21 +347,14 @@ impl Acc {
             .entry((local.format("%Y-%m-%d").to_string(), local.hour() as u8))
             .or_default() += total;
 
-        self.breakdown.input += input;
-        self.breakdown.cached += cached;
-        self.breakdown.output += output;
-        self.breakdown.reasoning += reasoning;
-
         if !project.is_empty() {
             *self.by_project.entry(project.to_string()).or_default() += total;
-        }
-        if let Some(k) = kind {
-            *self.by_kind.entry(k.to_string()).or_default() += total;
         }
 
         if self.now - ts <= 600 {
             self.recent_tokens += total;
         }
+        true
     }
 }
 
@@ -391,82 +415,66 @@ fn records_for(acc: &Acc, today: chrono::NaiveDate, current_hour: u8) -> Records
     }
 }
 
-// ── display filter (Settings::providers) ─────────────────────────────────
+// ── source gating (Settings::sources) ────────────────────────────────────
 //
 // Analytics is the one consumer that does not read the Snapshot — it scans
-// local JSONL directly — so the scheduler's single filter node cannot reach
-// it and it has to honour the setting itself.
-//
-// Both helpers mirror lib::apply_provider_filter's contract: only an exact
-// "claude"/"codex" narrows anything, every unknown value scans everything.
-// Never let a stale setting empty the page.
+// local JSONL directly — so the scheduler's single filter node cannot reach it
+// and it has to honour the selection itself. T-916 unified the old
+// providers-filter + tool toggles into one `sources` list: a source is scanned
+// iff it is a member. Membership is explicit — an absent source is never
+// scanned, and an empty list yields an honest empty page (no "unknown ⇒ show
+// everything" fallback; that lived in the string filter this replaced).
 
-fn scans_codex(filter: &str) -> bool {
-    filter != "claude"
+fn wants(sources: &[String], id: &str) -> bool {
+    sources.iter().any(|s| s == id)
 }
 
-fn scans_claude(filter: &str) -> bool {
-    filter != "codex"
-}
-
-fn filter_accounts(
-    filter: &str,
-    tool_opencode: bool,
-    tool_gemini: bool,
-    accounts: Vec<Account>,
-) -> Vec<Account> {
+fn filter_accounts(sources: &[String], accounts: Vec<Account>) -> Vec<Account> {
     accounts
         .into_iter()
         .filter(|a| match a.provider.as_str() {
-            "anthropic" => scans_claude(filter),
-            "codex" => scans_codex(filter),
-            // 階段 E: gated by their own toggle, not the anthropic/codex filter.
-            "opencode" => tool_opencode,
-            "gemini" => tool_gemini,
+            "anthropic" => wants(sources, "claude"),
+            "codex" => wants(sources, "codex"),
+            "opencode" => wants(sources, "opencode"),
+            "gemini" => wants(sources, "gemini"),
+            "grok" => wants(sources, "grok"),
             _ => true,
         })
         .collect()
 }
 
-/// Compute analytics for "today" or "week", scoped to the display filter.
+/// Compute analytics for a range, scoped to the selected `sources`.
 ///
-/// Skips the scan outright rather than scanning then discarding: `scan_*`
-/// walks a whole directory tree, and a hidden provider's files are pure waste.
-pub fn compute_with(
-    range: &str,
-    filter: &str,
-    tool_opencode: bool,
-    tool_gemini: bool,
-) -> Analytics {
+/// Skips the scan outright rather than scanning then discarding: `scan_*` walks
+/// a whole directory tree, and an unselected source's files are pure waste.
+pub fn compute_with(range: &str, sources: &[String]) -> Analytics {
     compute_routed(
         range,
-        filter,
+        sources,
         scan_codex,
         scan_claude,
         scan_opencode,
         scan_gemini,
-        tool_opencode,
-        tool_gemini,
+        scan_grok,
         detect_accounts(),
     )
 }
 
-/// The real body of `compute_with`, with every source of ambient state
-/// (the two directory scans and account detection) passed in.
+/// The real body of `compute_with`, with every source of ambient state (the
+/// directory scans and account detection) passed in.
 ///
-/// This split exists purely so the filter routing below is testable: the
-/// scanners read the real home dir, so a test that cannot replace them can
-/// only re-assert `scans_*`, which proves nothing about which branch runs.
+/// This split exists purely so the source routing below is testable: the
+/// scanners read the real home dir, so a test that cannot replace them can only
+/// re-assert `wants`, which proves nothing about which branch runs.
 #[allow(clippy::too_many_arguments)]
-fn compute_routed<C, L, O, G>(
+fn compute_routed<C, L, O, G, K>(
     range: &str,
-    filter: &str,
+    sources: &[String],
     scan_codex_fn: C,
     scan_claude_fn: L,
     scan_opencode_fn: O,
     scan_gemini_fn: G,
-    tool_opencode: bool,
-    tool_gemini: bool,
+    scan_grok_fn: K,
     accounts: Vec<Account>,
 ) -> Analytics
 where
@@ -474,6 +482,7 @@ where
     L: FnOnce(&mut Acc, i64),
     O: FnOnce(&mut Acc, i64),
     G: FnOnce(&mut Acc, i64),
+    K: FnOnce(&mut Acc, i64),
 {
     let now = chrono::Utc::now().timestamp();
     let days_back: i64 = match range {
@@ -485,24 +494,25 @@ where
     let start = utc_midnight - days_back * 86400;
 
     let mut acc = Acc::new(now);
-    let sessions = if scans_codex(filter) {
+    // Each source scans iff selected. A source with no local data simply
+    // contributes nothing (no fake 0 card — `book` drops zero-token rows and
+    // byAgent only holds keys that actually had usage).
+    let sessions = if wants(sources, "codex") {
         scan_codex_fn(&mut acc, start)
     } else {
         0
     };
-    if scans_claude(filter) {
+    if wants(sources, "claude") {
         scan_claude_fn(&mut acc, start);
     }
-    // 階段 E 多工具: gated purely on their own toggle, independent of the
-    // anthropic/codex `providers` filter (those two are quota pools; these are
-    // separate clients). A disabled tool is never scanned; an enabled tool with
-    // no local data simply contributes nothing (no fake 0 card — Acc::add drops
-    // zero-token rows, and byAgent only holds keys that actually had usage).
-    if tool_opencode {
+    if wants(sources, "opencode") {
         scan_opencode_fn(&mut acc, start);
     }
-    if tool_gemini {
+    if wants(sources, "gemini") {
         scan_gemini_fn(&mut acc, start);
+    }
+    if wants(sources, "grok") {
+        scan_grok_fn(&mut acc, start);
     }
 
     let mut daily: Vec<DayPoint> = Vec::new();
@@ -609,7 +619,7 @@ where
         by_project,
         sessions_this_week: sessions,
         tok_per_min: (acc.recent_tokens as f64 / 10.0) as u64,
-        accounts: filter_accounts(filter, tool_opencode, tool_gemini, accounts),
+        accounts: filter_accounts(sources, accounts),
     }
 }
 
@@ -1162,6 +1172,145 @@ fn scan_gemini(acc: &mut Acc, start: i64) {
     }
 }
 
+// ── Grok CLI: cumulative session totals (T-916) ───────────────────────────
+//
+// 資料源(勘察已定案,見 T-916 brief):
+//   ~/.grok/sessions/<url-encoded-cwd>/<session-id>/updates.jsonl
+//   每行一個 JSON 物件:`timestamp` = unix epoch 秒;`_meta.totalTokens` = 從
+//   session 起算的「累計」u64;`_meta.modelId`(如 "grok-4.5")。
+//
+// 和 Codex 一樣把累計值逐筆差分成單筆增量(同 monotonic-diff);但重置(數值下降)
+// 的處理不同:視為新 baseline —— 把當前累計值當成增量,而非 saturating 到 0。
+//
+// 專案維度:對 <url-encoded-cwd> 路徑段做百分號解碼後取 basename(usage-only;
+// §0 天然不進戰報,shares 不讀 by_project)。
+//
+// 誠實取捨:
+//   · 無 input/output/cache 拆分 → 走 add_total_only(整筆記進總量,不進 breakdown
+//     的假類別)。
+//   · 無公開定價 → cost 0.0(含 Grok 時 est. 成本會低估,刻意不臆造費率)。
+//   · 無法可靠分類 → 不進 by_kind(同 Codex 的硬規定)。
+
+/// Percent-decode a single URL path segment (`%2F` → `/`, `%3A` → `:`, …). Any
+/// malformed escape is left literal. Small and dependency-free so it stays
+/// unit-testable; only used to recover the project folder from an encoded cwd.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Project folder for a Grok session from its file path:
+/// `.grok/sessions/<url-encoded-cwd>/<session-id>/updates.jsonl` → decode the
+/// `<url-encoded-cwd>` segment (the file's grandparent dir) and take its
+/// basename. "" when the layout doesn't match.
+fn grok_project_from_path(path: &Path) -> String {
+    let encoded = path
+        .parent() // <session-id>/
+        .and_then(|p| p.parent()) // <url-encoded-cwd>/
+        .and_then(|d| d.file_name())
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    basename(&percent_decode(&encoded))
+}
+
+/// Parse one Grok `updates.jsonl` line into `(ts_secs, cumulative_total, model)`.
+/// `None` for a line without a cumulative token total or timestamp.
+fn grok_event(line: &str) -> Option<(i64, u64, String)> {
+    if !line.contains("totalTokens") {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let meta = v.get("_meta")?;
+    let total = meta.get("totalTokens").and_then(|x| x.as_u64())?;
+    // `timestamp` is documented as epoch *seconds*; parse_epoch leaves any value
+    // below the millis threshold untouched, so a realistic seconds value is kept
+    // as-is (and a stray millis value is still handled gracefully).
+    let ts = v.get("timestamp").and_then(parse_epoch)?;
+    let model = meta
+        .get("modelId")
+        .and_then(|m| m.as_str())
+        .unwrap_or("grok")
+        .to_string();
+    Some((ts, total, model))
+}
+
+fn scan_grok_lines<I>(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    lines: I,
+    seen: &mut HashSet<(i64, u64)>,
+) where
+    I: Iterator<Item = String>,
+{
+    let mut previous: u64 = 0;
+    for line in lines {
+        let Some((ts, cumulative, model)) = grok_event(&line) else {
+            continue;
+        };
+        let duplicate = !seen.insert((ts, cumulative));
+        // Monotonic diff, with a reset guard: a drop is a new session baseline
+        // (brief), so the whole current value is this event's delta — not a
+        // saturating-to-zero like Codex, and never a negative delta.
+        let delta = if cumulative >= previous {
+            cumulative - previous
+        } else {
+            cumulative
+        };
+        previous = cumulative;
+        if duplicate || ts < start || delta == 0 {
+            continue;
+        }
+        // total-only (no breakdown), cost 0.0 (no public pricing). See section note.
+        acc.add_total_only(ts, &model, "Grok CLI", project, delta, 0.0);
+    }
+}
+
+fn scan_grok(acc: &mut Acc, start: i64) {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let pattern = home
+        .join(".grok/sessions/**/updates.jsonl")
+        .to_string_lossy()
+        .replace('\\', "/");
+    let Ok(paths) = glob::glob(&pattern) else {
+        return;
+    };
+    let mut seen = HashSet::new();
+    for p in paths.filter_map(Result::ok) {
+        if mtime_secs(&p) < start {
+            continue;
+        }
+        let project = grok_project_from_path(&p);
+        let Ok(file) = File::open(&p) else {
+            continue;
+        };
+        scan_grok_lines(
+            acc,
+            start,
+            &project,
+            BufReader::new(file).lines().map_while(Result::ok),
+            &mut seen,
+        );
+    }
+}
+
 /// Epoch seconds from a JSON value that may be epoch millis, epoch seconds, or
 /// an RFC3339 string. Millis are distinguished by magnitude (> ~Sat 2286 in
 /// seconds), which is safe for any realistic log timestamp.
@@ -1181,12 +1330,16 @@ fn parse_epoch(v: &serde_json::Value) -> Option<i64> {
 mod tests {
     use super::*;
 
-    /// Convenience wrapper: run `compute_routed` with the 階段 E scanners disabled,
-    /// so every pre-E test reads exactly as before (OpenCode/Gemini contribute
-    /// nothing). 階段 E's own tests call `compute_routed` directly.
+    fn to_sources(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Convenience wrapper: run `compute_routed` with OpenCode/Gemini/Grok
+    /// scanners disabled, so every codex/claude test reads exactly as before.
+    /// The 階段 E and Grok tests call `compute_routed` directly.
     fn routed<C, L>(
         range: &str,
-        filter: &str,
+        sources: &[&str],
         codex: C,
         claude: L,
         accounts: Vec<Account>,
@@ -1197,53 +1350,43 @@ mod tests {
     {
         compute_routed(
             range,
-            filter,
+            &to_sources(sources),
             codex,
             claude,
             |_, _| {},
             |_, _| {},
-            false,
-            false,
+            |_, _| {},
             accounts,
         )
     }
 
     /// The scan helpers hit the real home dir, so these assert on the pure
-    /// routing decision instead: which scans the filter authorises.
+    /// membership decision instead: which scans the source list authorises.
     #[test]
-    fn claude_filter_skips_codex_scan() {
-        assert!(!scans_codex("claude"));
-        assert!(scans_claude("claude"));
-    }
+    fn membership_gates_each_scan() {
+        let claude_only = to_sources(&["claude"]);
+        assert!(!wants(&claude_only, "codex"));
+        assert!(wants(&claude_only, "claude"));
 
-    #[test]
-    fn codex_filter_skips_claude_scan() {
-        assert!(scans_codex("codex"));
-        assert!(!scans_claude("codex"));
-    }
+        let codex_only = to_sources(&["codex"]);
+        assert!(wants(&codex_only, "codex"));
+        assert!(!wants(&codex_only, "claude"));
 
-    #[test]
-    fn both_scans_everything() {
-        assert!(scans_codex("both"));
-        assert!(scans_claude("both"));
-    }
+        let both = to_sources(&["claude", "codex"]);
+        assert!(wants(&both, "codex"));
+        assert!(wants(&both, "claude"));
 
-    /// Same catch-all rule as lib::apply_provider_filter: an unknown value
-    /// must never silently produce an empty analytics page.
-    #[test]
-    fn unknown_filter_scans_everything() {
-        for f in ["worst", "", "CLAUDE", "nonsense"] {
-            assert!(scans_codex(f), "codex scan dropped for {f:?}");
-            assert!(scans_claude(f), "claude scan dropped for {f:?}");
+        // Empty means nothing is scanned — an honest empty page, no fallback.
+        let none: Vec<String> = Vec::new();
+        for id in ["claude", "codex", "opencode", "gemini", "grok"] {
+            assert!(!wants(&none, id), "empty sources must not scan {id}");
         }
     }
 
     #[test]
-    fn accounts_follow_the_filter() {
+    fn accounts_follow_the_sources() {
         let only_claude = filter_accounts(
-            "claude",
-            true,
-            true,
+            &to_sources(&["claude"]),
             vec![
                 Account {
                     client: "Claude Code".into(),
@@ -1282,58 +1425,54 @@ mod tests {
         acc.add(acc.now, "claude-opus", CLAUDE_AGENT, "", None, 200, 0, 0, 0);
     }
 
-    /// Agents that actually got scanned, for `filter`, sorted.
-    fn scanned_agents(filter: &str) -> Vec<String> {
-        let a = routed("today", filter, stub_codex, stub_claude, Vec::new());
+    /// Agents that actually got scanned, for `sources`, sorted.
+    fn scanned_agents(sources: &[&str]) -> Vec<String> {
+        let a = routed("today", sources, stub_codex, stub_claude, Vec::new());
         let mut names: Vec<String> = a.by_agent.keys().cloned().collect();
         names.sort();
         names
     }
 
     #[test]
-    fn claude_filter_routes_to_claude_scan_only() {
-        assert_eq!(scanned_agents("claude"), vec![CLAUDE_AGENT.to_string()]);
+    fn claude_source_routes_to_claude_scan_only() {
+        assert_eq!(scanned_agents(&["claude"]), vec![CLAUDE_AGENT.to_string()]);
     }
 
     #[test]
-    fn codex_filter_routes_to_codex_scan_only() {
-        assert_eq!(scanned_agents("codex"), vec![CODEX_AGENT.to_string()]);
+    fn codex_source_routes_to_codex_scan_only() {
+        assert_eq!(scanned_agents(&["codex"]), vec![CODEX_AGENT.to_string()]);
     }
 
     #[test]
-    fn both_filter_routes_to_every_scan() {
+    fn both_sources_route_to_every_scan() {
         assert_eq!(
-            scanned_agents("both"),
+            scanned_agents(&["claude", "codex"]),
             vec![CLAUDE_AGENT.to_string(), CODEX_AGENT.to_string()]
         );
     }
 
-    /// The core guard: a stale or unknown setting must never route to "scan
-    /// nothing" and leave the analytics page blank.
+    /// The core gating guarantee: a source absent from the list is never
+    /// scanned, and an empty list scans nothing at all.
     #[test]
-    fn unknown_filter_routes_to_every_scan() {
-        for f in ["worst", "", "CLAUDE", "nonsense"] {
-            assert_eq!(
-                scanned_agents(f),
-                vec![CLAUDE_AGENT.to_string(), CODEX_AGENT.to_string()],
-                "unknown filter {f:?} did not scan both providers"
-            );
-        }
+    fn absent_source_is_never_scanned() {
+        assert_eq!(scanned_agents(&["claude"]), vec![CLAUDE_AGENT.to_string()]);
+        assert_eq!(scanned_agents(&["codex"]), vec![CODEX_AGENT.to_string()]);
+        assert!(scanned_agents(&[]).is_empty(), "empty sources scanned something");
     }
 
     /// Totals, not just agent names: a skipped scan must take its tokens and
     /// its session count with it.
     #[test]
     fn skipped_codex_scan_drops_its_tokens_and_sessions() {
-        let claude_only = routed("today", "claude", stub_codex, stub_claude, Vec::new());
+        let claude_only = routed("today", &["claude"], stub_codex, stub_claude, Vec::new());
         assert_eq!(claude_only.total_tokens, 200);
         assert_eq!(claude_only.sessions_this_week, 0);
 
-        let codex_only = routed("today", "codex", stub_codex, stub_claude, Vec::new());
+        let codex_only = routed("today", &["codex"], stub_codex, stub_claude, Vec::new());
         assert_eq!(codex_only.total_tokens, 100);
         assert_eq!(codex_only.sessions_this_week, 7);
 
-        let everything = routed("today", "both", stub_codex, stub_claude, Vec::new());
+        let everything = routed("today", &["claude", "codex"], stub_codex, stub_claude, Vec::new());
         assert_eq!(everything.total_tokens, 300);
         assert_eq!(everything.sessions_this_week, 7);
     }
@@ -1369,14 +1508,14 @@ mod tests {
 
     #[test]
     fn month_range_spans_thirty_daily_buckets() {
-        let a = routed("month", "claude", no_codex, stub_recent(3), Vec::new());
+        let a = routed("month", &["claude"], no_codex, stub_recent(3), Vec::new());
         assert_eq!(a.daily.len(), 30);
         assert_eq!(a.total_tokens, 300); // 3 days × 100
     }
 
     #[test]
     fn month_range_reports_actual_start_when_history_is_short() {
-        let a = routed("month", "claude", no_codex, stub_recent(3), Vec::new());
+        let a = routed("month", &["claude"], no_codex, stub_recent(3), Vec::new());
         // daily runs oldest→newest over 30 buckets: today is [29], so the
         // earliest of the last three active days is [27].
         assert_eq!(a.range_start_day, a.daily[27].date);
@@ -1388,7 +1527,7 @@ mod tests {
 
     #[test]
     fn range_start_day_is_window_start_when_no_activity() {
-        let a = routed("month", "claude", no_codex, |_, _| {}, Vec::new());
+        let a = routed("month", &["claude"], no_codex, |_, _| {}, Vec::new());
         assert_eq!(a.range_start_day, a.daily.first().unwrap().date);
     }
 
@@ -1488,7 +1627,7 @@ mod tests {
 
     #[test]
     fn by_kind_aggregates_claude_activity_sorted_desc() {
-        let a = routed("today", "claude", no_codex, stub_activity, Vec::new());
+        let a = routed("today", &["claude"], no_codex, stub_activity, Vec::new());
         assert_eq!(a.by_kind[0].kind, "edit"); // 130 > 50
         assert_eq!(a.by_kind[0].tokens, 130);
         let read = a.by_kind.iter().find(|k| k.kind == "read").unwrap();
@@ -1497,7 +1636,7 @@ mod tests {
 
     #[test]
     fn by_project_aggregates_and_sorts() {
-        let a = routed("today", "claude", no_codex, stub_activity, Vec::new());
+        let a = routed("today", &["claude"], no_codex, stub_activity, Vec::new());
         assert_eq!(a.by_project[0].name, "proj-a"); // 150 > 30
         assert_eq!(a.by_project[0].tokens, 150);
         assert_eq!(a.by_project[1].name, "proj-b");
@@ -1520,7 +1659,7 @@ mod tests {
             );
             1
         }
-        let a = routed("today", "codex", codex_only, |_, _| {}, Vec::new());
+        let a = routed("today", &["codex"], codex_only, |_, _| {}, Vec::new());
         assert!(
             a.by_kind.is_empty(),
             "Codex must not produce activity kinds"
@@ -1648,7 +1787,7 @@ mod tests {
                 );
             }
         }
-        let a = routed("today", "claude", no_codex, many, Vec::new());
+        let a = routed("today", &["claude"], no_codex, many, Vec::new());
         assert_eq!(a.by_project.len(), 9, "8 named projects + merged remainder");
         assert_eq!(a.by_project.last().unwrap().name, "__other__");
         // The remainder holds the two smallest (p08=60, p09=55).
@@ -1706,7 +1845,7 @@ mod tests {
     #[test]
     fn empty_project_is_not_recorded() {
         // A provider with no cwd ("") still counts its tokens but adds no project.
-        let a = routed("today", "claude", no_codex, stub_recent(1), Vec::new());
+        let a = routed("today", &["claude"], no_codex, stub_recent(1), Vec::new());
         assert_eq!(a.total_tokens, 100);
         assert!(a.by_project.is_empty());
     }
@@ -1738,7 +1877,7 @@ mod tests {
 
     #[test]
     fn cost_maps_total_to_range_cost_and_share_keys_with_tokens() {
-        let a = routed("today", "both", stub_codex, stub_claude, Vec::new());
+        let a = routed("today", &["claude", "codex"], stub_codex, stub_claude, Vec::new());
 
         // (b) each range-total cost map sums to total_cost_usd.
         let model_sum: f64 = a.by_model_cost.values().sum();
@@ -1827,10 +1966,11 @@ mod tests {
         assert!(gemini_record(r#"{ "timestamp": 1, "tokens": { "input": 0 } }"#).is_none());
     }
 
-    /// The toggles gate the 階段 E scanners independently of the codex/claude
-    /// filter: off means the scanner never runs, so its tokens never appear.
+    /// Membership gates the OpenCode/Gemini scanners independently of the
+    /// codex/claude quota pair: absent from `sources` means the scanner never
+    /// runs, so its tokens never appear.
     #[test]
-    fn tool_toggles_gate_opencode_and_gemini_scans() {
+    fn membership_gates_opencode_and_gemini_scans() {
         fn oc(acc: &mut Acc, _s: i64) {
             acc.add(acc.now, "oc-model", "OpenCode", "", None, 100, 0, 0, 0);
         }
@@ -1838,31 +1978,29 @@ mod tests {
             acc.add(acc.now, "gemini", "Gemini CLI", "", None, 50, 0, 0, 0);
         }
 
-        // Both on: both agents present, both quota-pool scans off so nothing else.
+        // Both selected: both agents present, quota-pool scans absent so nothing else.
         let on = compute_routed(
             "today",
-            "both",
+            &to_sources(&["opencode", "gemini"]),
             no_codex,
             |_, _| {},
             oc,
             gem,
-            true,
-            true,
+            |_, _| {},
             Vec::new(),
         );
         assert_eq!(on.by_agent.get("OpenCode"), Some(&100));
         assert_eq!(on.by_agent.get("Gemini CLI"), Some(&50));
 
-        // Both off: neither scan runs, neither agent appears (no fake 0 card).
+        // Neither selected: neither scan runs, neither agent appears (no fake 0 card).
         let off = compute_routed(
             "today",
-            "both",
+            &[],
             no_codex,
             |_, _| {},
             oc,
             gem,
-            false,
-            false,
+            |_, _| {},
             Vec::new(),
         );
         assert!(off.by_agent.get("OpenCode").is_none());
@@ -1870,29 +2008,27 @@ mod tests {
         assert_eq!(off.total_tokens, 0);
     }
 
-    /// A tool with no local data must not surface (the empty-scan case): an
-    /// enabled-but-empty scanner contributes nothing, so no agent/legend entry.
+    /// A source with no local data must not surface (the empty-scan case): a
+    /// selected-but-empty scanner contributes nothing, so no agent/legend entry.
     #[test]
-    fn enabled_but_empty_tool_adds_nothing() {
+    fn selected_but_empty_source_adds_nothing() {
         let a = compute_routed(
             "today",
-            "both",
+            &to_sources(&["opencode", "gemini", "grok"]),
             no_codex,
             |_, _| {},
             |_, _| {},
             |_, _| {},
-            true,
-            true,
+            |_, _| {},
             Vec::new(),
         );
         assert!(a.by_agent.is_empty());
         assert_eq!(a.total_tokens, 0);
     }
 
-    /// Accounts for the new tools follow their own toggle, not the provider
-    /// filter (which only narrows anthropic/codex).
+    /// Accounts for the usage-only tools follow their own source membership.
     #[test]
-    fn tool_accounts_follow_their_toggle() {
+    fn tool_accounts_follow_their_source() {
         let accts = || {
             vec![
                 Account {
@@ -1909,11 +2045,154 @@ mod tests {
                 },
             ]
         };
-        assert_eq!(filter_accounts("both", true, true, accts()).len(), 2);
-        assert_eq!(filter_accounts("both", false, false, accts()).len(), 0);
-        let only_oc = filter_accounts("both", true, false, accts());
+        assert_eq!(filter_accounts(&to_sources(&["opencode", "gemini"]), accts()).len(), 2);
+        assert_eq!(filter_accounts(&[], accts()).len(), 0);
+        let only_oc = filter_accounts(&to_sources(&["opencode"]), accts());
         assert_eq!(only_oc.len(), 1);
         assert_eq!(only_oc[0].provider, "opencode");
+    }
+
+    // ── T-916 Grok: cumulative deltas, reset guard, total-only mapping ───
+
+    fn grok_ts(rfc3339: &str) -> i64 {
+        chrono::DateTime::parse_from_rfc3339(rfc3339).unwrap().timestamp()
+    }
+
+    fn grok_line(ts: i64, total: u64, model: &str) -> String {
+        serde_json::json!({
+            "timestamp": ts,
+            "_meta": { "totalTokens": total, "modelId": model }
+        })
+        .to_string()
+    }
+
+    fn scan_fake_grok_files(files: Vec<Vec<String>>) -> Acc {
+        let mut acc = Acc::new(1_783_000_000);
+        let mut seen = HashSet::new();
+        for lines in files {
+            scan_grok_lines(&mut acc, 0, "grok-project", lines.into_iter(), &mut seen);
+        }
+        acc
+    }
+
+    fn grok_agent_total(acc: &Acc) -> u64 {
+        acc.days
+            .values()
+            .map(|d| d.by_agent.get("Grok CLI").copied().unwrap_or(0))
+            .sum()
+    }
+
+    #[test]
+    fn grok_event_parses_epoch_seconds_total_and_model() {
+        // A realistic 2026 epoch-seconds value stays as-is (below the millis
+        // threshold), proving the epoch-seconds handling the brief calls out.
+        let secs = grok_ts("2026-07-17T02:00:00Z");
+        let (ts, total, model) = grok_event(&grok_line(secs, 500, "grok-4.5")).unwrap();
+        assert_eq!(ts, secs);
+        assert_eq!(total, 500);
+        assert_eq!(model, "grok-4.5");
+
+        // modelId absent → "grok" fallback.
+        let no_model = r#"{ "timestamp": 1784253600, "_meta": { "totalTokens": 10 } }"#;
+        assert_eq!(grok_event(no_model).unwrap().2, "grok");
+
+        // No cumulative total → skipped (the `totalTokens` prefilter also guards this).
+        assert!(grok_event(r#"{ "timestamp": 1, "_meta": { "modelId": "grok" } }"#).is_none());
+    }
+
+    #[test]
+    fn grok_cumulative_events_become_timestamped_deltas() {
+        let acc = scan_fake_grok_files(vec![vec![
+            grok_line(grok_ts("2026-07-17T01:00:00Z"), 100, "grok-4.5"),
+            grok_line(grok_ts("2026-07-17T02:00:00Z"), 250, "grok-4.5"),
+            grok_line(grok_ts("2026-07-17T03:00:00Z"), 250, "grok-4.5"),
+            grok_line(grok_ts("2026-07-17T04:00:00Z"), 400, "grok-4.5"),
+        ]]);
+        assert_eq!(acc.hourly[1], 100);
+        assert_eq!(acc.hourly[2], 150);
+        assert_eq!(acc.hourly[3], 0);
+        assert_eq!(acc.hourly[4], 150);
+        assert_eq!(grok_agent_total(&acc), 400);
+    }
+
+    /// Total-only mapping: Grok's tokens count toward every *total* dimension but
+    /// never fabricate a breakdown category or an activity kind (硬規定).
+    #[test]
+    fn grok_is_total_only_no_breakdown_no_kind() {
+        let acc = scan_fake_grok_files(vec![vec![
+            grok_line(grok_ts("2026-07-17T01:00:00Z"), 100, "grok-4.5"),
+            grok_line(grok_ts("2026-07-17T02:00:00Z"), 400, "grok-4.5"),
+        ]]);
+        // Booked to the totals…
+        assert_eq!(grok_agent_total(&acc), 400);
+        assert_eq!(*acc.days.values().next().unwrap().by_model.get("grok-4.5").unwrap(), 400);
+        assert!(acc.by_project.contains_key("grok-project"));
+        // …but NOT to breakdown categories or by_kind.
+        assert_eq!(acc.breakdown.input, 0);
+        assert_eq!(acc.breakdown.cached, 0);
+        assert_eq!(acc.breakdown.output, 0);
+        assert_eq!(acc.breakdown.reasoning, 0);
+        assert!(acc.by_kind.is_empty(), "Grok must not produce activity kinds");
+    }
+
+    /// No public Grok pricing → 0.0 cost (est. cost knowingly undercounts).
+    #[test]
+    fn grok_contributes_zero_cost() {
+        let acc = scan_fake_grok_files(vec![vec![grok_line(
+            grok_ts("2026-07-17T01:00:00Z"),
+            1_000_000,
+            "grok-4.5",
+        )]]);
+        let cost: f64 = acc.days.values().map(|d| d.cost).sum();
+        assert_eq!(cost, 0.0);
+        assert!(acc.by_model_cost.values().all(|&c| c == 0.0));
+    }
+
+    /// A cumulative *drop* is a new session baseline (whole current value is the
+    /// delta) — not a saturating-to-zero like Codex, and never negative.
+    #[test]
+    fn grok_reset_is_treated_as_a_new_baseline() {
+        let acc = scan_fake_grok_files(vec![vec![
+            grok_line(grok_ts("2026-07-17T01:00:00Z"), 300, "grok-4.5"),
+            grok_line(grok_ts("2026-07-17T02:00:00Z"), 120, "grok-4.5"),
+        ]]);
+        assert_eq!(acc.hourly[1], 300);
+        assert_eq!(acc.hourly[2], 120); // the drop counts as a fresh 120, not 0
+        assert_eq!(grok_agent_total(&acc), 420);
+    }
+
+    /// A fork/replay that repeats an earlier prefix counts each (ts,total) once.
+    #[test]
+    fn grok_fork_replay_prefix_counts_once() {
+        let parent = vec![
+            grok_line(grok_ts("2026-07-17T01:00:00Z"), 100, "grok-4.5"),
+            grok_line(grok_ts("2026-07-17T02:00:00Z"), 250, "grok-4.5"),
+        ];
+        let fork = vec![
+            grok_line(grok_ts("2026-07-17T01:00:00Z"), 100, "grok-4.5"),
+            grok_line(grok_ts("2026-07-17T02:00:00Z"), 250, "grok-4.5"),
+            grok_line(grok_ts("2026-07-17T03:00:00Z"), 400, "grok-4.5"),
+        ];
+        let acc = scan_fake_grok_files(vec![parent, fork]);
+        assert_eq!(grok_agent_total(&acc), 400);
+    }
+
+    #[test]
+    fn percent_decode_recovers_paths_and_leaves_bad_escapes_literal() {
+        assert_eq!(percent_decode("C%3A%5CCoding%5CTokenBar"), "C:\\Coding\\TokenBar");
+        assert_eq!(percent_decode("%2Fhome%2Fme%2Fproj"), "/home/me/proj");
+        assert_eq!(percent_decode("no-escapes"), "no-escapes");
+        assert_eq!(percent_decode("50%"), "50%"); // trailing lone '%' left literal
+    }
+
+    #[test]
+    fn grok_project_is_decoded_basename_of_the_cwd_segment() {
+        let win = PathBuf::from(
+            "/root/.grok/sessions/C%3A%5CCoding%5CTokenBar/abc123/updates.jsonl",
+        );
+        assert_eq!(grok_project_from_path(&win), "TokenBar");
+        let unix = PathBuf::from("/root/.grok/sessions/%2Fhome%2Fme%2Fmyproj/sess/updates.jsonl");
+        assert_eq!(grok_project_from_path(&unix), "myproj");
     }
 
     fn record_acc(now: i64, entries: &[(&str, u8, u64)]) -> Acc {

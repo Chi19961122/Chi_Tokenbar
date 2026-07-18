@@ -1,7 +1,8 @@
 // Island (collapsed) view — fuel capsule(s) + % left, per the Live Island design.
-// Layout follows the global display filter (settings.providers): both providers
-// side-by-side (default), or a single provider. The backend already filtered the
-// snapshot, so `mode` only decides the layout, never what data exists.
+// Layout follows `mode`, derived from which quota providers are selected
+// (T-916 `sources` → island.ts caller passes both / a single provider). The
+// backend already filtered the snapshot, so `mode` only decides the layout,
+// never what data exists.
 //
 // 階段 B: which limit each provider shows is a *pin* (auto / 5h / week / a model
 // window); every state renders one constant "short + % left" format (reset

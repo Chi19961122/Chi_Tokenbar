@@ -106,6 +106,12 @@ struct SharePreviewPayload {
     locale: String,
 }
 
+/// The full source list — the safe fallback whenever the live settings can't be
+/// read (a lock failure must never blank the app to an empty selection).
+fn all_sources() -> Vec<String> {
+    config::KNOWN_SOURCES.iter().map(|s| s.to_string()).collect()
+}
+
 #[tauri::command]
 fn get_snapshot(data: State<'_, AppData>) -> Option<Snapshot> {
     data.last.lock().ok().and_then(|g| g.clone())
@@ -122,23 +128,22 @@ async fn get_analytics(
     range: String,
 ) -> Result<analytics::Analytics, String> {
     // Read the live in-memory setting, not config::load(): set_settings updates
-    // this immediately, so switching the filter reflects on the next fetch
-    // instead of waiting for a disk round-trip.
-    let (filter, tool_opencode, tool_gemini) = data
+    // this immediately, so switching the selection reflects on the next fetch
+    // instead of waiting for a disk round-trip. Fall back to all sources on a
+    // lock failure so an error never blanks the page.
+    let sources = data
         .settings
         .lock()
         .ok()
-        .map(|s| (s.providers.clone(), s.tool_opencode, s.tool_gemini))
-        .unwrap_or_else(|| ("both".into(), true, true));
+        .map(|s| s.sources.clone())
+        .unwrap_or_else(all_sources);
     // The scan re-parses every session log in range (hundreds of MB on a heavy
     // machine). As a sync command that ran on the main thread and froze the
     // whole app — window drag, island, every IPC — for the scan's duration, so
     // it must stay on a blocking worker, never the UI or async-runtime threads.
-    tauri::async_runtime::spawn_blocking(move || {
-        analytics::compute_with(&range, &filter, tool_opencode, tool_gemini)
-    })
-    .await
-    .map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || analytics::compute_with(&range, &sources))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -545,28 +550,28 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             let now = chrono::Utc::now().timestamp();
 
             // Read live settings once per round so every toggle applies without restart.
-            let (codex_source, allow_refresh, providers_filter, refresh_secs) = app
+            let (codex_source, allow_refresh, sources, refresh_secs) = app
                 .try_state::<AppData>()
                 .and_then(|data| {
                     data.settings.lock().ok().map(|s| {
                         (
                             s.codex_usage_source.clone(),
                             s.allow_token_refresh,
-                            s.providers.clone(),
+                            s.sources.clone(),
                             // Clamped on read to an offered cadence {30,60,180}.
                             s.refresh_secs_clamped(),
                         )
                     })
                 })
-                .unwrap_or_else(|| ("local".into(), false, "both".into(), 180));
+                .unwrap_or_else(|| ("local".into(), false, all_sources(), 180));
             let refresh_secs = refresh_secs as i64;
 
-            // Skip the polls a hidden provider does not need. Only an exact
-            // "claude"/"codex" narrows anything: an unknown value must keep
-            // polling both, to stay consistent with apply_provider_filter's
-            // "unknown shows everything".
-            let want_codex = providers_filter != "claude";
-            let want_claude = providers_filter != "codex";
+            // Skip the polls an unselected provider does not need. T-916: gate on
+            // explicit `sources` membership — a quota provider absent from the
+            // list is not polled (and an empty list polls nothing, an honest
+            // empty UI).
+            let want_codex = sources.iter().any(|s| s == "codex");
+            let want_claude = sources.iter().any(|s| s == "claude");
 
             let live = if want_codex && matches!(codex_source.as_str(), "live" | "auto") {
                 codex_live.poll(now, force, refresh_secs)
@@ -595,7 +600,7 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             // Skipping polls above is an optimisation; this is the correctness
             // guarantee — it still runs so a future third provider cannot leak
             // through by being absent from the skip logic.
-            let limits = apply_provider_filter(&providers_filter, limits);
+            let limits = apply_provider_filter(&sources, limits);
             let mut snapshot = engine.ingest(limits, now);
 
             // Countdown to the next real data fetch (header "Refresh in Ns").
@@ -626,9 +631,8 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
                     );
                 }
                 if first {
-                    // Debug log only: include the 階段 E tools (true/true) so the
-                    // dump reflects the full picture.
-                    let a = analytics::compute_with("today", &providers_filter, true, true);
+                    // Debug log only: use the live source selection.
+                    let a = analytics::compute_with("today", &sources);
                     eprintln!(
                         "[tb] analytics today: total_tokens={} by_agent={:?} sessions={} tok/min={}",
                         a.total_tokens, a.by_agent, a.sessions_this_week, a.tok_per_min
@@ -663,30 +667,27 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
     });
 }
 
-/// Apply the "display platform" setting (`Settings::providers`). Any unknown
-/// value shows everything — this must never return empty for a value it does
-/// not recognise.
+/// Filter quota limits to the selected `sources` (T-916). Anthropic limits show
+/// iff "claude" is selected, Codex limits iff "codex" — the usage-only sources
+/// (opencode/gemini/grok) never produce a limit, so they don't appear here.
+///
+/// Unlike the pre-T-916 string filter, membership is explicit: an unselected
+/// quota provider is dropped, and an empty selection yields an empty island (an
+/// honest empty UI is the intended result of deselecting everything).
 ///
 /// This is the single filter node for the whole app: it runs in the scheduler
 /// between merging the providers' limits and `engine.ingest()`, so the island,
 /// panel, tray tooltip, notifications and ranking all inherit it. Do not add a
 /// second filter at any consumer.
-pub fn apply_provider_filter(filter: &str, limits: Vec<Limit>) -> Vec<Limit> {
-    match filter {
-        "claude" => limits
-            .into_iter()
-            .filter(|l| l.provider == model::Provider::Anthropic)
-            .collect(),
-        "codex" => limits
-            .into_iter()
-            .filter(|l| l.provider == model::Provider::Codex)
-            .collect(),
-        // "both" plus every unknown / legacy / typo'd value. `serde(default)`
-        // only fills in *missing* fields — it never validated this string, so a
-        // stale "worst" can still reach us. Blanking the whole app would be far
-        // worse than showing an extra provider, hence the catch-all.
-        _ => limits,
-    }
+pub fn apply_provider_filter(sources: &[String], limits: Vec<Limit>) -> Vec<Limit> {
+    let want = |id: &str| sources.iter().any(|s| s == id);
+    limits
+        .into_iter()
+        .filter(|l| match l.provider {
+            model::Provider::Anthropic => want("claude"),
+            model::Provider::Codex => want("codex"),
+        })
+        .collect()
 }
 
 /// Rich hover text: every limit (§5 — the one tray surface not limited to the
@@ -958,42 +959,52 @@ mod tests {
         assert_eq!(sanitize_share_filename("a..b.png"), None);
     }
 
-    /// Unknown values (the legacy "worst", or a hand-edited typo in
-    /// settings.json) must show everything. Never empty — an empty filter
-    /// result blanks out the entire app.
-    #[test]
-    fn unknown_filter_value_shows_everything() {
-        assert_eq!(apply_provider_filter("worst", both_providers()).len(), 2);
-        assert_eq!(apply_provider_filter("", both_providers()).len(), 2);
-        // wrong case must not silently become a single-provider filter either
-        assert_eq!(apply_provider_filter("CLAUDE", both_providers()).len(), 2);
+    fn srcs(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
-    fn claude_filter_drops_codex() {
-        let out = apply_provider_filter("claude", both_providers());
+    fn both_quota_sources_keep_everything() {
+        assert_eq!(
+            apply_provider_filter(&srcs(&["claude", "codex"]), both_providers()).len(),
+            2
+        );
+        // Usage-only sources riding along don't change the quota limits shown.
+        assert_eq!(
+            apply_provider_filter(&srcs(&["claude", "codex", "grok"]), both_providers()).len(),
+            2
+        );
+    }
+
+    #[test]
+    fn claude_source_drops_codex() {
+        let out = apply_provider_filter(&srcs(&["claude"]), both_providers());
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].provider, Provider::Anthropic);
     }
 
     #[test]
-    fn codex_filter_drops_claude() {
-        let out = apply_provider_filter("codex", both_providers());
+    fn codex_source_drops_claude() {
+        let out = apply_provider_filter(&srcs(&["codex"]), both_providers());
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].provider, Provider::Codex);
     }
 
+    /// Empty selection (or one with only usage-only sources) blanks the quota
+    /// limits — an honest empty island, the intended result of deselecting the
+    /// quota providers.
     #[test]
-    fn both_keeps_everything() {
-        assert_eq!(apply_provider_filter("both", both_providers()).len(), 2);
+    fn no_quota_source_yields_empty_limits() {
+        assert!(apply_provider_filter(&[], both_providers()).is_empty());
+        assert!(apply_provider_filter(&srcs(&["grok"]), both_providers()).is_empty());
     }
 
-    /// A filter for a provider that simply has no data yet is legitimately
-    /// empty — the filter must not invent rows to compensate.
+    /// A source selected for a provider that simply has no data yet is
+    /// legitimately empty — the filter must not invent rows to compensate.
     #[test]
-    fn single_provider_filter_on_absent_provider_is_empty() {
+    fn single_source_on_absent_provider_is_empty() {
         let only_codex = vec![limit("codex.5h", Provider::Codex)];
-        assert!(apply_provider_filter("claude", only_codex).is_empty());
+        assert!(apply_provider_filter(&srcs(&["claude"]), only_codex).is_empty());
     }
 
     // ── source-failure notifications ─────────────────────────────────

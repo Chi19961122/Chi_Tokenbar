@@ -11,6 +11,9 @@ const DEFAULT_SETTINGS: Settings = {
   warn_pct: 75,
   crit_pct: 90,
   compact: false,
+  // T-916 default — every source on (mirrors config.rs `default_sources`).
+  sources: ["claude", "codex", "opencode", "gemini", "grok"],
+  // DEPRECATED (T-916): kept only so the shape matches the backend's write-back.
   providers: "both",
   codex_usage_source: "local",
   // Mirrors config.rs `Settings::default()` — pinned unless the user opts out.

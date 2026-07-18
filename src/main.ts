@@ -31,7 +31,15 @@ import type { ShareStyle, ShareSize } from "./share";
 import { fmtTokens, nowSecs } from "./format";
 import { getLocale, resolveLocale, setLocale, t } from "./i18n";
 import { applyTheme, watchSystemTheme } from "./theme";
-import { activateSegment, readSegmentValue, segmentHtml } from "./settings-controls";
+import {
+  activateSegment,
+  readSegMultiValue,
+  readSegmentValue,
+  segmentHtml,
+  segMultiHtml,
+  toggleSegMulti,
+} from "./settings-controls";
+import { ALL_SOURCES, hasSource, islandMode, sourcesKey } from "./sources";
 import { analyticsHeight } from "./analytics-height";
 import { bootSharePreview, isSharePreviewHash } from "./share-preview";
 
@@ -132,8 +140,12 @@ function renderToggles() {
 }
 
 function renderIslandNow() {
+  // Island layout derives from the selected quota providers (T-916). "none"
+  // (neither selected) renders like an empty pill — the limits are already empty
+  // — so it maps to any single mode; "both" is harmless there.
+  const mode = islandMode(settings?.sources);
   renderIsland($("island"), lastSnap, {
-    mode: settings?.providers ?? "both",
+    mode: mode === "none" ? "both" : mode,
     pinClaude: settings?.island_pin_claude ?? "auto",
     pinCodex: settings?.island_pin_codex ?? "auto",
     resetDisplay: settings?.reset_display ?? "relative",
@@ -150,11 +162,12 @@ function renderIslandNow() {
  *  the deselected provider for minutes — filter at render so a settings
  *  change shows immediately (使用者回饋 2026-07-18). */
 function visibleLimits(): Limit[] {
-  const p = settings?.providers ?? "both";
+  const src = settings?.sources ?? ALL_SOURCES;
   const limits = lastSnap?.limits ?? [];
-  if (p === "claude") return limits.filter((l) => l.provider === "anthropic");
-  if (p === "codex") return limits.filter((l) => l.provider === "codex");
-  return limits;
+  // Only the two quota providers surface as limits; gate each on its source.
+  return limits.filter((l) =>
+    l.provider === "anthropic" ? hasSource(src, "claude") : hasSource(src, "codex"),
+  );
 }
 
 function renderCards() {
@@ -189,9 +202,10 @@ function renderRefresh() {
 
 type AnalyticsRange = "today" | "week" | "month";
 
-/** Full fetch key for one range: the inputs that change the payload. */
+/** Full fetch key for one range: the inputs that change the payload. The source
+ *  slice is the sorted selection (T-916) — replaces the old providers segment. */
 function analyticsKeyFor(range: AnalyticsRange): string {
-  return `${range}|${settings?.providers ?? "both"}|${lastSnap?.updated_at ?? 0}`;
+  return `${range}|${sourcesKey(settings?.sources)}|${lastSnap?.updated_at ?? 0}`;
 }
 
 /** The range|filter prefix of an analytics key — what selects the data *slice*.
@@ -392,9 +406,11 @@ function sizeAnalytics(): void {
  *  "both" now stacks the two providers vertically (2026-07-18 試行), so it is
  *  the narrow-but-tall case and the single-provider pill keeps the flat one. */
 function collapsedSize(): { w: number; h: number } {
-  const p = settings?.providers ?? "both";
-  if (p === "claude" || p === "codex") return { w: 270, h: SIZE.collapsed.h };
-  return { w: 250, h: 72 };
+  // "both" stacks the two providers (tall+narrow); a single provider — or the
+  // empty "none" state — is the flat pill. Derived from the source selection.
+  const mode = islandMode(settings?.sources);
+  if (mode === "both") return { w: 250, h: 72 };
+  return { w: 270, h: SIZE.collapsed.h };
 }
 
 /** Resize the OS window for the current mode (no-op in browser). */
@@ -559,11 +575,13 @@ async function renderSettings() {
         ])}
       </div>
       <div class="srow srow-seg">
-        <span class="slabel">${t("settings.providers")}</span>
-        ${segmentHtml("s-providers", s.providers === "claude" || s.providers === "codex" ? s.providers : "both", [
-          ["both", t("settings.providersBoth")],
-          ["claude", t("settings.providersClaude")],
-          ["codex", t("settings.providersCodex")],
+        <span class="slabel">${t("settings.sources")}<span class="snote">${t("settings.sourcesNote")}</span></span>
+        ${segMultiHtml("s-sources", s.sources ?? [], [
+          ["claude", "Claude"],
+          ["codex", "Codex"],
+          ["opencode", "OpenCode"],
+          ["gemini", "Gemini"],
+          ["grok", "Grok"],
         ])}
       </div>
       <div class="srow">
@@ -643,14 +661,6 @@ async function renderSettings() {
           ],
         )}
       </div>
-      <label class="srow">
-        <span class="slabel">${t("settings.toolOpencode")}<span class="snote">${t("settings.toolNote")}</span></span>
-        <input type="checkbox" id="s-tool-opencode" ${s.tool_opencode ? "checked" : ""}/>
-      </label>
-      <label class="srow">
-        <span class="slabel">${t("settings.toolGemini")}<span class="snote">${t("settings.toolNote")}</span></span>
-        <input type="checkbox" id="s-tool-gemini" ${s.tool_gemini ? "checked" : ""}/>
-      </label>
     </div>`;
 }
 
@@ -668,7 +678,10 @@ function readSettingsForm(): Settings {
     warn_pct: +v("s-warn").value || 75,
     crit_pct: +v("s-crit").value || 90,
     compact: ui.compact,
-    providers: (segVal("s-providers") || "both") as Settings["providers"],
+    // T-916: the multi-select is the source of truth. `providers`/`tool_*` are
+    // preserved from the spread above and re-derived by the backend on save for
+    // downgrade safety (config.rs `sync_legacy_from_sources`).
+    sources: readSegMultiValue($("settings"), "s-sources"),
     codex_usage_source: (segVal("s-codex-source") || "local") as Settings["codex_usage_source"],
     locale: segVal("s-locale") || "system",
     expand_default: (segVal("s-expand") || "compact") as Settings["expand_default"],
@@ -677,8 +690,6 @@ function readSettingsForm(): Settings {
     island_aux: (segVal("s-aux") || "tok_per_min") as Settings["island_aux"],
     reset_display: (segVal("s-reset") || "relative") as Settings["reset_display"],
     theme: (segVal("s-theme") || "system") as Settings["theme"],
-    tool_opencode: v("s-tool-opencode").checked,
-    tool_gemini: v("s-tool-gemini").checked,
     refresh_secs: Number(segVal("s-refresh-secs")) || 180,
   };
 }
@@ -854,7 +865,9 @@ function wireEvents() {
   };
   $("settings").addEventListener("change", commitSettings);
   $("settings").addEventListener("click", async (event) => {
-    if (!activateSegment(event.target)) return;
+    // Single-select segments and the multi-select chip row both commit on click
+    // (T-916: chips toggle independently via the .seg-multi variant).
+    if (!activateSegment(event.target) && !toggleSegMulti(event.target)) return;
     await commitSettings();
   });
 

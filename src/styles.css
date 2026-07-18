@@ -945,6 +945,26 @@ body.settings-open #gear {
   white-space: nowrap;
 }
 
+/* T-916 multi-select chip row: same segmented vocabulary as .seg-set, but each
+   chip toggles independently, so it wraps and every on chip is highlighted. */
+.seg-multi {
+  flex: none;
+  max-width: 100%;
+  margin-left: auto;
+  flex-wrap: wrap;
+  gap: 2px;
+  justify-content: flex-end;
+}
+.seg-multi button {
+  min-height: 23px;
+  font-family: var(--sans);
+  white-space: nowrap;
+}
+.seg-multi button.on {
+  background: var(--seg-on-bg);
+  color: var(--seg-on-fg);
+}
+
 #analytics {
   padding: 4px 20px 14px;
   /* The panel is a fixed-height flex column and this box fills whatever

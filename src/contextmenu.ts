@@ -7,7 +7,7 @@
 // can't drift: the native menu and the DOM menu always offer the same items,
 // checkmarks, and actions.
 
-import type { Limit, ProviderFilter, Settings, Snapshot } from "./types";
+import type { Limit, Settings, Snapshot } from "./types";
 import { isTauri } from "./datasource";
 import { windowShort } from "./island";
 import { t } from "./i18n";
@@ -73,18 +73,25 @@ function pinItems(
   return items;
 }
 
+/**
+ * Quota-pair source toggles (T-916). The island only shows the two quota
+ * providers, so the context menu keeps this minimal: independent Claude / Codex
+ * toggles that add or remove the source from `settings.sources`. The full
+ * five-source multi-select lives in Settings; the usage-only sources
+ * (OpenCode/Gemini/Grok) never affect the island, so they are omitted here.
+ * Brand names are shown verbatim (never localized — same rule as the chip row).
+ */
 function providerItems(ctx: MenuCtx): Leaf[] {
-  const cur = ctx.settings.providers;
-  const opt = (value: ProviderFilter, labelKey: Parameters<typeof t>[0]): Leaf => ({
-    label: t(labelKey),
-    checked: cur === value,
-    onSelect: () => ctx.apply({ providers: value }),
+  const src = ctx.settings.sources ?? [];
+  const toggle = (id: "claude" | "codex", label: string): Leaf => ({
+    label,
+    checked: src.includes(id),
+    onSelect: () => {
+      const next = src.includes(id) ? src.filter((s) => s !== id) : [...src, id];
+      ctx.apply({ sources: next });
+    },
   });
-  return [
-    opt("both", "settings.providersBoth"),
-    opt("claude", "settings.providersClaude"),
-    opt("codex", "settings.providersCodex"),
-  ];
+  return [toggle("claude", "Claude"), toggle("codex", "Codex")];
 }
 
 function buildSections(ctx: MenuCtx): Section[] {

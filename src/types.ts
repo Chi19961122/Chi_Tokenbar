@@ -77,6 +77,13 @@ export interface Settings {
   warn_pct: number;
   crit_pct: number;
   compact: boolean;
+  /** T-916: the unified multi-select of usage/quota sources — read this, not the
+   *  deprecated `providers`/`tool_*` fields below. Any of "claude" | "codex" |
+   *  "opencode" | "gemini" | "grok"; empty means nothing shown (honest empty
+   *  UI). Mirrors config.rs `Settings::sources`. */
+  sources: string[];
+  /** DEPRECATED (T-916): folded into `sources`. Still present because the
+   *  backend writes it for one-version downgrade safety; not read at runtime. */
   providers: ProviderFilter;
   codex_usage_source: CodexUsageSource;
   /** Keep the island above other windows. Defaults to true (matches tauri.conf.json). */
@@ -103,10 +110,11 @@ export interface Settings {
   /** T-905 戰報尺寸: last-used share-card size ("auto"|"story"). "story" is the
    *  9:16 portrait. Defaults to "auto". */
   share_size: string;
-  /** 階段 E 多工具: scan OpenCode local usage into analytics. Default true
-   *  (detect-and-show). Independent of `providers`. */
+  /** DEPRECATED (T-916): folded into `sources` ("opencode"). Kept for downgrade
+   *  write-back only; not read at runtime. */
   tool_opencode: boolean;
-  /** 階段 E 多工具: scan Gemini CLI local usage into analytics. Default true. */
+  /** DEPRECATED (T-916): folded into `sources` ("gemini"). Kept for downgrade
+   *  write-back only; not read at runtime. */
   tool_gemini: boolean;
   /** T-910 更新頻率: quota-API poll cadence in seconds. One of 30 | 60 | 180.
    *  Defaults to 180 (mirrors config.rs `Settings::default()`); the backend
