@@ -124,37 +124,49 @@ pub struct Analytics {
 // ── activity-type classification (階段 C+, Claude only) ───────────────────
 //
 // Buckets a Claude tool name into a coarse activity kind. Anything unrecognised
-// (MCP tools, Task*, Agent, chat-only turns) is "other" — a real bucket, not a
-// fabricated one. Kept deliberately small so each mapping is defensible.
+// is "other" — a real bucket, not a fabricated one. Kept deliberately small so
+// each mapping is defensible from an observed or documented tool name.
 fn classify_kind(name: &str) -> &'static str {
     match name {
         "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => "edit",
-        "Read" | "Grep" | "Glob" | "LS" | "ToolSearch" | "WebSearch" | "WebFetch" => "read",
+        "Read" => "read",
+        "Grep" | "Glob" | "LS" | "ToolSearch" => "search",
         "Bash" | "PowerShell" => "run",
+        "WebFetch" | "WebSearch" => "web",
+        "Task" => "agent",
+        _ if name.starts_with("Agent") => "agent",
+        _ if name.starts_with("mcp__") => "mcp",
         _ => "other",
     }
 }
 
 /// The single kind attributed to one assistant message, from the tools it used.
 /// A message's tokens are booked whole to its dominant tool kind (ties break in
-/// edit>read>run>other order); a message with no tool_use is "other".
+/// edit>read>search>run>web>agent>mcp>other order); a message with no tool_use
+/// is "other".
 fn message_kind(tool_names: &[String]) -> &'static str {
     if tool_names.is_empty() {
         return "other";
     }
-    let mut counts = [0u32; 4]; // edit, read, run, other
+    let mut counts = [0u32; 8];
     for n in tool_names {
         let idx = match classify_kind(n) {
             "edit" => 0,
             "read" => 1,
-            "run" => 2,
-            _ => 3,
+            "search" => 2,
+            "run" => 3,
+            "web" => 4,
+            "agent" => 5,
+            "mcp" => 6,
+            _ => 7,
         };
         counts[idx] += 1;
     }
-    let kinds = ["edit", "read", "run", "other"];
+    let kinds = [
+        "edit", "read", "search", "run", "web", "agent", "mcp", "other",
+    ];
     let mut best = 0;
-    for i in 1..4 {
+    for i in 1..counts.len() {
         if counts[i] > counts[best] {
             best = i;
         }
@@ -1386,12 +1398,22 @@ mod tests {
     fn classify_maps_tools_to_kinds() {
         assert_eq!(classify_kind("Edit"), "edit");
         assert_eq!(classify_kind("Write"), "edit");
+        assert_eq!(classify_kind("MultiEdit"), "edit");
+        assert_eq!(classify_kind("NotebookEdit"), "edit");
         assert_eq!(classify_kind("Read"), "read");
-        assert_eq!(classify_kind("Grep"), "read");
+        assert_eq!(classify_kind("Grep"), "search");
+        assert_eq!(classify_kind("Glob"), "search");
+        assert_eq!(classify_kind("LS"), "search");
+        assert_eq!(classify_kind("ToolSearch"), "search");
         assert_eq!(classify_kind("Bash"), "run");
         assert_eq!(classify_kind("PowerShell"), "run");
-        assert_eq!(classify_kind("Agent"), "other");
-        assert_eq!(classify_kind("mcp__whatever"), "other");
+        assert_eq!(classify_kind("WebFetch"), "web");
+        assert_eq!(classify_kind("WebSearch"), "web");
+        assert_eq!(classify_kind("Task"), "agent");
+        assert_eq!(classify_kind("Agent"), "agent");
+        assert_eq!(classify_kind("AgentExplore"), "agent");
+        assert_eq!(classify_kind("mcp__whatever"), "mcp");
+        assert_eq!(classify_kind("AskUserQuestion"), "other");
     }
 
     #[test]
@@ -1409,6 +1431,14 @@ mod tests {
         assert_eq!(
             message_kind(&["Read".to_string(), "Read".to_string()]),
             "read"
+        );
+        assert_eq!(
+            message_kind(&["WebFetch".to_string(), "AgentPlan".to_string()]),
+            "web"
+        );
+        assert_eq!(
+            message_kind(&["mcp__server__tool".to_string(), "mcp__other".to_string()]),
+            "mcp"
         );
     }
 

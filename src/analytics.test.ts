@@ -15,6 +15,7 @@ import {
 } from "./analytics";
 import type { Analytics, DayPoint } from "./types";
 import { mockAnalytics } from "./mock";
+import { setLocale } from "./i18n";
 
 /** N consecutive daily buckets from `start`, each with `tokens` under one agent
  *  (0 → an empty day). Dates advance in UTC to match the backend buckets. */
@@ -271,6 +272,40 @@ describe("階段 C+ render wiring", () => {
     expect(root.querySelectorAll(".donut circle")).toHaveLength(a.byKind.length + 1);
     // Project bars carry a token·% label (shareLabel), like the other bars.
     expect(root.querySelector(".sub-sec")).not.toBeNull();
+  });
+
+  it("renders all expanded activity-kind labels in both locales", () => {
+    const a = mockAnalytics("week");
+    a.byKind = ["edit", "read", "search", "run", "web", "agent", "mcp", "other"].map(
+      (kind, index) => ({ kind, tokens: 8 - index }),
+    );
+    const root = document.createElement("div");
+
+    try {
+      setLocale("en");
+      renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
+      expect(root.querySelector(".donut-legend")?.textContent).toContain("Search");
+      expect(root.querySelector(".donut-legend")?.textContent).toContain("Web");
+      expect(root.querySelector(".donut-legend")?.textContent).toContain("Agent");
+      expect(root.querySelector(".donut-legend")?.textContent).toContain("MCP");
+      expect(root.querySelectorAll(".donut-legend span")).toHaveLength(8);
+      const colors = [...root.querySelectorAll<HTMLElement>(".donut-legend i")].map(
+        (dot) => dot.style.background,
+      );
+      expect(new Set(colors).size).toBe(8);
+      expect(colors.every((color) => /^var\(--(?:ink-\d+|prov-claude|prov-codex|accent)\)$/.test(color))).toBe(
+        true,
+      );
+
+      setLocale("zh-TW");
+      renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
+      expect(root.querySelector(".donut-legend")?.textContent).toContain("搜尋");
+      expect(root.querySelector(".donut-legend")?.textContent).toContain("網路");
+      expect(root.querySelector(".donut-legend")?.textContent).toContain("代理");
+      expect(root.querySelector(".donut-legend")?.textContent).toContain("MCP");
+    } finally {
+      setLocale("en");
+    }
   });
 
   it("omits empty advanced sections instead of drawing blank cards", () => {

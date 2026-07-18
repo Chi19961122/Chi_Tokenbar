@@ -196,7 +196,16 @@ function heatmap(a: Analytics): string {
 /** Fixed editorial sequence; activity kinds no longer carry semantic colors.
  *  CSS-variable values (theme-following) — see colors.ts SERIES header. */
 function kindColor(index: number): string {
-  const colors = ["var(--ink-900)", "var(--ink-500)", "var(--ink-300)", "var(--accent)"];
+  const colors = [
+    "var(--ink-900)",
+    "var(--ink-300)",
+    "var(--prov-claude)",
+    "var(--ink-700)",
+    "var(--accent)",
+    "var(--ink-400)",
+    "var(--prov-codex)",
+    "var(--ink-500)",
+  ];
   return colors[index % colors.length];
 }
 function kindLabel(kind: string): string {
@@ -205,8 +214,16 @@ function kindLabel(kind: string): string {
       return t("analytics.kindEdit");
     case "read":
       return t("analytics.kindRead");
+    case "search":
+      return t("analytics.kindSearch");
     case "run":
       return t("analytics.kindRun");
+    case "web":
+      return t("analytics.kindWeb");
+    case "agent":
+      return t("analytics.kindAgent");
+    case "mcp":
+      return t("analytics.kindMcp");
     case "other":
       return t("analytics.kindOther");
     default:

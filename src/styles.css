@@ -1376,10 +1376,12 @@ body.settings-open #gear {
   flex: 0 0 auto;
 }
 .donut-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  min-width: 100px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+  row-gap: 9px;
+  flex: 1;
+  min-width: 0;
   font-size: 10px;
   color: var(--muted);
 }
@@ -1387,6 +1389,7 @@ body.settings-open #gear {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 .donut-legend i {
   width: 5px;
