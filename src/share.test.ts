@@ -152,9 +152,9 @@ describe("buildShareData contract", () => {
     expect(zh.genMonthYear).toBe("JUL 2026"); // never toLocale — fixed English month
   });
 
-  it("docNo is TB-YYYY-MMDD from the period's last day", () => {
+  it("docNo is AT-YYYY-MMDD from the period's last day", () => {
     const d = buildShareData(fakeAnalytics(), { range: "week", locale: "en" });
-    expect(d.docNo).toBe("TB-2026-0716");
+    expect(d.docNo).toBe("AT-2026-0716");
   });
 
   it("omits genMonthYear / docNo when there is no daily data", () => {
@@ -235,46 +235,61 @@ describe("renderShareCard — all six styles", () => {
       ).toBe(true);
       // est cost (statement/minimal/fuel/wa show "$47.20"; diagnostics "47.20").
       expect(txt).toContain("47.20");
-      // a split row name — fuel is model-grouped (uppercased); island_card shows
-      // the quota gauge (no agent splits) so it carries a brand label; the rest
-      // carry the top agent.
-      if (style === "fuel") expect(txt).toContain("SONNET-5");
+      // a split row name — fuel (Sounding) shows model-grouped depth layers
+      // (verbatim names); island_card (Atoll ring) shows the quota gauge legend so
+      // it carries a brand label; the rest carry the top agent.
+      if (style === "fuel") expect(txt).toContain("sonnet-5");
       else if (style === "island_card") expect(txt).toContain("Claude");
       else expect(txt).toContain("main");
     });
   }
 
-  it("fuel honours fuelGroup=agent (agent names, uppercased) and numbers grades", () => {
+  it("fuel (Sounding) honours fuelGroup=agent for its depth layers", () => {
     const card = renderShareCard("fuel", data, "en", { fuelGroup: "agent" });
-    expect(card.textContent ?? "").toContain("MAIN");
-    // grade numbers 01..04 are literal, untranslated
-    expect(card.querySelector(".fl-row .gr")?.textContent).toBe("01");
+    // agent-grouped: top-2 agents appear verbatim as depth-layer legend rows
+    const layers = card.querySelectorAll(".sd-lay");
+    expect(layers.length).toBe(2);
+    expect(card.textContent ?? "").toContain("main");
+    expect(card.textContent ?? "").not.toContain("sonnet-5");
   });
 
-  it("island_card renders the quota gauge rows only when a gauge is present", () => {
+  it("fuel (Sounding) defaults to agent layers, model layers when toggled", () => {
+    const agentDefault = renderShareCard("fuel", data, "en"); // no fuelGroup → agent
+    expect(agentDefault.textContent ?? "").toContain("main");
+    const modelCard = renderShareCard("fuel", data, "en", { fuelGroup: "model" });
+    expect(modelCard.textContent ?? "").toContain("sonnet-5");
+  });
+
+  it("island_card (Atoll ring) renders gauge arcs + legend only when present", () => {
     const withGauge = renderShareCard("island_card", data, "en");
-    const rows = withGauge.querySelectorAll(".ic-qrow");
+    const rows = withGauge.querySelectorAll(".at-lrow");
     expect(rows.length).toBe(2);
     // USED % (util), not % left: Claude 5h util 72 → "72%".
-    expect(withGauge.querySelector(".ic-qval")?.textContent).toContain("72%");
-    // fill width + fixed used-% color
-    const fill = withGauge.querySelector<HTMLElement>(".ic-fill");
-    expect(fill?.style.width).toBe("72%");
-    expect(fill?.style.background).toContain("rgb(24, 24, 27)"); // #18181B
+    expect(withGauge.querySelector(".at-lrow .pv")?.textContent).toContain("72%");
+    // the coral ring: a value arc carries stroke-dasharray "{util} 100"
+    const arc = withGauge.querySelector('circle[stroke-dasharray="72 100"]');
+    expect(arc).not.toBeNull();
+    // the three faint track rings are always drawn (atoll motif)
+    const tracks = withGauge.querySelectorAll('circle[stroke="#F0F0F1"]');
+    expect(tracks.length).toBe(3);
 
     const noGauge = buildShareData(fakeAnalytics(), { range: "week", locale: "en" });
     const card = renderShareCard("island_card", noGauge, "en");
-    expect(card.querySelectorAll(".ic-qrow").length).toBe(0);
+    expect(card.querySelectorAll(".at-lrow").length).toBe(0);
+    // no fabricated quota: no value arcs when there is no gauge
+    expect(card.querySelectorAll("circle[stroke-dasharray]").length).toBe(0);
+    // but the decorative track rings remain
+    expect(card.querySelectorAll('circle[stroke="#F0F0F1"]').length).toBe(3);
   });
 
-  it("diagnostics scales the 24h sparkline and flags the peak bar", () => {
+  it("diagnostics (Terminal) scales the 24h sparkline and flags the peak bar", () => {
     const hourly = new Array(24).fill(0);
     hourly[9] = 50;
     hourly[14] = 100; // peak
     hourly[18] = 25;
     const d = buildShareData(fakeAnalytics({ hourly }), { range: "week", locale: "en" });
     const card = renderShareCard("diagnostics", d, "en");
-    const bars = card.querySelectorAll<HTMLElement>(".dx-spark .bars i");
+    const bars = card.querySelectorAll<HTMLElement>(".tm-spark .bars i");
     expect(bars.length).toBe(24);
     expect(bars[14].classList.contains("pk")).toBe(true);
     // jsdom normalizes "100.0%" → "100%" when re-serializing inline styles.
@@ -282,15 +297,40 @@ describe("renderShareCard — all six styles", () => {
     expect(bars[9].style.height).toBe("50%"); // 50/100
     expect(bars[18].style.height).toBe("25%");
     // only one peak bar
-    expect(card.querySelectorAll(".dx-spark .bars i.pk").length).toBe(1);
+    expect(card.querySelectorAll(".tm-spark .bars i.pk").length).toBe(1);
   });
 
-  it("diagnostics renders a flat sparkline when hourly is all-zero", () => {
+  it("diagnostics (Terminal) renders a flat sparkline when hourly is all-zero", () => {
     const card = renderShareCard("diagnostics", data, "en"); // fake hourly is all-zero
-    const bars = card.querySelectorAll<HTMLElement>(".dx-spark .bars i");
+    const bars = card.querySelectorAll<HTMLElement>(".tm-spark .bars i");
     expect(bars.length).toBe(24);
-    expect(card.querySelectorAll(".dx-spark .bars i.pk").length).toBe(0);
+    expect(card.querySelectorAll(".tm-spark .bars i.pk").length).toBe(0);
     expect(bars[0].style.height).toBe("0%");
+  });
+
+  it("fuel (Sounding) derives the depth surface + peak marker from hourly", () => {
+    const hourly = new Array(24).fill(0);
+    hourly[8] = 40;
+    hourly[14] = 100; // deepest
+    hourly[20] = 30;
+    const d = buildShareData(fakeAnalytics({ hourly }), { range: "week", locale: "en" });
+    const card = renderShareCard("fuel", d, "en");
+    // a surface polyline + a filled area path exist
+    expect(card.querySelectorAll(".sd-chart path").length).toBe(2);
+    // the peak sounding marker (dashed line + dot) lands on the argmax hour
+    expect(card.querySelector(".sd-chart circle")).not.toBeNull();
+    expect(card.querySelector(".sd-chart line")).not.toBeNull();
+    // label reads the plotted curve's deepest hour + value
+    expect(card.querySelector(".sd-meta .peak")?.textContent).toContain("14:00");
+    expect(card.querySelector(".sd-meta .peak")?.textContent).toContain(fmtTokens(100));
+  });
+
+  it("fuel (Sounding) omits the peak marker for all-zero hourly", () => {
+    const card = renderShareCard("fuel", data, "en"); // fake hourly all-zero
+    // area + surface still drawn (flat), but no peak marker
+    expect(card.querySelectorAll(".sd-chart path").length).toBe(2);
+    expect(card.querySelector(".sd-chart circle")).toBeNull();
+    expect(card.querySelector(".sd-chart line")).toBeNull();
   });
 
   it("renders the peak hour as zero-padded HH:00", () => {
@@ -307,9 +347,9 @@ describe("renderShareCard — all six styles", () => {
     expect(zh.textContent ?? "").toContain("用量結算單");
   });
 
-  it("statement hero subline carries agents/sessions/streak/peak, dropping empties", () => {
+  it("statement (Ledger) hero subline carries agents/sessions/streak/peak, dropping empties", () => {
     const stmt = renderShareCard("statement", data, "en");
-    const sub = stmt.querySelector(".st-tsub")?.textContent ?? "";
+    const sub = stmt.querySelector(".lg-tsub")?.textContent ?? "";
     expect(sub).toContain("across 5 agents");
     expect(sub).toContain("3 sessions");
     expect(sub).toContain("streak 7d");
@@ -317,18 +357,19 @@ describe("renderShareCard — all six styles", () => {
 
     const bare = { ...data, streakDays: 0, maxDayTokens: 0, sessionCount: 0 };
     const stmt2 = renderShareCard("statement", bare, "en");
-    const sub2 = stmt2.querySelector(".st-tsub")?.textContent ?? "";
+    const sub2 = stmt2.querySelector(".lg-tsub")?.textContent ?? "";
     expect(sub2).toContain("across 5 agents");
     expect(sub2).not.toContain("streak");
     expect(sub2).not.toContain("peak");
     expect(sub2).not.toContain("sessions");
   });
 
-  it("every card carries the unified signature (battery + TokenBar)", () => {
+  it("every card carries the unified signature (◎ ring mark + Atoll)", () => {
     for (const style of ALL_STYLES) {
       const card = renderShareCard(style, data, "en", { fuelGroup: "model" });
-      expect(card.textContent ?? "", `${style} brand`).toContain("TokenBar");
-      expect(card.querySelector(".batt, .fl-pump, .pb"), `${style} mark`).not.toBeNull();
+      expect(card.textContent ?? "", `${style} brand`).toContain("Atoll");
+      // the ◎ ring mark: an svg.rm (all cards) or the seal svg (Seal card badge)
+      expect(card.querySelector(".rm, .sl-seal svg"), `${style} mark`).not.toBeNull();
     }
   });
 

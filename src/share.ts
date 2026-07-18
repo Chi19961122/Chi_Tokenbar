@@ -1,4 +1,4 @@
-// 階段 D 戰報 Share — pure data layer + six share-card renderers.
+// Atoll 戰報 Share — pure data layer + six share-card renderers.
 //
 // This module is deliberately pure and side-effect free (beyond importing its
 // own CSS): buildShareData() and renderShareCard() take an explicit locale and
@@ -11,8 +11,16 @@
 // byAgent, byModel, hourly, records, sessionsThisWeek, daily (for dates), limits
 // and range are read here. See the comment on `byProject` in types.ts.
 //
-// T-915: the six renderers are ported 1:1 from design/refs/share-redesign-preview
-// .html under the repo `.shXX-card` class prefixes, wired to real analytics.
+// T-922: the six renderers are reimplemented for the Atoll (ring / lagoon) visual
+// direction, ported 1:1 from design/refs/atoll-share-preview.html under the repo
+// `.shXX-card` class prefixes, wired to the real T-915 analytics pipeline. The six
+// ShareStyle keys are STABLE (persisted in `share_style`); only what each renders
+// + its display label changed:
+//   island_card → Atoll ring gauge (flagship)   statement → Ledger
+//   diagnostics → Terminal (atoll --report)      minimal   → Minimal
+//   fuel        → Sounding (lagoon depth)         wa        → Seal (◎ ring seal)
+// All copy: zero em/en dashes (hyphen only), rationed middots, one accent (#EC4899),
+// unified ◎ ring-mark signature + "Atoll" + mono genMonthYear.
 
 import "./share.css";
 import type { Analytics, AnalyticsRange, Limit } from "./types";
@@ -39,9 +47,9 @@ export interface ShareSplit {
   pct: number; // round(tokens / totalTokens * 100) — share of THIS period's total
 }
 
-/** One structured quota row for the island_card gauge. `util` is the USED % (0-100)
- *  — the ONE sanctioned exposure of a subscription %, deliberately "used" (opposite
- *  the app's `% left` convention). `label` is "Brand · window" (e.g. "Claude · 5h"). */
+/** One structured quota row for the island_card (Atoll ring) gauge. `util` is the
+ *  USED % (0-100) — the ONE sanctioned exposure of a subscription %, deliberately
+ *  "used" (opposite the app's `% left` convention). `label` is "Brand · window". */
 export interface QuotaGaugeRow {
   label: string;
   util: number;
@@ -53,14 +61,14 @@ export interface ShareData {
   streakDays: number;
   maxDayTokens: number;
   sessionCount: number; // ← Analytics.sessionsThisWeek (week-scoped; labeled neutrally)
-  hourly: number[]; // ← Analytics.hourly (24 buckets), diagnostics sparkline
+  hourly: number[]; // ← Analytics.hourly (24 buckets), sparkline + depth profile
   peakHour: number; // ← Analytics.records.maxHour.hour (0-23), rendered "HH:00"
   byAgent: ShareSplit[]; // from Analytics.byAgent, only tokens>0, sorted desc
   byModel: ShareSplit[]; // from Analytics.byModel, only tokens>0, sorted desc
   agentCount: number; // byAgent.length (tokens>0)
   periodLabel: string; // locale-aware, date-embedded, built here
   genMonthYear?: string; // uppercase "MON YYYY" from the period's last day; omit if unknown
-  docNo?: string; // "TB-YYYY-MMDD" from the period's last day (statement doc number)
+  docNo?: string; // "AT-YYYY-MMDD" from the period's last day (statement doc number)
   quotaGauge?: QuotaGaugeRow[]; // island_card only; present only when includeQuotaNote && limits
 }
 
@@ -129,7 +137,7 @@ function buildPeriodLabel(a: Analytics, locale: Locale): string {
 }
 
 /** The period's last daily date, or undefined if there is no daily data. Used for
- *  both the uppercase "JUL 2026" signature date and the "TB-YYYY-MMDD" doc number,
+ *  both the uppercase "JUL 2026" signature date and the "AT-YYYY-MMDD" doc number,
  *  which must both derive from the same fixed month table (never toLocale*). */
 function lastDay(a: Analytics): Ymd | undefined {
   if (a.daily.length === 0) return undefined;
@@ -143,11 +151,11 @@ function fmtMonthYear(p: Ymd): string | undefined {
   return `${mon.toUpperCase()} ${p.y}`;
 }
 
-/** Statement doc number "TB-2026-0718" from a date (zero-padded month+day). */
+/** Statement doc number "AT-2026-0718" from a date (zero-padded month+day). */
 function fmtDocNo(p: Ymd): string {
   const mm = String(p.m).padStart(2, "0");
   const dd = String(p.d).padStart(2, "0");
-  return `TB-${p.y}-${mm}${dd}`;
+  return `AT-${p.y}-${mm}${dd}`;
 }
 
 // ── quota gauge (the ONLY place a subscription-limit % may appear) ───────────
@@ -256,6 +264,40 @@ function fmtHour(hour: number): string {
 
 const TOP_N = 5;
 
+/** The ◎ ring mark (concentric circle + centre dot), `currentColor`. Replaces the
+ *  old battery mark as the unified brand signature glyph. Sized by CSS per slot. */
+const RING_MARK =
+  `<svg class="rm" viewBox="0 0 24 24" fill="none">` +
+  `<circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/>` +
+  `<circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg>`;
+
+/** The larger ◎ seal glyph (two concentric rings + centre dot) for the Seal card's
+ *  ring-seal badge. `currentColor` (white on the accent badge). */
+const SEAL_MARK =
+  `<svg viewBox="0 0 24 24" fill="none">` +
+  `<circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.6"/>` +
+  `<circle cx="12" cy="12" r="5.4" stroke="currentColor" stroke-width="1.6"/>` +
+  `<circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>`;
+
+const BRAND = "Atoll";
+
+/** Unified signature block: ◎ ring mark + "Atoll". The date suffix (mono
+ *  "JUL 2026") lives in each card's `.sig-r` slot, composed per-template. */
+function sig(): string {
+  return `<div class="sig">${RING_MARK}<span class="bn">${BRAND}</span></div>`;
+}
+
+/** Hero subline shared by Ledger: "across N agents · K sessions · streak Nd ·
+ *  peak X/day", each segment dropped when its value is absent. */
+function heroSubline(data: ShareData, T: TFn): string {
+  const parts: string[] = [T("share.acrossAgents", { n: data.agentCount })];
+  if (data.sessionCount > 0) parts.push(T("share.sessions", { n: data.sessionCount }));
+  if (data.streakDays > 0) parts.push(T("share.streakInline", { n: data.streakDays }));
+  if (data.maxDayTokens > 0)
+    parts.push(T("share.peakPerDay", { tokens: fmtTokens(data.maxDayTokens) }));
+  return parts.join(" · ");
+}
+
 /** Build the `-card` root element for a style. `<div class="…-card">` with the
  *  concept markup as innerHTML; the caller sizes/mounts it. */
 export function renderShareCard(
@@ -270,17 +312,20 @@ export function renderShareCard(
   const card = (() => {
     switch (style) {
       case "statement":
-        return statementCard(data, T);
+        return ledgerCard(data, T);
       case "diagnostics":
-        return diagnosticsCard(data);
+        return terminalCard(data);
       case "minimal":
         return minimalCard(data, T);
       case "fuel":
-        return fuelCard(data, T, opts?.fuelGroup ?? "model");
+        // Sounding's depth-layer legend honours the fuelGroup toggle that the
+        // report panel still shows for this slot; a bare call defaults to agent
+        // (the mock/brief "layers = byAgent top-2"). See soundingCard.
+        return soundingCard(data, T, opts?.fuelGroup ?? "agent");
       case "island_card":
-        return islandCard(data, T);
+        return atollCard(data, T);
       case "wa":
-        return waCard(data, T);
+        return sealCard(data, T);
     }
   })();
 
@@ -299,41 +344,94 @@ function el(cls: string, html: string): HTMLElement {
   return d;
 }
 
-/** The battery mark, at the requested pixel box (viewBox is fixed). */
-function battSvg(w = 26, h = 15): string {
-  return (
-    `<svg class="batt" width="${w}" height="${h}" viewBox="0 0 28 16" fill="none">` +
-    `<rect x="1" y="2" width="22" height="12" rx="3" stroke="currentColor" stroke-width="1.6"/>` +
-    `<rect x="24" y="6" width="2.6" height="4" rx="1" fill="currentColor"/>` +
-    `<rect x="3.4" y="4.4" width="12" height="7.2" rx="1.4" fill="currentColor"/></svg>`
+// ── island_card → Atoll ring gauge (flagship; the ONLY quota exposure) ────────
+// Three concentric coral-ring arcs = quotaGauge (USED %), centre lagoon holds a
+// static "Quota used / this cycle" label, big total + cost + sessions + streak on
+// the left. Arcs use SVG pathLength="100" + stroke-dasharray="{util} 100".
+const RING_RADII = [150, 125, 100];
+const RING_TRACK = "#F0F0F1";
+const RING_FILLS = ["#18181B", "#52525B", "#71717A"]; // primary / secondary / muted (pinned)
+
+function atollCard(data: ShareData, T: TFn): HTMLElement {
+  const total = splitAbbrev(data.totalTokens);
+  const gauge = (data.quotaGauge ?? []).slice(0, 3);
+
+  // Always draw the three faint track rings (the atoll motif); draw a value arc +
+  // legend row only for gauge rows that exist (so <3 rows renders a partial target
+  // and 0 rows a decorative empty target — never fabricated quota).
+  const arcs = RING_RADII.map((r, i) => {
+    const track = `<circle cx="170" cy="170" r="${r}" stroke="${RING_TRACK}"/>`;
+    if (i >= gauge.length) return track;
+    const util = Math.max(0, Math.min(100, Math.round(gauge[i].util)));
+    return (
+      track +
+      `<circle cx="170" cy="170" r="${r}" stroke="${RING_FILLS[i]}" ` +
+      `pathLength="100" stroke-dasharray="${util} 100"/>`
+    );
+  }).join("");
+
+  const legend = gauge
+    .map((g, i) => {
+      const [brand, ...rest] = g.label.split(" · ");
+      const desc = rest.join(" · ");
+      const util = Math.max(0, Math.min(100, Math.round(g.util)));
+      return (
+        `<div class="at-lrow"><span class="dot" style="background:${RING_FILLS[i]}"></span>` +
+        `<span class="nm">${esc(brand)}${desc ? ` <small>· ${esc(desc)}</small>` : ""}</span>` +
+        `<span class="pv tnum">${util}%<small> ${T("share.used")}</small></span></div>`
+      );
+    })
+    .join("");
+
+  const subParts: string[] = [
+    `<span class="cost tnum">${money(data.totalCostUsd)}<u>${T("share.est")}</u></span>`,
+  ];
+  if (data.sessionCount > 0) subParts.push(`<span>${T("share.sessions", { n: data.sessionCount })}</span>`);
+  if (data.streakDays > 0) subParts.push(`<span>${T("share.streakInline", { n: data.streakDays })}</span>`);
+  const sub = subParts.join(`<span class="sp"></span>`);
+  const genDate = data.genMonthYear ?? "";
+
+  return el(
+    "shic-card",
+    `
+    <div class="at-l">
+      <div class="at-top">
+        <div class="at-pill">${RING_MARK}<b>${BRAND}</b><span class="sep"></span>` +
+      `<span class="liv">LIVE</span></div>
+        <div class="at-period">${esc(data.periodLabel)}</div>
+      </div>
+      <div class="at-hero">
+        <div class="at-eyebrow">${T("share.cumulativeUsage")}</div>
+        <div class="at-big tnum">${total.num}<em>${total.unit}</em></div>
+        <div class="at-sub">${sub}</div>
+      </div>
+    </div>
+    <div class="at-r">
+      <div class="at-ring">
+        <svg viewBox="0 0 340 340" width="100%" height="100%">` +
+      `<g fill="none" stroke-width="15" stroke-linecap="round">${arcs}</g></svg>
+        <div class="lag"><div class="k">${T("share.quotaUsed")}</div>` +
+      `<div class="v tnum">${T("share.thisCycle")}</div></div>
+      </div>
+      <div class="at-legend">${legend}</div>
+    </div>
+    <div class="at-foot">
+      ${sig()}
+      <div class="sig-r">${genDate}</div>
+    </div>`,
   );
 }
 
-/** Unified signature block: battery mark + "TokenBar". The date suffix (mono
- *  "JUL 2026") lives in each card's `.sig-r` slot, composed per-template. */
-function sig(w = 26, h = 15): string {
-  return `<div class="sig"><span class="mk">${battSvg(w, h)}</span><span class="bn">TokenBar</span></div>`;
-}
-
-/** Hero subline shared by statement: "across N agents · K sessions · streak Nd ·
- *  peak X/day", each segment dropped when its value is absent. */
-function heroSubline(data: ShareData, T: TFn): string {
-  const parts: string[] = [T("share.acrossAgents", { n: data.agentCount })];
-  if (data.sessionCount > 0) parts.push(T("share.sessions", { n: data.sessionCount }));
-  if (data.streakDays > 0) parts.push(T("share.streakInline", { n: data.streakDays }));
-  if (data.maxDayTokens > 0)
-    parts.push(T("share.peakPerDay", { tokens: fmtTokens(data.maxDayTokens) }));
-  return parts.join(" · ");
-}
-
-// ── statement 用量結算單 (byAgent) ───────────────────────────────────────────
-function statementCard(data: ShareData, T: TFn): HTMLElement {
+// ── statement → Ledger (byAgent) ──────────────────────────────────────────────
+// Finance-statement authority: one serif masthead, 78px total, cost in the right
+// cell, dotted-lead agent rows onto a shared token axis.
+function ledgerCard(data: ShareData, T: TFn): HTMLElement {
   const total = splitAbbrev(data.totalTokens);
   const rows = data.byAgent
     .slice(0, TOP_N)
     .map(
       (s) =>
-        `<div class="st-lrow"><span class="nm">${esc(s.name)}</span>` +
+        `<div class="lg-lrow"><span class="nm">${esc(s.name)}</span>` +
         `<span class="lead"></span><span class="pct">${s.pct}%</span>` +
         `<span class="val tnum"><span class="full">${grouped(s.tokens)}</span>` +
         `<span class="abbr">${fmtTokens(s.tokens)}</span></span></div>`,
@@ -346,45 +444,43 @@ function statementCard(data: ShareData, T: TFn): HTMLElement {
   return el(
     "shst-card",
     `
-    <div class="st-mast">
-      <div><div class="ttl">${T("share.usageStatement")}</div><div class="sub">${T(
-      "share.cumulativeForPeriod",
-    )}</div></div>
+    <div class="lg-mast">
+      <div><div class="ttl">${T("share.usageStatement")}</div>` +
+      `<div class="sub">${T("share.cumulativeForPeriod")}</div></div>
       <div class="meta"><div class="pd">${esc(data.periodLabel)}</div>${docNo}</div>
     </div>
-    <div class="st-hero">
-      <div class="cell"><div class="st-lbl">${T("share.totalTokens")}</div>` +
-      `<div class="st-tok tnum">${total.num}<em>${total.unit}</em></div>` +
-      `<div class="st-tsub">${heroSubline(data, T)}</div></div>
-      <div class="cell cost"><div class="st-lbl">${T("share.estCost")}</div>` +
-      `<div class="st-cost tnum"><i>$</i>${data.totalCostUsd.toFixed(2)}</div>` +
+    <div class="lg-hero">
+      <div class="cell"><div class="lg-lbl">${T("share.totalTokens")}</div>` +
+      `<div class="lg-tok tnum">${total.num}<em>${total.unit}</em></div>` +
+      `<div class="lg-tsub">${heroSubline(data, T)}</div></div>
+      <div class="cell cost"><div class="lg-lbl">${T("share.estCost")}</div>` +
+      `<div class="lg-cost tnum"><i>$</i>${data.totalCostUsd.toFixed(2)}</div>` +
       `<small>${T("share.estUsd")}</small></div>
     </div>
-    <div class="st-ledger">
-      <div class="st-lhead"><span>${T("share.agent")}</span><span>${T(
-      "share.share",
-    )}</span><span>${T("share.tokens")}</span></div>
+    <div class="lg-ledger">
+      <div class="lg-lhead"><span>${T("share.agent")}</span><span>${T("share.share")}</span>` +
+      `<span>${T("share.tokens")}</span></div>
       ${rows}
     </div>
-    <div class="st-foot">
+    <div class="lg-foot">
       ${sig()}
       <div class="sig-r">${genDate}</div>
     </div>`,
   );
 }
 
-// ── diagnostics 系統診斷 (byAgent + 24h sparkline) ────────────────────────────
-// The terminal card is entirely mono literals (TOTAL_TOKENS / EST_COST_USD /
-// SESSIONS / EOF / column headers) around the already-localized periodLabel, so
-// it takes no TFn — nothing here is translated (per the i18n literal rule).
-function diagnosticsCard(data: ShareData): HTMLElement {
+// ── diagnostics → Terminal (byAgent + 24h sparkline) ──────────────────────────
+// Entirely mono literals (TOTAL_TOKENS / EST_COST_USD / SESSIONS / EOF / column
+// headers / `atoll --report`) around the already-localized periodLabel, so it
+// takes no TFn — nothing here is translated (per the i18n literal rule).
+function terminalCard(data: ShareData): HTMLElement {
   const total = splitAbbrev(data.totalTokens);
   const top = data.byAgent.slice(0, TOP_N);
   const maxTok = top[0]?.tokens ?? 0;
   const rows = top
     .map(
       (s, i) =>
-        `<div class="tr${i >= 3 ? " dim" : ""}"><span class="g">&gt;</span>` +
+        `<div class="tr${i > 0 ? " dim" : ""}"><span class="g">&gt;</span>` +
         `<span class="nm">${esc(s.name)}</span>` +
         `<span class="barcell"><i style="width:${barPct(s.tokens, maxTok).toFixed(0)}%"></i></span>` +
         `<span class="num tnum">${fmtTokens(s.tokens)}</span>` +
@@ -408,13 +504,13 @@ function diagnosticsCard(data: ShareData): HTMLElement {
   return el(
     "shdx-card",
     `
-    <div class="dx-bar"><div class="dots"><i></i><i></i><i></i></div>` +
-      `<div class="win">tokenbar — report — 80×24</div></div>
-    <div class="dx-body">
-      <div class="dx-cmd"><span class="p">$ </span>tokenbar <span class="fl">--report</span>` +
+    <div class="tm-bar"><div class="dots"><i></i><i></i><i></i></div>` +
+      `<div class="win">atoll - report - 80x24</div></div>
+    <div class="tm-body">
+      <div class="tm-cmd"><span class="p">$ </span>atoll <span class="fl">--report</span>` +
       `<span class="cur"></span></div>
-      <div class="dx-cmt"># ${esc(data.periodLabel)}${streak}${peakDay}</div>
-      <div class="dx-focal">
+      <div class="tm-cmt"># ${esc(data.periodLabel)}${streak}${peakDay}</div>
+      <div class="tm-focal">
         <div class="big"><div class="k tnum">TOTAL_TOKENS</div>` +
       `<div class="v tnum">${total.num}<em>${total.unit}</em></div></div>
         <div class="kv">
@@ -424,26 +520,27 @@ function diagnosticsCard(data: ShareData): HTMLElement {
           <div><div class="k">SESSIONS</div><div class="v tnum">${data.sessionCount}</div></div>
         </div>
       </div>
-      <div class="dx-spark">
-        <div class="lbl"><span>HOURLY_LOAD [00–23]</span><span>peak <b>${fmtHour(
+      <div class="tm-spark">
+        <div class="lbl"><span>HOURLY_LOAD [00-23]</span><span>peak <b>${fmtHour(
           data.peakHour,
         )}</b></span></div>
         <div class="bars">${bars}</div>
       </div>
-      <div class="dx-tbl">
+      <div class="tm-tbl">
         <div class="hd"><span></span><span>agent</span><span>load</span><span>tokens</span><span>%</span></div>
         ${rows}
       </div>
-      <div class="dx-foot">
-        <div class="eof">— EOF —</div>
-        <div class="sig"><span class="mk">${battSvg(22, 13)}</span><span class="bn">TokenBar</span>` +
+      <div class="tm-foot">
+        <div class="eof">- EOF -</div>
+        <div class="sig">${RING_MARK}<span class="bn">${BRAND}</span>` +
       `<span class="sig-r">${genDate}</span></div>
       </div>
     </div>`,
   );
 }
 
-// ── minimal 極簡 (byAgent) ────────────────────────────────────────────────────
+// ── minimal → Minimal (byAgent) ───────────────────────────────────────────────
+// Big enough to read at thumbnail size; the M suffix is the one accent event.
 function minimalCard(data: ShareData, T: TFn): HTMLElement {
   const total = splitAbbrev(data.totalTokens);
   const max = data.byAgent[0]?.tokens ?? 0;
@@ -456,9 +553,10 @@ function minimalCard(data: ShareData, T: TFn): HTMLElement {
         `<span class="tk tnum">${fmtTokens(s.tokens)}</span></div>`,
     )
     .join("");
-  const streak = data.streakDays > 0 ? `<span class="dot"></span>${T("share.streakInline", {
-    n: data.streakDays,
-  })}` : "";
+  const streak =
+    data.streakDays > 0
+      ? `<span class="sp"></span>${T("share.streakInline", { n: data.streakDays })}`
+      : "";
   const genSuffix = data.genMonthYear ? ` · ${data.genMonthYear}` : "";
   return el(
     "shmn-card",
@@ -472,165 +570,137 @@ function minimalCard(data: ShareData, T: TFn): HTMLElement {
     </div>
     <div class="mn-hero">
       <div class="mn-big tnum">${total.num}<span>${total.unit}</span></div>
-      <div class="mn-cap"><b>${T("share.tokens")}</b><span class="dot"></span>${esc(
+      <div class="mn-cap"><b>${T("share.tokens")}</b><span class="sp"></span>${esc(
       data.periodLabel,
     )}${streak}</div>
       <div class="mn-split">${rows}</div>
     </div>
     <div class="mn-foot">
       <div class="sig-r">${T("share.peakAt", { hour: fmtHour(data.peakHour) })}</div>
-      <div class="sig"><span class="mk">${battSvg(24, 14)}</span>` +
-      `<span class="bn">TokenBar${genSuffix}</span></div>
+      <div class="sig">${RING_MARK}<span class="bn">${BRAND}${genSuffix}</span></div>
     </div>`,
   );
 }
 
-// ── fuel AI 加油站 (byModel default, byAgent when fuelGroup==="agent") ─────────
-function fuelCard(data: ShareData, T: TFn, group: "model" | "agent"): HTMLElement {
-  const splits = (group === "agent" ? data.byAgent : data.byModel).slice(0, 4);
-  const rows = splits
-    .map((s, i) => {
-      const t = splitAbbrev(s.tokens);
-      const gr = String(i + 1).padStart(2, "0");
-      return (
-        `<div class="fl-row"><span class="gr">${gr}</span>` +
-        `<span class="fl-mdl">${esc(s.name.toUpperCase())}</span><span class="fl-dots"></span>` +
-        `<span class="fl-tok tnum">${t.num}<em>${t.unit}</em></span>` +
-        `<span class="fl-pct tnum">${s.pct}%</span></div>`
-      );
-    })
-    .join("");
-  const modelsOn = group === "model" ? " class=\"on\"" : "";
-  const agentsOn = group === "agent" ? " class=\"on\"" : "";
+// ── fuel → Sounding (24h lagoon depth profile) ────────────────────────────────
+// The 24h load becomes a lagoon depth profile (deepest at peak); the depth layers
+// legend at the bottom is the top-2 splits with %. Honours `group` (model/agent).
+const SOUND_W = 1000; // depth-chart viewBox width; svg stretches to either aspect
+const SOUND_TOP = 8; // surface y at the deepest (peak) hour
+const SOUND_BAND = 200; // surface travel from deepest to shallowest
+const SOUND_FLOOR = 320; // viewBox height / lagoon floor
+const SOUND_LAYER_FILLS = ["#18181B", "#71717A"]; // primary / muted (pinned)
+
+function soundingCard(data: ShareData, T: TFn, group: "model" | "agent"): HTMLElement {
   const total = splitAbbrev(data.totalTokens);
-  const depot = data.genMonthYear
-    ? `TOKENBAR FUEL DEPOT · ${data.genMonthYear}`
-    : "TOKENBAR FUEL DEPOT";
-  const unit = `${T("share.tokens").toUpperCase()} · ${esc(data.periodLabel.toUpperCase())}`;
-  const footParts: string[] = [];
-  if (data.sessionCount > 0) footParts.push(T("share.sessions", { n: data.sessionCount }));
-  if (data.streakDays > 0) footParts.push(T("share.streakInline", { n: data.streakDays }));
+  const maxH = Math.max(0, ...data.hourly);
+
+  // 24 hourly buckets -> a smoothed straight-segment surface line; higher load =
+  // deeper lagoon = surface nearer the top. Area fills from the surface to floor.
+  const pts = data.hourly.map((v, i) => {
+    const x = (i / 23) * SOUND_W;
+    const n = maxH > 0 ? v / maxH : 0;
+    const y = SOUND_TOP + (1 - n) * SOUND_BAND;
+    return { x, y };
+  });
+  const surfaceD = "M " + pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L ");
+  const areaD = `${surfaceD} L ${SOUND_W},${SOUND_FLOOR} L 0,${SOUND_FLOOR} Z`;
+
+  // Peak marker on the plotted curve's deepest point (hourly argmax), so the
+  // dashed sounding line always lands on the surface it is annotating.
+  const peakIdx = maxH > 0 ? data.hourly.indexOf(maxH) : -1;
+  const marker =
+    peakIdx >= 0
+      ? `<line x1="${pts[peakIdx].x.toFixed(1)}" y1="0" x2="${pts[peakIdx].x.toFixed(1)}" ` +
+        `y2="290" stroke="#EC4899" stroke-width="2" stroke-dasharray="4 4"/>` +
+        `<circle cx="${pts[peakIdx].x.toFixed(1)}" cy="${pts[peakIdx].y.toFixed(1)}" r="5" fill="#EC4899"/>`
+      : "";
+  const peakLabel =
+    peakIdx >= 0 ? `DEEPEST ${fmtHour(peakIdx)} · ${fmtTokens(maxH)}` : "NO PEAK";
+
+  const layerSrc = (group === "agent" ? data.byAgent : data.byModel).slice(0, 2);
+  const layers = layerSrc
+    .map(
+      (s, i) =>
+        `<div class="sd-lay"><span class="bar" style="background:${
+          SOUND_LAYER_FILLS[i] ?? "#71717A"
+        }"></span>` +
+        `<span class="t">${esc(s.name)} <b>${s.pct}%</b></span></div>`,
+    )
+    .join("");
+  const genDate = data.genMonthYear ?? "";
+
   return el(
     "shfl-card",
     `
-    <div class="fl-canopy"></div>
-    <div class="fl-grate"></div>
-    <div class="fl-in">
-      <div class="fl-head">
-        <div class="fl-brand"><div class="fl-pump"><i></i></div>` +
-      `<div class="fl-nm"><b>TOKEN STATION</b><span>${depot}</span></div></div>
-        <div class="fl-chip"><span${modelsOn}>${T("share.models")}</span>` +
-      `<span${agentsOn}>${T("share.agents")}</span></div>
+    <div class="sd-top">
+      <div>
+        <div class="sd-eyebrow">${T("share.cumulativeUsage")} · ${T("share.lagoonDepth")}</div>
+        <div class="sd-big tnum">${total.num}<em>${total.unit}</em></div>
+        <div class="sd-sub"><span class="cost tnum">${money(data.totalCostUsd)}</span> ${T(
+      "share.est",
+    )} · ${T("share.sessions", { n: data.sessionCount })}</div>
       </div>
-      <div class="fl-display">
-        <div class="grp"><div class="k">${T("share.fuelDispensed")}</div>` +
-      `<div class="v tnum">${total.num}<em>${total.unit}</em></div><div class="u">${unit}</div></div>
-        <div class="grp cost"><div class="k">${T("share.totalSale")}</div>` +
-      `<div class="v tnum">${money(data.totalCostUsd)}</div>` +
-      `<div class="u">${T("share.estUsd").toUpperCase()}</div></div>
-      </div>
-      <div class="fl-board">${rows}</div>
-      <div class="fl-foot">
-        <div class="sig-r">${footParts.join(" · ")}</div>
-        <div class="sig"><span class="mk">${battSvg(22, 13)}</span><span class="bn">TokenBar</span></div>
-      </div>
+      <div class="sd-meta"><div class="pd">${esc(data.periodLabel)}</div>` +
+      `<div class="peak">${peakLabel}</div></div>
+    </div>
+    <div class="sd-chart">
+      <svg viewBox="0 0 ${SOUND_W} ${SOUND_FLOOR}" preserveAspectRatio="none">
+        <defs><linearGradient id="atoll-lagoon" x1="0" y1="0" x2="0" y2="1">` +
+      `<stop offset="0" stop-color="#E9E9EB"/><stop offset="1" stop-color="#F7F7F8"/></linearGradient></defs>
+        <path d="${areaD}" fill="url(#atoll-lagoon)"/>
+        <path d="${surfaceD}" fill="none" stroke="#A1A1AA" stroke-width="2"/>
+        ${marker}
+      </svg>
+    </div>
+    <div class="sd-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+    <div class="sd-foot">
+      <div class="sd-layers">${layers}</div>
+      <div class="sig">${RING_MARK}<span class="bn">${BRAND}</span>` +
+      `<span class="sig-r">${genDate}</span></div>
     </div>`,
   );
 }
 
-// ── island_card 島嶼卡 (byAgent hero + quota gauge — the ONLY quota exposure) ──
-const QUOTA_FILLS = ["#18181B", "#52525B", "#71717A"];
-
-function islandCard(data: ShareData, T: TFn): HTMLElement {
-  const total = splitAbbrev(data.totalTokens);
-  const gauge = data.quotaGauge ?? [];
-  const qrows = gauge
-    .map((g, i) => {
-      const [brand, ...rest] = g.label.split(" · ");
-      const desc = rest.join(" · ");
-      const w = Math.max(0, Math.min(100, Math.round(g.util)));
-      return (
-        `<div class="ic-qrow"><span class="ic-qlbl">${esc(brand)}` +
-        (desc ? ` <small>· ${esc(desc)}</small>` : "") +
-        `</span><span class="ic-track"><span class="ic-fill" style="width:${w}%;background:${
-          QUOTA_FILLS[i % QUOTA_FILLS.length]
-        }"></span></span>` +
-        `<span class="ic-qval tnum">${w}%<small> ${T("share.used")}</small></span></div>`
-      );
-    })
-    .join("");
-  const quota = gauge.length
-    ? `<div class="ic-quota"><div class="ic-qhead">${T(
-        "share.quotaUsedCycle",
-      )}</div>${qrows}</div>`
-    : `<div class="ic-quota"></div>`;
-  const genDate = data.genMonthYear ?? "";
-  const streak = data.streakDays > 0 ? ` · streak ${data.streakDays}d` : "";
-  return el(
-    "shic-card",
-    `
-    <div class="ic-glow"></div>
-    <div class="ic-top">
-      <div class="ic-pill"><span class="pb"><i></i></span><b>TokenBar</b>` +
-      `<span class="sep"></span><span class="liv">LIVE</span></div>
-      <div class="ic-period">${esc(data.periodLabel)}</div>
-    </div>
-    <div class="ic-hero">
-      <div class="ic-htag">${T("share.cumulativeUsage")}</div>
-      <div class="ic-big">
-        <b class="tnum">${total.num}<em>${total.unit}</em></b>
-        <span class="cost tnum">${money(data.totalCostUsd)}<u>${T("share.est")}</u></span>
-        <span class="sess"><div class="n tnum">${data.sessionCount}</div>` +
-      `<div class="l">${T("share.sessionsLabel")}</div></span>
-      </div>
-    </div>
-    ${quota}
-    <div class="ic-foot">
-      ${sig(24, 14)}
-      <div class="sig-r">${genDate}${streak}</div>
-    </div>`,
-  );
-}
-
-// ── wa 和 (byAgent hairline ledger; 量 seal & serif column stay) ───────────────
-function waCard(data: ShareData, T: TFn): HTMLElement {
+// ── wa → Seal (byAgent hairline ledger; ◎ ring seal + serif column) ───────────
+function sealCard(data: ShareData, T: TFn): HTMLElement {
   const total = splitAbbrev(data.totalTokens);
   const max = data.byAgent[0]?.tokens ?? 0;
   const rows = data.byAgent
     .slice(0, TOP_N)
     .map(
       (s) =>
-        `<div class="wa-srow"><span class="wa-slbl">${esc(s.name)}</span>` +
-        `<span class="wa-strack"><span class="wa-sfill" style="width:${barPct(
+        `<div class="sl-srow"><span class="sl-slbl">${esc(s.name)}</span>` +
+        `<span class="sl-strack"><span class="sl-sfill" style="width:${barPct(
           s.tokens,
           max,
         ).toFixed(1)}%"></span></span>` +
-        `<span class="wa-sval tnum">${fmtTokens(s.tokens)}</span></div>`,
+        `<span class="sl-sval tnum">${fmtTokens(s.tokens)}</span></div>`,
     )
     .join("");
-  const vsub = data.genMonthYear ? `<div class="wa-vsub">${data.genMonthYear}</div>` : "";
-  const footParts: string[] = ["TokenBar", T("share.shareReport")];
+  const vsub = data.genMonthYear ? `<div class="sl-vsub">${data.genMonthYear}</div>` : "";
+  const footParts: string[] = [BRAND, T("share.shareReport")];
   if (data.sessionCount > 0) footParts.push(T("share.sessions", { n: data.sessionCount }));
   if (data.streakDays > 0) footParts.push(T("share.streakInline", { n: data.streakDays }));
   return el(
     "shwa-card",
     `
-    <div class="wa-rule"></div>
-    <div class="wa-side">
-      <div class="wa-brand"><span class="pb"><i></i></span><b>TokenBar</b></div>
-      <div class="wa-vert">${T("share.cumulativeLedger")}</div>
+    <div class="sl-rule"></div>
+    <div class="sl-side">
+      <div class="sl-brand">${RING_MARK}<b>${BRAND}</b></div>
+      <div class="sl-vert">${T("share.cumulativeLedger")}</div>
       ${vsub}
     </div>
-    <div class="wa-in">
-      <div class="wa-head"><div class="wa-kicker">${T("share.totalTokens")}</div>` +
-      `<div class="wa-period">${esc(data.periodLabel)}</div></div>
-      <div class="wa-main">
-        <div class="wa-num tnum">${total.num}<em>${total.unit}</em></div>
-        <div class="wa-cost tnum">${money(data.totalCostUsd)}<u>${T("share.estUsd")}</u></div>
-        <div class="wa-split">${rows}</div>
+    <div class="sl-in">
+      <div><div class="sl-kicker">${T("share.totalTokens")}</div>` +
+      `<div class="sl-period">${esc(data.periodLabel)}</div></div>
+      <div class="sl-main">
+        <div class="sl-num tnum">${total.num}<em>${total.unit}</em></div>
+        <div class="sl-cost tnum">${money(data.totalCostUsd)}<u>${T("share.estUsd")}</u></div>
+        <div class="sl-split">${rows}</div>
       </div>
     </div>
-    <div class="wa-foot"><span class="sig-r">${footParts.join(" · ")}</span></div>
-    <div class="wa-seal"><span>量</span></div>`,
+    <div class="sl-foot"><span class="sig-r">${footParts.join(" · ")}</span></div>
+    <div class="sl-seal">${SEAL_MARK}</div>`,
   );
 }
