@@ -24,3 +24,15 @@
 **額外觀察（待使用者確認）**
 
 - GaugeCard 每格「X% left」出現兩次（60px hero 大字 + 下方細字重複同值），屬多餘。未動（是剛出的 T-ui-201 卡片設計一環），可依使用者意見於下輪一併收斂。
+
+## 2026-07-18 二次驗收回饋（v0.6 輪）
+
+**本輪已修（3 commit，verifier 全數 CONFIRMED）**
+
+- F-05 [func] 分析頁面效能卡頓還是很差。**根因**：`get_analytics` 是同步 Tauri command（Tauri 2 同步 command 跑在主執行緒），而 `compute_with` 每次呼叫都重掃解析範圍內全部 session log（本機 ~/.claude/projects 173MB + ~/.codex/sessions 228MB；mtime 剪枝擋不住「今天被碰過的大檔整檔重掃」）。掃描期間整個 app 凍結——拖曳、island、所有 IPC——且每 60s（island tok/min 更新）+ 每次分析頁互動都觸發。**修**：command 改 async + `spawn_blocking`，掃描移到 blocking worker，payload 不變。→ `119ad06`。（掃描本身的 CPU 成本仍在，增量掃描留下輪。）
+- F-06 [visual] 從分析頁切回限額頁會跑版。**根因**：`applyCompact()` 換分頁時先 `fitWindow()` 量高度、卡片變體（完整列表 vs 摘要行）卻要等下一個 1s tick 才重繪 → 視窗高度用舊內容量的，完整列表被塞進摘要行大小的視窗，直到下次切換模式都不自癒。**修**：量測前先 `renderCards()`。→ `3fb3379`。
+- F-07 [visual] 每時長條圖 X 軸只有 0h 和 23h，中間要自己數。**修**：補 6h/12h/18h 標籤（置中對齊各自長條）。→ `8d3b4fd`。
+
+**答覆（非 bug）**
+
+- 「ICON 那行右側的 X% left 是顯示最緊急的？」——是。狀態膠囊取**所有視窗中剩餘 % 最小**者顯示（panel.ts `statusPill`：known limits 取 `min(pctLeft)`），顏色跟著整體最差狀態（locked > near > stale > safe）。
