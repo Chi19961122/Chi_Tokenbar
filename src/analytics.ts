@@ -1,6 +1,6 @@
 // Layer ③ analytics (UX Spec v3 §11): stat tiles, charts, breakdown.
 
-import type { Analytics, DayPoint, KindCount, ProjectCount } from "./types";
+import type { Analytics, AnalyticsRange, DayPoint, KindCount, ProjectCount } from "./types";
 import { fmtTokens, fmtUsd } from "./format";
 import { keyColor, seriesColor } from "./colors";
 import { t } from "./i18n";
@@ -33,6 +33,40 @@ export function sharePct(value: number, total: number): number {
  *  share of the selected range's total, e.g. "1.4M · 17%". */
 export function shareLabel(value: number, total: number): string {
   return `${fmtTokens(value)} · ${sharePct(value, total)}%`;
+}
+
+/** Y-axis tick values for a bar chart whose plot maxes at `max`: 0 / half / max
+ *  (or just [0] for an empty chart). Pure so the tick set is unit-testable; the
+ *  caller formats each value with fmtTokens or fmtUsd per the active metric. */
+export function axisTicks(max: number): number[] {
+  if (!(max > 0)) return [0];
+  return [0, max / 2, max];
+}
+
+/** M/D label for a YYYY-MM-DD bucket, locale-free like the "07-16" convention
+ *  elsewhere but slashed ("07/14") so it reads as a date on the x-axis. */
+function mdLabel(date: string): string {
+  return date.slice(5).replace("-", "/");
+}
+
+/**
+ * Interior x-axis date ticks for the daily overview chart — the labels *between*
+ * the fixed "30d ago"/"today" endpoints, so a month/week no longer leaves ~28
+ * unlabeled bars to count by hand (same fix as the hourly 6h/12h/18h ticks).
+ * Month spaces ~4 evenly; week labels alternate days. Guards a small `n` (< 4)
+ * by emitting nothing, and never places an interior tick close enough to an
+ * endpoint to collide. Returns bar indices + labels; pure, so tick placement is
+ * unit-testable.
+ */
+export function dailyXTicks(dates: string[], range: AnalyticsRange): { i: number; label: string }[] {
+  const n = dates.length;
+  if (n < 4) return [];
+  const step = range === "month" ? Math.max(1, Math.round(n / 5)) : 2;
+  const out: { i: number; label: string }[] = [];
+  // Stop early enough that the last interior tick can't crowd the "today" end.
+  const last = n - 1 - Math.ceil(step / 2);
+  for (let i = step; i <= last; i += step) out.push({ i, label: mdLabel(dates[i]) });
+  return out;
 }
 
 /**
@@ -258,7 +292,10 @@ function dayTotal(d: DayPoint, opts: AnalyticsOpts): number {
 }
 
 function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
-  const W = 320, plotH = 92, H = 112, gap = 2;
+  // padL reserves a left gutter for the y-axis (values + gridlines); the plot
+  // area is inset by it so bars never overlap the axis. viewBox is unchanged.
+  const W = 320, padL = 30, plotH = 92, H = 112, gap = 2;
+  const plotW = W - padL;
   // Drop leading empty days so a month backed by a few days of logs doesn't
   // render a wall of blank bars; the x-axis then starts at the first active day
   // (which matches the backend's range_start_day annotation).
@@ -268,58 +305,107 @@ function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
   const daily = a.daily.slice(fi);
   const totals = allTotals.slice(fi);
   const n = daily.length;
-  const bw = (W - gap * Math.max(0, n - 1)) / Math.max(1, n);
+  const bw = (plotW - gap * Math.max(0, n - 1)) / Math.max(1, n);
 
   const max = Math.max(1, ...totals);
   const scale = plotH / max;
+  const price = opts.metric === "price";
   // Denominator for the "share of range total" hover labels (§ readability).
   const rangeTotal = totals.reduce((s, v) => s + v, 0);
-  const fmtDayVal = (v: number) => (opts.metric === "price" ? fmtUsd(v) : shareLabel(v, rangeTotal));
+  const fmtY = (v: number) => (price ? fmtUsd(v) : fmtTokens(v));
+  const fmtDayVal = (v: number) => (price ? fmtUsd(v) : shareLabel(v, rangeTotal));
+
+  // Y axis: faint gridlines across the plot + 0/half/max labels in the gutter.
+  const yaxis = axisTicks(max)
+    .map((v) => {
+      const y = plotH - v * scale;
+      // Clamp the label baseline so the top (max) tick isn't clipped at y≈0.
+      const ty = Math.max(y + 3, 8);
+      return `<line class="grid" x1="${padL}" y1="${y}" x2="${W}" y2="${y}"/><text x="${
+        padL - 4
+      }" y="${ty}" class="axis axis-y" text-anchor="end">${fmtY(v)}</text>`;
+    })
+    .join("");
 
   const bars = daily
     .map((d, i) => {
-      const x = i * (bw + gap);
+      const x = padL + i * (bw + gap);
       const h = totals[i] * scale;
       // Fill is set by class in styles.css (theme-following): today = accent,
       // a "strong" day = heavy ink, else a dim/weak ink.
       const isToday = i === n - 1;
       const cls = isToday ? " is-today" : totals[i] / max > 0.6 ? " is-strong" : "";
-      const title = `<title>${d.date.slice(5)} · ${fmtDayVal(totals[i])}</title>`;
-      return `<rect class="daily-bar${cls}" x="${x}" y="${plotH - h}" width="${bw}" height="${Math.max(0, h)}" rx="1">${title}</rect>`;
+      // label doubles as the <title> fallback and the custom-tooltip payload.
+      const label = `${mdLabel(d.date)} · ${fmtDayVal(totals[i])}`;
+      return `<rect class="daily-bar${cls}" x="${x}" y="${plotH - h}" width="${bw}" height="${Math.max(
+        0,
+        h,
+      )}" rx="1" data-tip="${esc(label)}"><title>${label}</title></rect>`;
     })
     .join("");
 
-  const xlabels = `<text x="0" y="${H - 1}" class="axis">30d ago</text>
-    <text x="${W}" y="${H - 1}" class="axis axis-today" text-anchor="end">today</text>`;
+  // Interior date ticks between the fixed endpoints (guards small n).
+  const xmids = dailyXTicks(daily.map((d) => d.date), a.range)
+    .map(({ i, label }) => {
+      const x = padL + i * (bw + gap) + bw / 2;
+      return `<text x="${x}" y="${H - 1}" class="axis" text-anchor="middle">${label}</text>`;
+    })
+    .join("");
 
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart daily-chart">${bars}${xlabels}</svg>`;
+  // Left endpoint is range-aware: "30d ago" was a month-ism that read wrong on
+  // week/today — those show the first plotted day's M/D instead.
+  const leftLabel = a.range === "month" ? "30d ago" : (daily[0]?.date.slice(5).replace("-", "/") ?? "");
+  const xlabels = `<text x="${padL}" y="${H - 1}" class="axis">${leftLabel}</text>${xmids}<text x="${W}" y="${
+    H - 1
+  }" class="axis axis-today" text-anchor="end">today</text>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart daily-chart">${yaxis}${bars}${xlabels}</svg>`;
 }
 
 function hourly(a: Analytics, opts: AnalyticsOpts): string {
-  const W = 320, H = 182, padB = 18, padT = 8;
+  // padL reserves a left gutter for the y-axis; the 24-slot plot is inset by it.
+  const W = 320, H = 182, padB = 18, padT = 8, padL = 30;
+  const plotW = W - padL;
   // Price mode reads the per-hour cost series and normalizes on its own max, so
   // the shape reflects spend rather than raw tokens.
   const price = opts.metric === "price";
   const data = price ? a.hourlyCost : a.hourly;
   const fmtVal = (v: number) => (price ? fmtUsd(v) : fmtTokens(v));
   const max = Math.max(price ? 1e-9 : 1, ...data);
-  const bw = (W / 24) * 0.6;
+  const bw = (plotW / 24) * 0.6;
   const scale = (H - padB - padT) / max;
+  const plotBottom = H - padB;
+
+  // Y axis: faint gridlines + 0/half/max labels in the gutter.
+  const yaxis = axisTicks(max)
+    .map((v) => {
+      const y = plotBottom - v * scale;
+      return `<line class="grid" x1="${padL}" y1="${y}" x2="${W}" y2="${y}"/><text x="${
+        padL - 4
+      }" y="${y + 3}" class="axis axis-y" text-anchor="end">${fmtVal(v)}</text>`;
+    })
+    .join("");
+
   const bars = data
     .map((v, i) => {
-      const cx = (i + 0.5) * (W / 24);
+      const cx = padL + (i + 0.5) * (plotW / 24);
       const h = v * scale;
-      const title = `<title>${i}:00 · ${fmtVal(v)}</title>`;
-      return `<rect x="${cx - bw / 2}" y="${H - padB - h}" width="${bw}" height="${h}" rx="1" style="fill:${seriesColor(3)}">${title}</rect>`;
+      const label = `${i}:00 · ${fmtVal(v)}`;
+      return `<rect x="${cx - bw / 2}" y="${plotBottom - h}" width="${bw}" height="${h}" rx="1" style="fill:${seriesColor(
+        3,
+      )}" data-tip="${esc(label)}"><title>${label}</title></rect>`;
     })
     .join("");
   // Mid-axis labels every 6h, centered under their bar — the two endpoints
   // alone left 22 unlabeled slots to count by hand.
   const mids = [6, 12, 18]
-    .map((h) => `<text x="${(h + 0.5) * (W / 24)}" y="${H - 4}" class="axis" text-anchor="middle">${h}h</text>`)
+    .map(
+      (h) =>
+        `<text x="${padL + (h + 0.5) * (plotW / 24)}" y="${H - 4}" class="axis" text-anchor="middle">${h}h</text>`,
+    )
     .join("");
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart">${bars}
-    <text x="2" y="${H - 4}" class="axis">0h</text>
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart">${yaxis}${bars}
+    <text x="${padL + 2}" y="${H - 4}" class="axis">0h</text>
     ${mids}
     <text x="${W - 2}" y="${H - 4}" class="axis" text-anchor="end">23h</text></svg>`;
 }
@@ -417,5 +503,51 @@ export function renderAnalytics(container: HTMLElement, a: Analytics, opts: Anal
   // "from {date}" when a month's local logs don't reach the nominal window start.
   const start = monthStartNote(a);
   const note = start ? `<div class="chart-note">${t("analytics.since", { date: start.slice(5) })}</div>` : "";
-  container.innerHTML = tiles(a) + note + `<div class="chart-wrap">${body}</div>`;
+  // The tooltip div lives inside .chart-wrap and is re-created on every render;
+  // the delegated listeners (wired once on the container) find it fresh.
+  container.innerHTML =
+    tiles(a) + note + `<div class="chart-wrap">${body}<div class="chart-tip" hidden></div></div>`;
+  wireChartTip(container);
+}
+
+/**
+ * Custom bar tooltip (native <title> is slow to appear): one absolutely-
+ * positioned div per chart-wrap, shown on pointerover of a bar and populated
+ * from the rect's `data-tip`. Delegated on `container` and wired only once, so
+ * it survives the innerHTML re-render every renderAnalytics does. The <title>
+ * stays as a fallback.
+ */
+function wireChartTip(container: HTMLElement): void {
+  if (container.dataset.tipWired) return;
+  container.dataset.tipWired = "1";
+
+  const tipFor = (target: EventTarget | null): HTMLElement | null => {
+    const rect = (target as Element | null)?.closest?.("rect[data-tip]") ?? null;
+    if (!rect) return null;
+    const wrap = rect.closest(".chart-wrap");
+    return (wrap?.querySelector(".chart-tip") as HTMLElement) ?? null;
+  };
+  const place = (tip: HTMLElement, e: PointerEvent) => {
+    const wrap = tip.parentElement as HTMLElement;
+    const r = wrap.getBoundingClientRect();
+    tip.style.left = `${e.clientX - r.left}px`;
+    tip.style.top = `${e.clientY - r.top}px`;
+  };
+
+  container.addEventListener("pointerover", (e) => {
+    const rect = (e.target as Element | null)?.closest?.("rect[data-tip]");
+    const tip = tipFor(e.target);
+    if (!rect || !tip) return;
+    tip.textContent = rect.getAttribute("data-tip") ?? "";
+    place(tip, e as PointerEvent);
+    tip.hidden = false;
+  });
+  container.addEventListener("pointermove", (e) => {
+    const tip = tipFor(e.target);
+    if (tip && !tip.hidden) place(tip, e as PointerEvent);
+  });
+  container.addEventListener("pointerout", (e) => {
+    const tip = tipFor(e.target);
+    if (tip) tip.hidden = true;
+  });
 }

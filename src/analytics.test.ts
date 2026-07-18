@@ -5,6 +5,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  axisTicks,
+  dailyXTicks,
   heatCells,
   monthStartNote,
   renderAnalytics,
@@ -93,12 +95,95 @@ describe("month chart with a short history", () => {
     renderAnalytics(root, a, { subtab: "overview", metric: "tokens", group: "agent" });
 
     expect(root.querySelector(".chart-note")?.textContent).toContain(a.rangeStartDay.slice(5));
-    // Leading empty days are still dropped, while the editorial axis stays minimal.
+    // Leading empty days are still dropped, while the x-axis keeps its endpoints.
     expect(root.querySelectorAll(".daily-bar")).toHaveLength(2);
-    expect([...root.querySelectorAll(".chart .axis")].map((n) => n.textContent)).toEqual([
-      "30d ago",
-      "today",
-    ]);
+    const axisText = [...root.querySelectorAll(".chart .axis")].map((n) => n.textContent);
+    expect(axisText).toContain("30d ago");
+    expect(axisText).toContain("today");
+    // n = 2 (< 4) → no interior date ticks crowding the two endpoints.
+    expect(axisText.some((s) => s?.includes("/"))).toBe(false);
+  });
+});
+
+describe("chart axes (T-911)", () => {
+  it("axisTicks returns 0/half/max, and just [0] for an empty chart", () => {
+    expect(axisTicks(8_000_000)).toEqual([0, 4_000_000, 8_000_000]);
+    expect(axisTicks(0)).toEqual([0]);
+    expect(axisTicks(-5)).toEqual([0]);
+  });
+
+  it("dailyXTicks spaces a month ~evenly and stays clear of the endpoints", () => {
+    const dates = Array.from({ length: 30 }, (_, i) =>
+      new Date(Date.UTC(2026, 5, 1) + i * 86_400_000).toISOString().slice(0, 10),
+    );
+    const ticks = dailyXTicks(dates, "month");
+    // step = round(30/5) = 6 → interior ticks at 6/12/18/24 (never 0 or 29).
+    expect(ticks.map((t) => t.i)).toEqual([6, 12, 18, 24]);
+    expect(ticks.every((t) => t.i > 0 && t.i < dates.length - 1)).toBe(true);
+    expect(ticks[0].label).toBe("06/07"); // 2026-06-07 → M/D, slashed, locale-free
+  });
+
+  it("dailyXTicks labels alternate days for a week", () => {
+    const dates = Array.from({ length: 7 }, (_, i) =>
+      new Date(Date.UTC(2026, 6, 13) + i * 86_400_000).toISOString().slice(0, 10),
+    );
+    expect(dailyXTicks(dates, "week").map((t) => t.i)).toEqual([2, 4]);
+  });
+
+  it("dailyXTicks emits nothing when n < 4 (endpoints would collide)", () => {
+    const dates = ["2026-07-13", "2026-07-14", "2026-07-15"];
+    expect(dailyXTicks(dates, "month")).toEqual([]);
+    expect(dailyXTicks(dates, "week")).toEqual([]);
+  });
+
+  it("renders a y-axis gutter (gridlines + tokens labels) on the daily chart", () => {
+    const a = mockAnalytics("month");
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "overview", metric: "tokens", group: "agent" });
+    // 3 gridlines (0/half/max) and 3 matching gutter labels.
+    expect(root.querySelectorAll(".daily-chart .grid")).toHaveLength(3);
+    expect(root.querySelectorAll(".daily-chart .axis-y")).toHaveLength(3);
+    // The gutter's bottom tick is "0"; nothing dollar-formatted in tokens mode.
+    const yText = [...root.querySelectorAll(".daily-chart .axis-y")].map((n) => n.textContent);
+    expect(yText).toContain("0");
+    expect(yText.some((s) => s?.includes("$"))).toBe(false);
+  });
+
+  it("renders a y-axis on the hourly chart, in fmtUsd under price mode", () => {
+    const a = { ...mockAnalytics("week"), hourlyCost: Array(24).fill(0) };
+    a.hourlyCost[3] = 20;
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "hourly", metric: "price", group: "agent" });
+    const yText = [...root.querySelectorAll(".chart .axis-y")].map((n) => n.textContent);
+    expect(root.querySelectorAll(".chart .grid").length).toBeGreaterThanOrEqual(2);
+    // Max tick reflects the $20 peak, formatted as USD.
+    expect(yText).toContain("$20.00");
+  });
+});
+
+describe("custom bar tooltip (T-911)", () => {
+  it("stamps data-tip on daily bars with the date · value · share label", () => {
+    const a = mockAnalytics("month");
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "overview", metric: "tokens", group: "agent" });
+    const bars = [...root.querySelectorAll<SVGRectElement>(".daily-bar")];
+    expect(bars.every((b) => b.hasAttribute("data-tip"))).toBe(true);
+    // Shape: "MM/DD · <tokens> · <pct>%" and it matches the <title> fallback.
+    const last = bars[bars.length - 1];
+    expect(last.getAttribute("data-tip")).toMatch(/^\d{2}\/\d{2} · .+ · \d+%$/);
+    expect(last.getAttribute("data-tip")).toBe(last.querySelector("title")?.textContent);
+  });
+
+  it("stamps data-tip on hourly bars ('H:00 · value') and mounts one tip div", () => {
+    const a = { ...mockAnalytics("week"), hourly: Array(24).fill(0) };
+    a.hourly[5] = 2_000_000;
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "hourly", metric: "tokens", group: "agent" });
+    const bars = [...root.querySelectorAll<SVGRectElement>(".chart rect[data-tip]")];
+    expect(bars).toHaveLength(24);
+    expect(bars[5].getAttribute("data-tip")).toBe("5:00 · 2.0M");
+    // Exactly one custom tooltip element sits inside the chart-wrap.
+    expect(root.querySelectorAll(".chart-wrap .chart-tip")).toHaveLength(1);
   });
 });
 
