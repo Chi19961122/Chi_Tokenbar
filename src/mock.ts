@@ -94,20 +94,41 @@ export function mockAnalytics(range: "today" | "week" | "month"): Analytics {
     };
   });
 
+  // Blended $/Mtok per mocked model family — plausible, not authoritative.
+  const rate: Record<string, number> = {
+    "opus-4.8": 9,
+    "sonnet-5": 3.5,
+    "gpt-5-codex": 5,
+    "gpt-5-mini": 1,
+  };
+  const modelCost = (model: string, tokens: number) => (tokens / 1e6) * (rate[model] ?? 4);
+
   const byModel: Record<string, number> = {};
   const byAgent: Record<string, number> = {};
+  const byModelCost: Record<string, number> = {};
+  const byAgentCost: Record<string, number> = {};
   let totalTokens = 0;
   let totalCostUsd = 0;
   let best = { date: daily[0].date, costUsd: 0 };
   for (const d of daily) {
-    for (const [k, v] of Object.entries(d.byModel)) byModel[k] = (byModel[k] || 0) + v;
+    // Agent cost = sum of its models' cost (Claude = opus+sonnet, Codex = gpt*).
+    const claudeCost = modelCost("opus-4.8", d.byModel["opus-4.8"]) + modelCost("sonnet-5", d.byModel["sonnet-5"]);
+    const codexCost = modelCost("gpt-5-codex", d.byModel["gpt-5-codex"]) + modelCost("gpt-5-mini", d.byModel["gpt-5-mini"]);
+    for (const [k, v] of Object.entries(d.byModel)) {
+      byModel[k] = (byModel[k] || 0) + v;
+      byModelCost[k] = (byModelCost[k] || 0) + modelCost(k, v);
+    }
     for (const [k, v] of Object.entries(d.byAgent)) {
       byAgent[k] = (byAgent[k] || 0) + v;
       totalTokens += v;
     }
+    byAgentCost["Claude Code"] = (byAgentCost["Claude Code"] || 0) + claudeCost;
+    byAgentCost["Codex CLI"] = (byAgentCost["Codex CLI"] || 0) + codexCost;
     totalCostUsd += d.costUsd;
     if (d.costUsd > best.costUsd) best = { date: d.date, costUsd: d.costUsd };
   }
+
+  const hourly = Array.from({ length: 24 }, () => Math.round(Math.random() * 8_000_000));
 
   return {
     range,
@@ -126,9 +147,12 @@ export function mockAnalytics(range: "today" | "week" | "month"): Analytics {
       prNow: true,
     },
     daily,
-    hourly: Array.from({ length: 24 }, () => Math.round(Math.random() * 8_000_000)),
+    hourly,
+    hourlyCost: hourly.map((v) => (v / 1e6) * 6), // blended ~$6/Mtok
     byModel,
     byAgent,
+    byModelCost,
+    byAgentCost,
     breakdown: {
       input: Math.round(totalTokens * 0.35),
       cached: Math.round(totalTokens * 0.45),

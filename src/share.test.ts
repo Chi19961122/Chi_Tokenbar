@@ -33,6 +33,7 @@ function fakeAnalytics(): Analytics {
     },
     daily,
     hourly: new Array(24).fill(0),
+    hourlyCost: new Array(24).fill(0),
     byModel: { "sonnet-5": 6_204_113, "opus-4.8": 2_000_000 },
     byAgent: {
       main: 3_600_412,
@@ -40,6 +41,15 @@ function fakeAnalytics(): Analytics {
       scout: 1_394_700,
       verifier: 492_247,
       codex: 336_561,
+      idle: 0,
+    },
+    byModelCost: { "sonnet-5": 30, "opus-4.8": 17.2 },
+    byAgentCost: {
+      main: 20,
+      executor: 13,
+      scout: 8,
+      verifier: 3,
+      codex: 3.2,
       idle: 0,
     },
     breakdown: { input: 1, cached: 1, output: 1, reasoning: 1 },

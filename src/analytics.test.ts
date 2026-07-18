@@ -234,6 +234,59 @@ describe("personal records", () => {
   });
 });
 
+describe("metric price mode", () => {
+  it("hourly price mode draws bars from hourlyCost with $ tooltips", () => {
+    const a = { ...mockAnalytics("week"), hourly: Array(24).fill(0), hourlyCost: Array(24).fill(0) };
+    a.hourlyCost[3] = 12.5;
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "hourly", metric: "price", group: "agent" });
+    const titles = [...root.querySelectorAll(".chart title")].map((n) => n.textContent);
+    expect(titles).toHaveLength(24);
+    expect(titles[3]).toBe("3:00 · $12.50");
+    // Every tooltip is a dollar amount — nothing token-formatted leaks in.
+    expect(titles.every((t) => t?.includes("$"))).toBe(true);
+  });
+
+  it("hourly tokens mode keeps token tooltips (no $)", () => {
+    const a = { ...mockAnalytics("week"), hourly: Array(24).fill(0) };
+    a.hourly[5] = 2_000_000;
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "hourly", metric: "tokens", group: "agent" });
+    const titles = [...root.querySelectorAll(".chart title")].map((n) => n.textContent);
+    expect(titles[5]).toBe("5:00 · 2.0M");
+    expect(titles.every((t) => !t?.includes("$"))).toBe(true);
+  });
+
+  it("share price mode labels bars with fmtUsd and cost share %", () => {
+    const a = {
+      ...mockAnalytics("week"),
+      byAgent: { "Claude Code": 100, "Codex CLI": 100 },
+      byAgentCost: { "Claude Code": 30, "Codex CLI": 10 },
+      byKind: [],
+      byProject: [],
+    };
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "share", metric: "price", group: "agent" });
+    const vals = [...root.querySelectorAll(".bar-val")].map((n) => n.textContent);
+    // Sorted desc by cost: Claude $30 (75% of $40), Codex $10 (25%).
+    expect(vals).toEqual(["$30.00 · 75%", "$10.00 · 25%"]);
+  });
+
+  it("share tokens mode ignores the cost fields entirely", () => {
+    const a = {
+      ...mockAnalytics("week"),
+      byAgent: { "Claude Code": 3_000_000, "Codex CLI": 1_000_000 },
+      byAgentCost: { "Claude Code": 999, "Codex CLI": 1 },
+      byKind: [],
+      byProject: [],
+    };
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
+    const vals = [...root.querySelectorAll(".bar-val")].map((n) => n.textContent);
+    expect(vals).toEqual(["3.0M · 75%", "1.0M · 25%"]);
+  });
+});
+
 describe("subtab convergence", () => {
   it("share breakdown follows the model/agent group toggle", () => {
     const a = mockAnalytics("week");

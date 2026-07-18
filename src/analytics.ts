@@ -291,16 +291,22 @@ function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
   return `<svg viewBox="0 0 ${W} ${H}" class="chart daily-chart">${bars}${xlabels}</svg>`;
 }
 
-function hourly(a: Analytics): string {
+function hourly(a: Analytics, opts: AnalyticsOpts): string {
   const W = 320, H = 130, padB = 16, padT = 6;
-  const max = Math.max(1, ...a.hourly);
+  // Price mode reads the per-hour cost series and normalizes on its own max, so
+  // the shape reflects spend rather than raw tokens.
+  const price = opts.metric === "price";
+  const data = price ? a.hourlyCost : a.hourly;
+  const fmtVal = (v: number) => (price ? fmtUsd(v) : fmtTokens(v));
+  const max = Math.max(price ? 1e-9 : 1, ...data);
   const bw = (W / 24) * 0.6;
   const scale = (H - padB - padT) / max;
-  const bars = a.hourly
+  const bars = data
     .map((v, i) => {
       const cx = (i + 0.5) * (W / 24);
       const h = v * scale;
-      return `<rect x="${cx - bw / 2}" y="${H - padB - h}" width="${bw}" height="${h}" rx="1" fill="${seriesColor(3)}"/>`;
+      const title = `<title>${i}:00 · ${fmtVal(v)}</title>`;
+      return `<rect x="${cx - bw / 2}" y="${H - padB - h}" width="${bw}" height="${h}" rx="1" fill="${seriesColor(3)}">${title}</rect>`;
     })
     .join("");
   // Mid-axis labels every 6h, centered under their bar — the two endpoints
@@ -314,19 +320,22 @@ function hourly(a: Analytics): string {
     <text x="${W - 2}" y="${H - 4}" class="axis" text-anchor="end">23h</text></svg>`;
 }
 
-function shareBars(rec: Record<string, number>): string {
+function shareBars(rec: Record<string, number>, price = false): string {
   const entries = Object.entries(rec).sort((a, b) => b[1] - a[1]);
-  const max = Math.max(1, ...entries.map((e) => e[1]));
+  const max = Math.max(price ? 1e-9 : 1, ...entries.map((e) => e[1]));
   // Share-of-total denominator = the sum of every bar shown = this grouping's
-  // range total, so each label reads "tokens · % of range" (§ readability).
+  // range total, so each label reads "value · % of range" (§ readability). In
+  // price mode the value is cost and the % is share of the cost total.
   const total = entries.reduce((s, [, v]) => s + v, 0);
+  const label = (v: number) =>
+    price ? `${fmtUsd(v)} · ${sharePct(v, total)}%` : shareLabel(v, total);
   return `<div class="bars">${entries
     .map(
       ([k, v], i) => `
       <div class="bar-row">
         <span class="bar-label">${k}</span>
         <div class="bar-track"><div class="bar-fill" style="width:${(v / max) * 100}%;background:${keyColor(k, i)}"></div></div>
-        <span class="bar-val">${shareLabel(v, total)}</span>
+        <span class="bar-val">${label(v)}</span>
       </div>`,
     )
     .join("")}</div>`;
@@ -369,16 +378,21 @@ export function renderAnalytics(container: HTMLElement, a: Analytics, opts: Anal
   let body = "";
   switch (opts.subtab) {
     case "hourly":
-      body = hourly(a);
+      body = hourly(a, opts);
       break;
     case "share": {
       // The model/agent grouping, then two independent dimensions below it
       // (階段 C+): activity type (donut) and per-project totals (bars). Each is
-      // omitted when it has no data, so an empty section never shows.
+      // omitted when it has no data, so an empty section never shows. The metric
+      // toggle switches the primary grouping between token and cost totals.
+      const price = opts.metric === "price";
+      const rec = price
+        ? opts.group === "model" ? a.byModelCost : a.byAgentCost
+        : opts.group === "model" ? a.byModel : a.byAgent;
       const activity = donut(a.byKind);
       const projects = projectBars(a.byProject);
       body =
-        shareBars(opts.group === "model" ? a.byModel : a.byAgent) +
+        shareBars(rec, price) +
         (activity ? section(t("analytics.activityTitle"), activity) : "") +
         (projects ? section(t("analytics.projectsTitle"), projects) : "");
       break;

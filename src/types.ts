@@ -152,8 +152,13 @@ export interface Analytics {
   };
   daily: DayPoint[];
   hourly: number[]; // 24 buckets, tokens
+  hourlyCost: number[]; // 24 buckets, cost USD (parallels `hourly`)
   byModel: Record<string, number>;
   byAgent: Record<string, number>;
+  /** Range-total cost per model / per agent, keyed like `byModel` / `byAgent`.
+   *  Drives the metric toggle's price mode on the "share" breakdown. */
+  byModelCost: Record<string, number>;
+  byAgentCost: Record<string, number>;
   breakdown: { input: number; cached: number; output: number; reasoning: number };
   /** Activity-type breakdown (Claude tool usage). Empty → section omitted. */
   byKind: KindCount[];

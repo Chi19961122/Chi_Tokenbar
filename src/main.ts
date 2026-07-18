@@ -93,19 +93,28 @@ function renderToggles() {
     $("toggles").innerHTML = "";
     return;
   }
-  // The model/agent group toggle drives both the overview stacks and the
-  // "share" breakdown (階段 C: agents folded into this toggle).
-  const showGroup = ui.subtab === "overview" || ui.subtab === "share";
+  // Scope each toggle to where it actually changes something:
+  //  · metric (tokens/price): overview, share, hourly — NOT stats, whose
+  //    token-type breakdown has no price variant.
+  //  · group (model/agent): share only — on overview the grouping changes
+  //    nothing visible, and elsewhere it has no meaning.
+  const showMetric =
+    ui.subtab === "overview" || ui.subtab === "share" || ui.subtab === "hourly";
+  const showGroup = ui.subtab === "share";
   $("toggles").innerHTML = `
     <div class="seg" data-seg="range">
       <button data-range="today" class="${ui.range === "today" ? "on" : ""}">${t("toggle.today")}</button>
       <button data-range="week" class="${ui.range === "week" ? "on" : ""}">${t("toggle.week")}</button>
       <button data-range="month" class="${ui.range === "month" ? "on" : ""}">${t("toggle.month")}</button>
     </div>
-    <div class="seg" data-seg="metric">
+    ${
+      showMetric
+        ? `<div class="seg" data-seg="metric">
       <button data-metric="tokens" class="${ui.metric === "tokens" ? "on" : ""}">${t("toggle.tokens")}</button>
       <button data-metric="price" class="${ui.metric === "price" ? "on" : ""}">${t("toggle.price")}</button>
-    </div>
+    </div>`
+        : ""
+    }
     ${
       showGroup
         ? `<div class="seg" data-seg="group">

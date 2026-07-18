@@ -100,8 +100,15 @@ pub struct Analytics {
     pub records: Records,
     pub daily: Vec<DayPoint>,
     pub hourly: Vec<u64>,
+    /// Per-hour cost, indexed like `hourly` (len 24). Lets the hourly chart and
+    /// the metric toggle draw $ where `hourly` only ever held tokens.
+    pub hourly_cost: Vec<f64>,
     pub by_model: HashMap<String, u64>,
     pub by_agent: HashMap<String, u64>,
+    /// Range-total cost per model / per agent, keyed identically to
+    /// `by_model` / `by_agent`. Gives the "share" price mode a real cost split.
+    pub by_model_cost: HashMap<String, f64>,
+    pub by_agent_cost: HashMap<String, f64>,
     pub breakdown: Breakdown,
     /// Activity-type breakdown (Claude tool usage). Empty when nothing is
     /// classifiable — the frontend then omits the whole section (no fake kinds).
@@ -189,7 +196,13 @@ fn date_str(ts: i64) -> String {
 struct Acc {
     days: HashMap<String, DayAgg>,
     hourly: [u64; 24],
+    /// Per-hour cost, accumulated alongside `hourly` (same `dt.hour()` index).
+    hourly_cost: [f64; 24],
     hourly_by_day: HashMap<(String, u8), u64>,
+    /// Range-total cost per model / per agent, keyed like the per-day token maps
+    /// (nothing needs per-day-per-model cost, so these live directly on Acc).
+    by_model_cost: HashMap<String, f64>,
+    by_agent_cost: HashMap<String, f64>,
     breakdown: Breakdown,
     /// Range-total activity-type buckets (Claude only). Summed like `breakdown`.
     by_kind: HashMap<String, u64>,
@@ -211,7 +224,10 @@ impl Acc {
         Acc {
             days: HashMap::new(),
             hourly: [0; 24],
+            hourly_cost: [0.0; 24],
             hourly_by_day: HashMap::new(),
+            by_model_cost: HashMap::new(),
+            by_agent_cost: HashMap::new(),
             breakdown: Breakdown {
                 input: 0,
                 cached: 0,
@@ -276,7 +292,12 @@ impl Acc {
         *day.by_agent.entry(agent.to_string()).or_default() += total;
         day.cost += cost;
 
+        // Range-total cost dimensions, mirrored on the token equivalents above.
+        *self.by_model_cost.entry(model.to_string()).or_default() += cost;
+        *self.by_agent_cost.entry(agent.to_string()).or_default() += cost;
+
         self.hourly[dt.hour() as usize] += total;
+        self.hourly_cost[dt.hour() as usize] += cost;
         let local = dt.with_timezone(&chrono::Local);
         *self
             .hourly_by_day
@@ -566,8 +587,11 @@ where
         records,
         daily,
         hourly: acc.hourly.to_vec(),
+        hourly_cost: acc.hourly_cost.to_vec(),
         by_model,
         by_agent,
+        by_model_cost: acc.by_model_cost,
+        by_agent_cost: acc.by_agent_cost,
         breakdown: acc.breakdown,
         by_kind,
         by_project,
@@ -1655,6 +1679,52 @@ mod tests {
         let a = routed("today", "claude", no_codex, stub_recent(1), Vec::new());
         assert_eq!(a.total_tokens, 100);
         assert!(a.by_project.is_empty());
+    }
+
+    // ── cost dimensions: hourly / per-model / per-agent cost ─────────────
+    //
+    // The metric/group toggles need a cost equivalent for every token
+    // dimension. These pin the three invariants the frontend relies on:
+    // hourly_cost mirrors the day-cost sum, the range-total cost maps sum to
+    // total_cost_usd, and every cost map carries the same keys as its token map.
+
+    #[test]
+    fn hourly_cost_sums_match_day_cost_sums() {
+        let acc = scan_fake_codex_files(vec![vec![
+            codex_detailed_line("2026-07-17T01:00:00Z", 500, 300, 50),
+            codex_detailed_line("2026-07-17T02:00:00Z", 1000, 800, 100),
+        ]]);
+        let day_cost: f64 = acc.days.values().map(|d| d.cost).sum();
+        let hourly_cost: f64 = acc.hourly_cost.iter().sum();
+        assert!((day_cost - hourly_cost).abs() < 1e-9);
+
+        let claude = scan_fake_claude_files(vec![vec![
+            r#"{"timestamp":"2026-07-17T00:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":1000,"output_tokens":500,"cache_read_input_tokens":100000,"cache_creation_input_tokens":2000}}}"#.to_string(),
+        ]]);
+        let cday: f64 = claude.days.values().map(|d| d.cost).sum();
+        let chour: f64 = claude.hourly_cost.iter().sum();
+        assert!((cday - chour).abs() < 1e-9);
+    }
+
+    #[test]
+    fn cost_maps_total_to_range_cost_and_share_keys_with_tokens() {
+        let a = routed("today", "both", stub_codex, stub_claude, Vec::new());
+
+        // (b) each range-total cost map sums to total_cost_usd.
+        let model_sum: f64 = a.by_model_cost.values().sum();
+        let agent_sum: f64 = a.by_agent_cost.values().sum();
+        let hourly_sum: f64 = a.hourly_cost.iter().sum();
+        assert!((model_sum - a.total_cost_usd).abs() < 1e-9);
+        assert!((agent_sum - a.total_cost_usd).abs() < 1e-9);
+        assert!((hourly_sum - a.total_cost_usd).abs() < 1e-9);
+
+        // (c) cost maps carry exactly the keys of their token maps.
+        let mk: HashSet<&String> = a.by_model.keys().collect();
+        let mck: HashSet<&String> = a.by_model_cost.keys().collect();
+        assert_eq!(mk, mck, "by_model_cost keys must match by_model");
+        let ak: HashSet<&String> = a.by_agent.keys().collect();
+        let ack: HashSet<&String> = a.by_agent_cost.keys().collect();
+        assert_eq!(ak, ack, "by_agent_cost keys must match by_agent");
     }
 
     // ── 階段 E: OpenCode / Gemini parsers + toggles ──────────────────────
