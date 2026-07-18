@@ -44,3 +44,10 @@
 - F-08 [visual] GaugeCard「X% left」大字下方重複同值細字（使用者核准移除）。detail 行只留 Unavailable／estimate／stale 徽章。→ `0d8f38e`。
 - F-09 [func] 總覽切去其他頁籤會卡、載入很慢。**根因**：快取 key 含 snapshot `updated_at`，每輪新 snapshot 都讓 key 失效 → 頁籤一點就 await 數秒的後端掃描，舊畫面死在原地無回饋。**修**：stale-while-revalidate——同 range/filter 只是世代較舊 → 立刻畫舊資料、背景刷新；全冷 → 立刻出 skeleton；同 key 掃描去重；落地重繪防 range／filter／report 超越；重繪保留捲動位置。→ `0e9d8a7`。（掃描本身增量化仍留下輪。）
 - F-10 [visual] ϟ 圖示 + 右側 min % left 膠囊整行移除（使用者要求；與量測列表一眼可見的資訊重複）。相關 CSS 全清，首個 section head 去頂線避免與 header 髮絲線疊雙。→ `d2a4662`。
+
+## 2026-07-18 四次驗收回饋（v0.6 輪）
+
+**本輪已修（2 commit，verifier 全數 CONFIRMED）**
+
+- F-11 [func] 範圍今天/週/月來回切有些仍載入慢。**根因**：分析快取只有單格——切範圍互相踢掉對方，每次換範圍都冷抓一輪掃描；首次進場更是全冷。**修**：快取改按資料切片（range|filter）各存一份 + 同鍵飛行中抓取合流 + 所有落地走單一守門重繪（被合流的點擊在雙胞胎落地時也會補畫）；island 每 60s 的 today 更新順帶餵快取；首次抓完後背景依序預熱其餘範圍。此後切範圍一律即時（最多背景默默刷新）。→ `398e592`。
+- F-12 [visual] 限額/分析頁面重複標題（使用者徵詢意見後採移除）。「01 LIMITS／02 USAGE」重複了正上方頁籤本身；整組 section head + CSS + i18n key 移除，#cards 補上緣間距。→ `43fbf72`。
