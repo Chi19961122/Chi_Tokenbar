@@ -4,14 +4,14 @@
 // snapshot, so `mode` only decides the layout, never what data exists.
 //
 // 階段 B: which limit each provider shows is a *pin* (auto / 5h / week / a model
-// window); Near and Locked carry a fixed-English short label plus the reset time
-// (countdown or clock, per reset_display); the right side is an optional aux
+// window); every state renders one constant "short + % left" format (reset
+// times live in the expanded panel only); the right side is an optional aux
 // readout (tok/min or today's cost). The two interesting decisions — which limit
 // to show (pickIslandLimit) and what text it produces (islandText) — are pure
 // functions so the display matrix is unit-testable.
 
 import type { IslandAux, Limit, ProviderFilter, ResetDisplay, Snapshot } from "./types";
-import { fmtResetClock, fmtResetRel, fmtTokens, fmtUsd, pctLeft } from "./format";
+import { fmtTokens, fmtUsd, pctLeft } from "./format";
 import type { Locale } from "./i18n";
 import { providerIcon } from "./icons";
 import { t } from "./i18n";
@@ -152,53 +152,33 @@ export function windowShort(l: Limit): string {
 const isUnknown = (l: Limit) =>
   l.status === "source_failed" || l.status === "insufficient_data";
 
-function resetFrag(l: Limit, resetDisplay: ResetDisplay, now: number, locale: Locale): string {
-  if (l.resets_at <= 0) return "—";
-  return resetDisplay === "clock"
-    ? fmtResetClock(l.resets_at, now, locale)
-    : fmtResetRel(l.resets_at, now);
-}
-
 /**
- * The text a single provider group shows next to its capsule (階段 B matrix):
- *   normal        → "{left}%"
- *   near          → "{short} {left}% · {reset}"   (short = 5h / wk / model name)
- *   locked        → "{short} 0% · {reset}"        (short says *which* window locked)
- *   estimate/idle → "{left}%" or "—", with an " est." tag when the number is
- *                   inferred (stale / insufficient_data)
+ * The text a single provider group shows next to its capsule — one constant
+ * format for every state (使用者 2026-07-18 定案:island 只要「週期+用量」,
+ * 重置時間一律只在展開面板顯示):
+ *   any state → "{short} {left}%"     (short = 5h / wk / model name)
+ *   locked    → "{short} 0%"
+ *   unknown   → "{short} —"           (which window is unreadable)
+ *   … plus an " est." tag when the number is inferred (stale / insufficient_data).
  *
- * Pure and locale-parameterised so the whole matrix is unit-testable; the reset
- * clock follows `locale`, the short labels never do.
+ * Pure so the matrix stays unit-testable; the short labels are fixed English.
  */
-export function islandText(
-  l: Limit,
-  resetDisplay: ResetDisplay,
-  now: number,
-  locale: Locale,
-): string {
-  if (l.status === "locked" || l.status === "near") {
-    const short = windowShort(l);
-    const pct = l.status === "locked" ? 0 : pctLeft(l.util);
-    return `${short ? short + " " : ""}${pct}% · ${resetFrag(l, resetDisplay, now, locale)}`;
-  }
+export function islandText(l: Limit): string {
+  const short = windowShort(l);
   const est = l.status === "stale" || l.status === "insufficient_data" ? " est." : "";
-  const pct = isUnknown(l) ? "—" : `${pctLeft(l.util)}%`;
-  return `${pct}${est}`;
+  const pct = isUnknown(l) ? "—" : `${l.status === "locked" ? 0 : pctLeft(l.util)}%`;
+  return `${short ? short + " " : ""}${pct}${est}`;
 }
 
 /** One capsule group: provider brand icon + capsule + islandText, colored by status. */
-function group(
-  l: Limit | null,
-  provider: "anthropic" | "codex",
-  opts: IslandOpts,
-): string {
+function group(l: Limit | null, provider: "anthropic" | "codex"): string {
   const icon = providerIcon(provider, 13);
   const cls = provider === "anthropic" ? "prov-claude" : "prov-codex";
   if (!l) {
     return `<span class="igroup status-empty ${cls}">${icon}${capsuleSvg(0)}<span class="pct">—</span></span>`;
   }
   const left = isUnknown(l) ? 0 : pctLeft(l.util);
-  const text = islandText(l, opts.resetDisplay, opts.now, opts.locale);
+  const text = islandText(l);
   return `<span class="igroup status-${l.status} ${cls}">${icon}${capsuleSvg(left)}<span class="pct">${text}</span></span>`;
 }
 
@@ -237,17 +217,17 @@ export function renderIsland(root: HTMLElement, snap: Snapshot | null, opts: Isl
   if (opts.mode === "claude") {
     const l = pickIslandLimit(limits, "anthropic", opts.pinClaude);
     shown = [l];
-    body = group(l, "anthropic", opts);
+    body = group(l, "anthropic");
   } else if (opts.mode === "codex") {
     const l = pickIslandLimit(limits, "codex", opts.pinCodex);
     shown = [l];
-    body = group(l, "codex", opts);
+    body = group(l, "codex");
   } else {
     // "both" (and any legacy/unknown value): providers side-by-side
     const c = pickIslandLimit(limits, "anthropic", opts.pinClaude);
     const x = pickIslandLimit(limits, "codex", opts.pinCodex);
     shown = [c, x];
-    body = group(c, "anthropic", opts) + group(x, "codex", opts);
+    body = group(c, "anthropic") + group(x, "codex");
   }
 
   // Root keeps the shown limits' worst status: border glow / locked blink apply whole-pill.

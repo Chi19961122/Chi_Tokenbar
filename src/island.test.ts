@@ -152,36 +152,24 @@ describe("windowShort — 固定英文短標", () => {
   });
 });
 
-describe("islandText — normal/near/locked × relative/clock", () => {
-  // Jan 15 2026 10:00 local (Thu). Deterministic, TZ-independent (local ctor).
-  const now = Math.floor(new Date(2026, 0, 15, 10, 0, 0).getTime() / 1000);
-  const at = (h: number, mi: number) =>
-    Math.floor(new Date(2026, 0, 15, h, mi, 0).getTime() / 1000);
-
-  it("normal 只顯示 {left}%,無短標", () => {
+describe("islandText — 統一「週期+用量」格式,不帶重置時間(2026-07-18 定案)", () => {
+  it("normal: {short} {left}%", () => {
     const l = lim({ id: "cc.5h", provider: "anthropic", util: 30, status: "normal" });
-    expect(islandText(l, "relative", now, "en")).toBe("70%");
+    expect(islandText(l)).toBe("5h 70%");
   });
 
-  it("near relative: {short} {left}% · {倒數}", () => {
-    const l = lim({ id: "codex.5h", provider: "codex", util: 88, status: "near", resets_at: at(10, 22) });
-    expect(islandText(l, "relative", now, "en")).toBe("5h 12% · 22m");
+  it("near: {short} {left}%,無時間", () => {
+    const l = lim({ id: "codex.5h", provider: "codex", util: 88, status: "near", resets_at: 1_800_000_000 });
+    expect(islandText(l)).toBe("5h 12%");
   });
 
-  it("near clock: {short} {left}% · {時刻}(依 locale)", () => {
-    const l = lim({ id: "codex.5h", provider: "codex", util: 88, status: "near", resets_at: at(14, 30) });
-    expect(islandText(l, "clock", now, "en")).toBe("5h 12% · 2:30 PM");
-    expect(islandText(l, "clock", now, "zh-TW")).toBe("5h 12% · 14:30");
+  it("locked: {short} 0%,無時間(短標指出鎖住的是哪個視窗)", () => {
+    const l = lim({ id: "codex.5h", provider: "codex", util: 100, status: "locked", resets_at: 1_800_000_000 });
+    expect(islandText(l)).toBe("5h 0%");
   });
 
-  it("locked: {short} 0% · {reset}(短標指出鎖住的是哪個視窗)", () => {
-    const l = lim({ id: "codex.5h", provider: "codex", util: 100, status: "locked", resets_at: at(11, 20) });
-    expect(islandText(l, "relative", now, "en")).toBe("5h 0% · 1h 20m");
-    expect(islandText(l, "clock", now, "en")).toBe("5h 0% · 11:20 AM");
-  });
-
-  it("estimate/stale 帶 est. 標;source_failed 顯示 —", () => {
-    expect(islandText(lim({ id: "cc.week", provider: "anthropic", util: 40, status: "stale" }), "relative", now, "en")).toBe("60% est.");
-    expect(islandText(lim({ id: "cc.5h", provider: "anthropic", util: 0, status: "source_failed" }), "relative", now, "en")).toBe("—");
+  it("estimate/stale 帶 est. 標;source_failed 顯示 {short} —", () => {
+    expect(islandText(lim({ id: "cc.week", provider: "anthropic", util: 40, status: "stale" }))).toBe("wk 60% est.");
+    expect(islandText(lim({ id: "cc.5h", provider: "anthropic", util: 0, status: "source_failed" }))).toBe("5h —");
   });
 });
