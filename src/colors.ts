@@ -8,12 +8,19 @@ export const STATUS = {
 
 // Charts intentionally carry no provider/status family colors. The pink accent
 // is reserved for explicit "today" / first-place marks in their renderers.
+//
+// Values are CSS variables (the "ink ramp" defined in styles.css :root/.dark),
+// not literal hex, so a series keeps its shade in light mode and gets a
+// light-on-dark counterpart in dark mode. These strings are dropped into inline
+// `style="fill:…"` / `style="background:…"` where var() resolves (a bare `fill=`
+// presentation attribute would NOT resolve var(), so the SVG renderers use
+// style). Light values: 18181B, 52525B, A1A1AA, D4D4D8, F4F4F5.
 export const SERIES = [
-  "#18181B",
-  "#52525B",
-  "#A1A1AA",
-  "#D4D4D8",
-  "#F4F4F5",
+  "var(--ink-900)",
+  "var(--ink-700)",
+  "var(--ink-400)",
+  "var(--ink-300)",
+  "var(--ink-100)",
 ];
 
 export function seriesColor(i: number): string {
@@ -24,20 +31,20 @@ export function seriesColor(i: number): string {
 // shade across pages without reintroducing provider-family colors.
 const NAMED: Array<[string, string]> = [
   // models
-  ["sonnet", "#52525B"],
-  ["opus", "#18181B"],
-  ["haiku", "#A1A1AA"],
+  ["sonnet", "var(--ink-700)"],
+  ["opus", "var(--ink-900)"],
+  ["haiku", "var(--ink-400)"],
   // agents (main/root session, then the role fleet)
-  ["main", "#18181B"],
-  ["root", "#18181B"],
-  ["executor", "#52525B"],
-  ["scout", "#A1A1AA"],
-  ["verifier", "#D4D4D8"],
+  ["main", "var(--ink-900)"],
+  ["root", "var(--ink-900)"],
+  ["executor", "var(--ink-700)"],
+  ["scout", "var(--ink-400)"],
+  ["verifier", "var(--ink-300)"],
   // codex spans both a model family and its agent
-  ["codex", "#52525B"],
+  ["codex", "var(--ink-700)"],
   // 階段 E multi-tool clients (agent keys "OpenCode" / "Gemini CLI")
-  ["opencode", "#A1A1AA"],
-  ["gemini", "#D4D4D8"],
+  ["opencode", "var(--ink-400)"],
+  ["gemini", "var(--ink-300)"],
 ];
 
 /** Color for a named series (model/agent), falling back to the index palette. */

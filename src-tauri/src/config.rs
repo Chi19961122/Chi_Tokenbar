@@ -68,6 +68,11 @@ pub struct Settings {
     /// (the absolute wall-clock time). Defaults to "relative".
     #[serde(default = "default_reset_display")]
     pub reset_display: String,
+    /// UI theme: "system" (follow the OS `prefers-color-scheme`), "light", or
+    /// "dark". Defaults to "system". Resolved entirely in the frontend
+    /// (`applyTheme` / `resolveThemeDark`); the backend never reads it.
+    #[serde(default = "default_theme")]
+    pub theme: String,
     /// 階段 D 戰報 Share: which share-card style the report panel last used —
     /// "statement" | "diagnostics" | "minimal" | "fuel" | "island_card" | "wa".
     /// Defaults to "statement".
@@ -113,6 +118,10 @@ fn default_reset_display() -> String {
     "relative".into()
 }
 
+fn default_theme() -> String {
+    "system".into()
+}
+
 fn default_share_style() -> String {
     "statement".into()
 }
@@ -139,6 +148,7 @@ impl Default for Settings {
             island_pin_codex: default_pin(),
             island_aux: default_island_aux(),
             reset_display: default_reset_display(),
+            theme: default_theme(),
             share_style: default_share_style(),
             share_range: default_share_range(),
             tool_opencode: true,
@@ -295,6 +305,33 @@ mod tests {
         assert_eq!(d.island_pin_codex, "auto");
         assert_eq!(d.island_aux, "tok_per_min");
         assert_eq!(d.reset_display, "relative");
+    }
+
+    // ── theme (T-901 dual light/dark) ─────────────────────────────────
+    //
+    // Default must be "system" so an existing settings.json (written before the
+    // field existed) follows the OS `prefers-color-scheme` rather than being
+    // pinned to a specific theme.
+
+    #[test]
+    fn defaults_to_system_theme() {
+        assert_eq!(Settings::default().theme, "system");
+    }
+
+    #[test]
+    fn missing_theme_deserializes_to_system() {
+        let s = load_from_str(r#"{ "autostart": true }"#);
+        assert_eq!(s.theme, "system");
+    }
+
+    #[test]
+    fn explicit_theme_survives_a_save_load_round_trip() {
+        let s = Settings {
+            theme: "dark".into(),
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(load_from_str(&json).theme, "dark");
     }
 
     #[test]

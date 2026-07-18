@@ -66,6 +66,8 @@ export type ExpandDefault = "compact" | "usage";
 export type IslandAux = "off" | "tok_per_min" | "cost_today";
 /** How reset times render (settings.reset_display). */
 export type ResetDisplay = "relative" | "clock";
+/** UI theme (settings.theme): follow the OS, or force light/dark. */
+export type ThemeMode = "system" | "light" | "dark";
 /** Island quota pin per provider: "auto" | "5h" | "week" | "model:<id>". */
 export type IslandPin = string;
 
@@ -91,6 +93,9 @@ export interface Settings {
   island_aux: IslandAux;
   /** Reset-time display style. Defaults to "relative". */
   reset_display: ResetDisplay;
+  /** UI theme: "system" (follow prefers-color-scheme), "light", or "dark".
+   *  Defaults to "system" (matches config.rs `Settings::default()`). */
+  theme: ThemeMode;
   /** 階段 D 戰報 Share: last-used share-card style. Defaults to "statement". */
   share_style: string;
   /** 階段 D 戰報 Share: last-used range ("today"|"week"|"month"). Defaults to "week". */

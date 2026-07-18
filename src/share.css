@@ -251,3 +251,27 @@
 .sharep-btn.primary { background: var(--share-primary); color: var(--share-bg); border-color: var(--share-primary); }
 .sharep-status { font-size: 11px; color: var(--share-secondary); min-height: 14px; word-break: break-all; }
 .sharep-status.err { color: #DC2626; }
+
+/* ── Dark theme (T-901): the report-panel CHROME follows the app theme so its
+   controls stay readable when the panel is dark. The six export cards and the
+   `.sharep-preview` mat that frames them stay fixed light (shared-artifact
+   contract) — only the buttons/labels around them adapt, via the app's global
+   tokens (defined in styles.css :root.dark). */
+:root.dark .sharep { color: var(--text); }
+:root.dark .sharep-styles button {
+  background: var(--card-bg); border-color: var(--border); color: var(--text-dim);
+}
+:root.dark .sharep-styles button:hover { background: var(--btn-hover); color: var(--text); }
+:root.dark .sharep-styles button.on {
+  background: var(--seg-on-bg); color: var(--seg-on-fg); border-color: var(--seg-on-bg);
+}
+:root.dark .sharep-btn {
+  background: var(--card-bg); border-color: var(--border); color: var(--text);
+}
+:root.dark .sharep-btn:hover { background: var(--btn-hover); border-color: var(--border); }
+:root.dark .sharep-btn.primary {
+  background: var(--seg-on-bg); color: var(--seg-on-fg); border-color: var(--seg-on-bg);
+}
+:root.dark .sharep-toggle { color: var(--text-dim); }
+:root.dark .sharep-status { color: var(--muted); }
+:root.dark .sharep-status.err { color: var(--locked); }

@@ -66,6 +66,10 @@ const en = {
   "settings.resetDisplay": "Reset time",
   "settings.resetRelative": "Countdown",
   "settings.resetClock": "Clock",
+  "settings.theme": "Theme",
+  "settings.themeSystem": "Follow system",
+  "settings.themeLight": "Light",
+  "settings.themeDark": "Dark",
 
   // Analytics subtabs (階段 C: daily folded into overview, agents into the
   // model/agent group toggle on the "share" breakdown)
@@ -249,6 +253,10 @@ const zhTW = {
   "settings.resetDisplay": "重置時間顯示",
   "settings.resetRelative": "倒數",
   "settings.resetClock": "時刻",
+  "settings.theme": "主題",
+  "settings.themeSystem": "跟隨系統",
+  "settings.themeLight": "亮色",
+  "settings.themeDark": "暗色",
 
   "subtab.overview": "總覽",
   "subtab.share": "拆分",

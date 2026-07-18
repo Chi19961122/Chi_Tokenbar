@@ -30,6 +30,7 @@ import { renderSharePanel } from "./share-panel";
 import type { ShareStyle } from "./share";
 import { fmtTokens, nowSecs } from "./format";
 import { getLocale, resolveLocale, setLocale, t } from "./i18n";
+import { applyTheme, watchSystemTheme } from "./theme";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -497,6 +498,14 @@ async function renderSettings() {
         </select>
       </label>
       <label class="srow">
+        <span class="slabel">${t("settings.theme")}</span>
+        <select id="s-theme">
+          <option value="system" ${s.theme !== "light" && s.theme !== "dark" ? "selected" : ""}>${t("settings.themeSystem")}</option>
+          <option value="light" ${s.theme === "light" ? "selected" : ""}>${t("settings.themeLight")}</option>
+          <option value="dark" ${s.theme === "dark" ? "selected" : ""}>${t("settings.themeDark")}</option>
+        </select>
+      </label>
+      <label class="srow">
         <span class="slabel">${t("settings.providers")}</span>
         <select id="s-providers">
           <option value="both" ${s.providers !== "claude" && s.providers !== "codex" ? "selected" : ""}>${t("settings.providersBoth")}</option>
@@ -597,6 +606,7 @@ function readSettingsForm(): Settings {
     island_pin_codex: ($("s-pin-codex") as HTMLSelectElement).value || "auto",
     island_aux: (($("s-aux") as HTMLSelectElement).value || "tok_per_min") as Settings["island_aux"],
     reset_display: (($("s-reset") as HTMLSelectElement).value || "relative") as Settings["reset_display"],
+    theme: (($("s-theme") as HTMLSelectElement).value || "system") as Settings["theme"],
     tool_opencode: v("s-tool-opencode").checked,
     tool_gemini: v("s-tool-gemini").checked,
   };
@@ -737,6 +747,7 @@ function wireEvents() {
   $("settings").addEventListener("change", async () => {
     const prevLocale = getLocale();
     settings = readSettingsForm();
+    applyTheme(settings.theme); // re-apply before any re-render below
     await setSettings(settings);
 
     // Locale changed → re-translate everything, including the open settings
@@ -858,6 +869,12 @@ async function boot() {
   setupEdgeSnap();
 
   settings = await getSettings();
+  // Apply the theme before the first panel paint so there is no light→dark flash
+  // when a dark-preferring user expands the panel. The island pill is opaque and
+  // theme-invariant, so the collapsed default needs no earlier hook.
+  applyTheme(settings.theme);
+  // Re-apply on OS scheme changes, but only while the setting follows the system.
+  watchSystemTheme(() => settings?.theme ?? "system");
   setLocale(resolveLocale(settings.locale));
   applyStaticI18n();
   // 階段 D: restore the last share style/range, clamping any junk to a default.

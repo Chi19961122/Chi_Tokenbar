@@ -159,9 +159,10 @@ function heatmap(a: Analytics): string {
 
 // ── activity-type donut + project bars (階段 C+, Breakdown) ────────────────
 
-/** Fixed editorial sequence; activity kinds no longer carry semantic colors. */
+/** Fixed editorial sequence; activity kinds no longer carry semantic colors.
+ *  CSS-variable values (theme-following) — see colors.ts SERIES header. */
 function kindColor(index: number): string {
-  const colors = ["#18181B", "#71717A", "#D4D4D8", "#EC4899"];
+  const colors = ["var(--ink-900)", "var(--ink-500)", "var(--ink-300)", "var(--accent)"];
   return colors[index % colors.length];
 }
 function kindLabel(kind: string): string {
@@ -195,7 +196,7 @@ function donut(byKind: KindCount[]): string {
       const col = kindColor(index);
       const share = k.tokens / total;
       const dash = Math.max(0, share * circumference - gap);
-      arcs.push(`<circle cx="28" cy="28" r="${radius}" fill="none" stroke="${col}" stroke-width="7"
+      arcs.push(`<circle cx="28" cy="28" r="${radius}" fill="none" style="stroke:${col}" stroke-width="7"
         stroke-dasharray="${dash} ${circumference - dash}" stroke-dashoffset="${-offset}"
         transform="rotate(-90 28 28)"/>`);
       offset += share * circumference;
@@ -207,7 +208,7 @@ function donut(byKind: KindCount[]): string {
     .join("");
   return `<div class="donut-sec">
     <svg class="donut" viewBox="0 0 56 56" role="img" aria-label="${fmtTokens(total)} ${t("analytics.tokens")}">
-      <circle cx="28" cy="28" r="${radius}" fill="none" stroke="#F4F4F5" stroke-width="7"/>
+      <circle cx="28" cy="28" r="${radius}" fill="none" style="stroke:var(--donut-ring)" stroke-width="7"/>
       ${arcs.join("")}
     </svg>
     <div class="donut-legend">${legend}</div>
@@ -279,9 +280,12 @@ function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
     .map((d, i) => {
       const x = i * (bw + gap);
       const h = totals[i] * scale;
-      const color = i === n - 1 ? "#EC4899" : totals[i] / max > 0.6 ? "#18181B" : "#D4D4D8";
+      // Fill is set by class in styles.css (theme-following): today = accent,
+      // a "strong" day = heavy ink, else a dim/weak ink.
+      const isToday = i === n - 1;
+      const cls = isToday ? " is-today" : totals[i] / max > 0.6 ? " is-strong" : "";
       const title = `<title>${d.date.slice(5)} · ${fmtDayVal(totals[i])}</title>`;
-      return `<rect class="daily-bar${i === n - 1 ? " is-today" : ""}" x="${x}" y="${plotH - h}" width="${bw}" height="${Math.max(0, h)}" rx="1" fill="${color}">${title}</rect>`;
+      return `<rect class="daily-bar${cls}" x="${x}" y="${plotH - h}" width="${bw}" height="${Math.max(0, h)}" rx="1">${title}</rect>`;
     })
     .join("");
 
@@ -306,7 +310,7 @@ function hourly(a: Analytics, opts: AnalyticsOpts): string {
       const cx = (i + 0.5) * (W / 24);
       const h = v * scale;
       const title = `<title>${i}:00 · ${fmtVal(v)}</title>`;
-      return `<rect x="${cx - bw / 2}" y="${H - padB - h}" width="${bw}" height="${h}" rx="1" fill="${seriesColor(3)}">${title}</rect>`;
+      return `<rect x="${cx - bw / 2}" y="${H - padB - h}" width="${bw}" height="${h}" rx="1" style="fill:${seriesColor(3)}">${title}</rect>`;
     })
     .join("");
   // Mid-axis labels every 6h, centered under their bar — the two endpoints

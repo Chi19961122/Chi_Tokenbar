@@ -2,6 +2,9 @@
    Island (collapsed) + expanded panel (battery limits, drill-down) + analytics. */
 
 :root {
+  /* Native form controls / scrollbars follow the theme (T-901). */
+  color-scheme: light;
+
   /* Global alert colors (override provider family on near/locked). */
   --near: #D97706;
   --locked: #DC2626;
@@ -38,6 +41,28 @@
   --muted: #5D5D65;
   --faint: #6C6C75;
 
+  /* Interactive button hover surface (icon buttons, context-menu items). */
+  --btn-hover: #F4F4F5;
+  /* Accent-colored translucent ring (heatmap "today" outline). */
+  --accent-soft: rgba(236, 72, 153, 0.38);
+
+  /* Accent-tile (the standout "est. cost" tile): inverted vs the plain tiles. */
+  --tile-accent-bg: #09090B;
+  --tile-accent-fg: #FAFAFA;
+  --tile-accent-sub: #71717A;
+
+  /* Neutral "ink ramp" for charts/heatmap/bars (was inline hexes in
+     analytics.ts / colors.ts). Light = zinc-900…zinc-100; the .dark set below
+     inverts it so heavy marks read light-on-dark and light marks dim out. */
+  --ink-900: #18181B;
+  --ink-700: #52525B;
+  --ink-500: #71717A;
+  --ink-400: #A1A1AA;
+  --ink-300: #D4D4D8;
+  --ink-100: #F4F4F5;
+  /* Donut ring track (behind the activity arcs). */
+  --donut-ring: #F4F4F5;
+
   /* Island stays opaque and theme-invariant. */
   --island-bg: #14171c;
   --island-border: #2a2f37;
@@ -48,6 +73,67 @@
     Consolas, monospace;
   --sans: "Geist", "Noto Sans TC", -apple-system, system-ui, "Segoe UI", sans-serif;
   --serif: "Playfair Display", Georgia, serif;
+}
+
+/* ── Dark theme (T-901) ────────────────────────────────────────────────
+   `.dark` on <html> (applyTheme). Only the panel/analytics/settings/menu
+   surfaces flip; the island pill and the six share cards are theme-invariant
+   (the island is re-pinned to its light inputs a few rules down, and the share
+   cards define their own pinned `--share-*` set in share.css).
+   Every text tier below clears WCAG AA (4.5:1) on its actual ground — ratios
+   are recorded in the ticket report. */
+:root.dark {
+  color-scheme: dark;
+
+  /* Status colors lifted for legibility on the dark ground (small status text
+     as well as the large gauge numerals). */
+  --near: #F59E0B;   /* 8.6:1 on panel */
+  --locked: #F87171; /* 6.7:1 on panel */
+  --safe: #22C55E;   /* 8.1:1 on panel */
+  /* --stale (#A1A1AA) already reads ~7:1 on dark — kept. */
+
+  --accent: #F472B6;
+  --seg-on-bg: #F4F4F5; /* selected tab: light chip … */
+  --seg-on-fg: #131316; /* … dark text */
+
+  --panel-bg: #131316;
+  --border: rgba(255, 255, 255, 0.10);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --card-bg: #1A1A1E;
+  --track: #2A2A30;
+
+  --text: #F4F4F5;    /* 15.8:1 on card */
+  --text-dim: #B0B0B8; /* 7.9:1 on card */
+  --muted: #9A9AA3;   /* 6.2:1 on card */
+  --faint: #86868F;   /* 4.8:1 on card */
+
+  --btn-hover: #26262B;
+  --accent-soft: rgba(244, 114, 182, 0.38);
+
+  --tile-accent-bg: #ECECEF; /* invert: a light standout tile */
+  --tile-accent-fg: #131316;
+  --tile-accent-sub: #52525B;
+
+  /* Ink ramp inverted: heavy marks bright, light marks dim. */
+  --ink-900: #ECECEF;
+  --ink-700: #C4C4CC;
+  --ink-500: #9A9AA3;
+  --ink-400: #78787F;
+  --ink-300: #55555C;
+  --ink-100: #3A3A40;
+  --donut-ring: #2E2E34;
+}
+
+/* Island is theme-invariant: re-pin the semantic tokens it consumes back to
+   their light literals so the dark panel overrides above never leak into the
+   pill. (--prov-* / --stale are not overridden in dark, so they need no re-pin;
+   --fam derives from --prov-* via the .prov-* rules below.) Placed here, NOT in
+   the protected `.island {}` / `--island-*` block — it only guards the pill's
+   appearance, it does not restyle it. */
+:root.dark .island {
+  --near: #D97706;
+  --locked: #DC2626;
+  --muted: #5D5D65;
 }
 
 /* Provider family variable — set once per element carrying a provider class,
@@ -327,7 +413,7 @@ body.expanded #island {
 #gear:hover,
 #refresh:hover {
   color: var(--text);
-  background: #F4F4F5;
+  background: var(--btn-hover);
 }
 #collapse:active,
 #gear:active,
@@ -585,7 +671,7 @@ body.settings-open #analytics {
   margin-top: 12px;
   overflow: hidden;
   border-radius: 999px;
-  background: #E4E4E7;
+  background: var(--track);
 }
 .gauge-fill {
   position: absolute;
@@ -783,7 +869,7 @@ body.settings-open #analytics {
   align-items: flex-start;
   gap: 6px;
   min-width: 0;
-  background: #FFFFFF;
+  background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 12px;
@@ -791,7 +877,7 @@ body.settings-open #analytics {
 }
 .tile b {
   display: block;
-  color: #09090B;
+  color: var(--text);
   font-family: var(--sans);
   font-size: 22px;
   font-weight: 800;
@@ -801,14 +887,14 @@ body.settings-open #analytics {
   white-space: nowrap;
 }
 .tile-accent {
-  background: #09090B;
-  border-color: #09090B;
+  background: var(--tile-accent-bg);
+  border-color: var(--tile-accent-bg);
 }
 .tile-accent b {
-  color: #FAFAFA;
+  color: var(--tile-accent-fg);
 }
 .tile-accent span {
-  color: #71717A;
+  color: var(--tile-accent-sub);
 }
 
 .records { position: relative; }
@@ -887,8 +973,19 @@ body.settings-open #analytics {
   font-variant-numeric: tabular-nums;
 }
 .chart .axis-today {
-  fill: #EC4899;
+  fill: var(--accent);
   font-weight: 600;
+}
+/* Daily stacked chart bars (colored via class so the fill follows the theme):
+   today = accent, a "strong" day = heavy ink, else a dim/weak ink. */
+.daily-bar {
+  fill: var(--ink-300);
+}
+.daily-bar.is-strong {
+  fill: var(--ink-900);
+}
+.daily-bar.is-today {
+  fill: var(--accent);
 }
 .legend {
   display: flex;
@@ -937,10 +1034,10 @@ body.settings-open #analytics {
 .bar-fill {
   height: 100%;
   border-radius: 999px;
-  background: #18181B;
+  background: var(--ink-900);
 }
 .bar-fill.is-top {
-  background: #EC4899;
+  background: var(--accent);
 }
 .bar-val {
   font-family: var(--sans);
@@ -1061,25 +1158,25 @@ body.settings-open #analytics {
   height: var(--hm-cell);
   border-radius: 2px;
 }
-/* Editorial neutral ramp, 5 steps less→more. */
+/* Editorial neutral ramp, 5 steps less→more (ink ramp → theme-following). */
 .hm-l0 {
-  background: #F4F4F5;
+  background: var(--ink-100);
 }
 .hm-l1 {
-  background: #D4D4D8;
+  background: var(--ink-300);
 }
 .hm-l2 {
-  background: #A1A1AA;
+  background: var(--ink-400);
 }
 .hm-l3 {
-  background: #52525B;
+  background: var(--ink-700);
 }
 .hm-l4 {
-  background: #18181B;
+  background: var(--ink-900);
 }
 .hm-cell.hm-today {
-  background: #EC4899;
-  outline: 1.5px solid #EC489960;
+  background: var(--accent);
+  outline: 1.5px solid var(--accent-soft);
   outline-offset: 1px;
 }
 .hm-legend {
@@ -1299,7 +1396,7 @@ body.settings-open #analytics {
   z-index: 1000;
   min-width: 168px;
   padding: 4px;
-  background: #FFFFFF;
+  background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.10), 0 1px 4px rgba(0, 0, 0, 0.05);
@@ -1334,7 +1431,7 @@ body.settings-open #analytics {
   box-shadow: inset 2px 0 var(--accent);
 }
 .ctxmenu .ctx-item:hover {
-  background: #F4F4F5;
+  background: var(--btn-hover);
 }
 .ctxmenu .ctx-sep {
   height: 1px;

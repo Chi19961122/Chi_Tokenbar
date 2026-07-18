@@ -156,8 +156,11 @@ describe("階段 C+ render wiring", () => {
 
     const bars = [...root.querySelectorAll<SVGRectElement>(".daily-bar")];
     expect(bars).toHaveLength(a.daily.length);
-    expect(bars[bars.length - 1]?.getAttribute("fill")).toBe("#EC4899");
-    expect(bars.slice(0, -1).every((bar) => ["#18181B", "#D4D4D8"].includes(bar.getAttribute("fill") ?? ""))).toBe(true);
+    // Fill is now class-driven (theme-following), not an inline hex: the last bar
+    // is the pink "today" bar; the rest are heavy ("is-strong") or dim (plain).
+    expect(bars[bars.length - 1]?.classList.contains("is-today")).toBe(true);
+    expect(bars.slice(0, -1).some((bar) => bar.classList.contains("is-today"))).toBe(false);
+    expect(bars.slice(0, -1).every((bar) => !bar.hasAttribute("fill"))).toBe(true);
     expect(root.querySelector(".legend")).toBeNull();
   });
 

@@ -23,6 +23,8 @@ const DEFAULT_SETTINGS: Settings = {
   island_pin_codex: "auto",
   island_aux: "tok_per_min",
   reset_display: "relative",
+  // T-901 亮暗雙主題 — mirror config.rs `Settings::default()`.
+  theme: "system",
   // 階段 D defaults — mirror config.rs `Settings::default()`.
   share_style: "statement",
   share_range: "week",
