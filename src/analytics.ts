@@ -258,7 +258,7 @@ function dayTotal(d: DayPoint, opts: AnalyticsOpts): number {
 }
 
 function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
-  const W = 320, plotH = 56, H = 74, gap = 2;
+  const W = 320, plotH = 92, H = 112, gap = 2;
   // Drop leading empty days so a month backed by a few days of logs doesn't
   // render a wall of blank bars; the x-axis then starts at the first active day
   // (which matches the backend's range_start_day annotation).
@@ -296,7 +296,7 @@ function stackedDaily(a: Analytics, opts: AnalyticsOpts): string {
 }
 
 function hourly(a: Analytics, opts: AnalyticsOpts): string {
-  const W = 320, H = 130, padB = 16, padT = 6;
+  const W = 320, H = 182, padB = 18, padT = 8;
   // Price mode reads the per-hour cost series and normalizes on its own max, so
   // the shape reflects spend rather than raw tokens.
   const price = opts.metric === "price";

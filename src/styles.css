@@ -883,19 +883,19 @@ body.settings-open #gear {
 .tiles {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 22px;
 }
 .tile {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 12px;
+  padding: 15px 14px;
   text-align: left;
 }
 .tile b {
@@ -951,7 +951,7 @@ body.settings-open #gear {
 .chart-note {
   font-size: 10px;
   color: var(--text-dim);
-  margin: -2px 0 6px 2px;
+  margin: -10px 0 14px 2px;
 }
 
 /* Analytics loading skeleton (§ expand speed): reuses .tiles/.tile/.chart-wrap
@@ -1041,7 +1041,7 @@ body.settings-open #gear {
 .bars {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 11px;
 }
 .bar-row {
   display: grid;
@@ -1058,7 +1058,7 @@ body.settings-open #gear {
   white-space: nowrap;
 }
 .bar-track {
-  height: 3px;
+  height: 5px;
   background: var(--track);
   border-radius: 999px;
   overflow: hidden;
@@ -1083,14 +1083,14 @@ body.settings-open #gear {
    stats token-type breakdown keeps the compact 3-column form (fixed short
    labels never truncate). */
 .bars-stack {
-  gap: 10px;
+  gap: 15px;
 }
 .bars-stack .bar-row {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     "label val"
     "track track";
-  row-gap: 3px;
+  row-gap: 6px;
 }
 .bars-stack .bar-label {
   grid-area: label;
@@ -1107,30 +1107,30 @@ body.settings-open #gear {
 .kv {
   display: flex;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 22px;
 }
 .kv > div {
   flex: 1;
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 8px;
+  padding: 12px 8px;
   text-align: center;
 }
 .kv b {
   display: block;
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: 18px;
 }
 .kv span {
   font-size: 9px;
   color: var(--text-dim);
 }
 .accounts {
-  margin-top: 12px;
+  margin-top: 22px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 7px;
 }
 .acct {
   font-size: 11px;
@@ -1144,7 +1144,7 @@ body.settings-open #gear {
 
 /* A titled sub-section stacked below the primary chart on overview/Breakdown. */
 .sub-sec {
-  margin-top: 12px;
+  margin-top: 26px;
 }
 .sub-sec-h {
   font-size: 10px;
@@ -1152,13 +1152,13 @@ body.settings-open #gear {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 .sub-sec-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 .sub-sec-head .sub-sec-h {
   margin-bottom: 0;
@@ -1166,16 +1166,16 @@ body.settings-open #gear {
 /* GitHub-style activity heatmap. Two-column body: weekday axis + week grid,
    with month labels spanning the grid columns above it. */
 .hm {
-  --hm-cell: 10px;
-  --hm-gap: 3px;
+  --hm-cell: 12px;
+  --hm-gap: 4px;
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px;
+  padding: 14px;
   display: grid;
   grid-template-columns: auto 1fr;
   column-gap: 6px;
-  row-gap: 4px;
+  row-gap: 6px;
   overflow-x: auto;
 }
 .hm-months {
@@ -1256,18 +1256,19 @@ body.settings-open #gear {
 .donut-sec {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 24px;
+  padding: 6px 0;
 }
 .donut {
   display: block;
-  width: 56px;
-  height: 56px;
+  width: 68px;
+  height: 68px;
   flex: 0 0 auto;
 }
 .donut-legend {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 9px;
   min-width: 100px;
   font-size: 10px;
   color: var(--muted);
