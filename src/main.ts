@@ -165,11 +165,23 @@ function analyticsDataKey(): string {
   return `${ui.range}|${settings?.providers ?? "both"}|${lastSnap?.updated_at ?? 0}`;
 }
 
+/** The range|filter prefix of an analytics key — what selects the data *slice*.
+ *  The trailing snapshot generation only dates it: a slice-equal, older payload
+ *  is still the right chart, just slightly stale. */
+function analyticsSliceOf(key: string): string {
+  return key.split("|").slice(0, 2).join("|");
+}
+
 /** Paint the analytics layer from an already-fetched payload (no IPC). */
 function renderAnalyticsInto(a: Analytics): void {
   $("rate").textContent = `${fmtTokens(a.tokPerMin)} ${t("analytics.tokPerMin")}`;
   const opts: AnalyticsOpts = { subtab: ui.subtab, metric: ui.metric, group: ui.group };
-  renderAnalytics($("analytics"), a, opts);
+  const box = $("analytics");
+  // The innerHTML swap resets the fixed-height box's scroll; a background
+  // revalidate repaint must not yank the reader back to the top.
+  const scroll = box.scrollTop;
+  renderAnalytics(box, a, opts);
+  box.scrollTop = scroll;
 }
 
 /** Glass placeholder sized to the fixed 300px #analytics box, shown while the
@@ -236,15 +248,29 @@ async function renderReportNow(): Promise<void> {
     paintReport(shareCache.data);
     return;
   }
+  // Cold fetch: the log scan can take seconds, so give immediate feedback
+  // rather than leaving the previous pane sitting under a dead click.
+  showAnalyticsSkeleton();
   const a = await getAnalytics(range);
   shareCache = { range, data: a };
   // Guard against a rapid range switch / subtab change superseding this fetch.
   if (ui.subtab === "report" && ui.shareRange === range) paintReport(a);
 }
 
-/** Fetch (or reuse) the analytics payload and paint it. A cache hit renders
- *  synchronously with no IPC; a miss awaits get_analytics, then paints only if
- *  the key is still current (a rapid range/provider switch can supersede it). */
+/** The key currently being fetched, so subtab-hopping while a scan is in
+ *  flight re-slices what's on hand instead of piling up duplicate scans. */
+let analyticsInflight: string | null = null;
+
+/** Paint the analytics layer, fetching if needed — synchronously before its
+ *  first await, so callers can fitWindow() right after without waiting on IPC:
+ *    exact cache hit  → paint, done (no fetch).
+ *    stale slice hit  → paint the stale payload now (same range+filter, only
+ *                       the snapshot generation behind — the right chart,
+ *                       slightly dated), then revalidate behind it.
+ *    cold miss        → skeleton now, paint when the fetch lands.
+ *  The landing paint is guarded: a superseding range/filter switch, or having
+ *  moved to the report subtab (whose pane renderAnalyticsInto cannot draw),
+ *  drops the repaint but still fills the cache. */
 async function renderAnalyticsNow(): Promise<void> {
   if (ui.subtab === "report") {
     await renderReportNow();
@@ -255,25 +281,26 @@ async function renderAnalyticsNow(): Promise<void> {
     renderAnalyticsInto(cachedAnalytics.data);
     return;
   }
-  const a = await getAnalytics(ui.range);
-  cachedAnalytics = { key, data: a };
-  if (analyticsDataKey() === key) renderAnalyticsInto(a);
+  if (cachedAnalytics && analyticsSliceOf(cachedAnalytics.key) === analyticsSliceOf(key)) {
+    renderAnalyticsInto(cachedAnalytics.data);
+  } else {
+    showAnalyticsSkeleton();
+  }
+  if (analyticsInflight === key) return; // this key's scan is already under way
+  analyticsInflight = key;
+  try {
+    const a = await getAnalytics(ui.range);
+    cachedAnalytics = { key, data: a };
+    // Re-read subtab past the await (the cast defeats TS's stale narrowing from
+    // the early return: the user can move to "report" while the scan runs).
+    if ((ui.subtab as SubTab) !== "report" && analyticsDataKey() === key) renderAnalyticsInto(a);
+  } finally {
+    if (analyticsInflight === key) analyticsInflight = null;
+  }
 }
 
-/** Non-blocking entry used on mode entry (expand / compact toggle): a cache hit
- *  paints instantly; a miss shows the skeleton immediately and fills it in when
- *  the fetch lands — either way fitWindow() can run right after without waiting. */
+/** Non-blocking entry used on mode entry (expand / compact toggle). */
 function beginAnalytics(): void {
-  if (ui.subtab === "report") {
-    void renderReportNow();
-    return;
-  }
-  const key = analyticsDataKey();
-  if (cachedAnalytics && cachedAnalytics.key === key) {
-    renderAnalyticsInto(cachedAnalytics.data);
-    return;
-  }
-  showAnalyticsSkeleton();
   void renderAnalyticsNow();
 }
 
