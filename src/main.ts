@@ -141,11 +141,10 @@ function renderIslandNow() {
 }
 
 function renderCards() {
-  // The Usage tab leads with a one-line quota digest (階段 C). The full list
-  // stays when in Limits (compact) or while settings is open — settings tweaks
-  // (Providers, thresholds) visibly change the list, so it must stay full there.
-  const settingsOpen = !$("settings").hasAttribute("hidden");
-  const variant: "full" | "summary" = ui.compact || settingsOpen ? "full" : "summary";
+  // The Usage tab leads with a one-line quota digest (階段 C); the full list
+  // shows only in Limits (compact). Settings is now a full page swap that hides
+  // the list entirely (T-902), so it no longer forces the full variant.
+  const variant: "full" | "summary" = ui.compact ? "full" : "summary";
   renderPanel($("cards"), lastSnap, {
     relogin: ui.relogin,
     copied: ui.copied,
@@ -618,10 +617,27 @@ async function openSettingsPanel(): Promise<void> {
   const el = $("settings");
   if (!el.hasAttribute("hidden")) return; // already open
   if (!ui.expanded) setExpanded(true);
+  // Render the settings form BEFORE fitWindow measures — it is the only visible
+  // content on the settings page, so its natural height is the window height.
   await renderSettings();
   el.removeAttribute("hidden");
   document.body.classList.add("settings-open");
-  renderCards(); // settings open forces the full limits list (see renderCards)
+  fitWindow();
+}
+
+/** Leave the settings page back to whichever tab (Limits/Usage) is active.
+ *  Re-render the about-to-be-visible tab content BEFORE fitWindow measures it —
+ *  the hidden→visible children were display:none while settings was open, so
+ *  their height must be repainted before the resize (F-06 ordering lesson). */
+function closeSettings(): void {
+  $("settings").setAttribute("hidden", "");
+  document.body.classList.remove("settings-open");
+  renderCards();
+  if (!ui.compact) {
+    renderSubtabs();
+    renderToggles();
+    beginAnalytics();
+  }
   fitWindow();
 }
 
@@ -729,20 +745,13 @@ function wireEvents() {
     refreshNow();
   });
 
-  // Settings is a mode, not just another band: opening it folds the analytics
-  // layer away (see .settings-open in styles.css — the panel is height-locked
-  // and clipped, and settings + limits + analytics together overflow a 1080p
-  // work area). fitWindow() then re-measures, as it already does per mode.
+  // Settings is a full page, not an overlay (T-902): opening it swaps the whole
+  // panel body out for the settings form (see .settings-open in styles.css);
+  // the gear toggles it closed, restoring the previously-active tab. fitWindow()
+  // re-measures on each transition, as it already does per mode.
   $("gear").addEventListener("click", async () => {
-    const el = $("settings");
-    if (el.hasAttribute("hidden")) {
-      await openSettingsPanel();
-    } else {
-      el.setAttribute("hidden", "");
-      document.body.classList.remove("settings-open");
-      renderCards(); // back to the Usage-tab summary digest
-      fitWindow();
-    }
+    if ($("settings").hasAttribute("hidden")) await openSettingsPanel();
+    else closeSettings();
   });
   $("settings").addEventListener("change", async () => {
     const prevLocale = getLocale();
@@ -771,8 +780,24 @@ function wireEvents() {
   });
 
   // Header tabs = the compact/analytics display switch (was the ⊟/⊞ button).
-  $("tab-limits").addEventListener("click", () => setCompact(true));
-  $("tab-analytics").addEventListener("click", () => setCompact(false));
+  // While settings is open they double as its exit: users instinctively tap
+  // 限額/分析 to leave. Same tab → just close back to it; different tab → drop
+  // the page-swap class first so setCompact measures the visible tab, not the
+  // hidden one, then switch (which renders the target tab + re-measures).
+  const onTab = async (compact: boolean) => {
+    const settingsOpen = !$("settings").hasAttribute("hidden");
+    if (settingsOpen && ui.compact === compact) {
+      closeSettings();
+      return;
+    }
+    if (settingsOpen) {
+      $("settings").setAttribute("hidden", "");
+      document.body.classList.remove("settings-open");
+    }
+    await setCompact(compact);
+  };
+  $("tab-limits").addEventListener("click", () => void onTab(true));
+  $("tab-analytics").addEventListener("click", () => void onTab(false));
 
   // Limits list re-login affordance (階段 B removed the detail drill-down; the
   // affordance now lives inline on the failed row).

@@ -438,17 +438,21 @@ body.compact #refresh {
   margin-left: auto;
 }
 
-/* Settings open: fold the analytics layer away, same three elements compact
-   hides. Not cosmetic — the panel's height is locked to its content and
-   clipped past the work area, and grouped settings with readable explanations
-   cost ~310px. Stacking that on top of the limits list *and* a 300px analytics
-   box overflows a 1080p work area and would silently cut off the bottom rows.
-   The limits list deliberately stays: Providers and the notification thresholds
-   visibly change it, so you can see what you just did. */
+/* Settings is a full page (T-902, F-02e): opening it swaps the whole body of
+   the panel out, leaving only the header + the settings form. Everything below
+   the header is hidden — the limits list, the analytics layer and its rate
+   readout — so the settings page stands alone rather than stacking on top of
+   the current tab. Closing restores whichever tab (Limits/Usage) was active. */
+body.settings-open #cards,
 body.settings-open #subtabs,
 body.settings-open #toggles,
-body.settings-open #analytics {
+body.settings-open #analytics,
+body.settings-open .rate {
   display: none;
+}
+/* Gear reads as active while its page is open. */
+body.settings-open #gear {
+  color: var(--accent);
 }
 #refresh.busy {
   animation: tb-spin 0.8s linear infinite;
