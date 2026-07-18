@@ -134,7 +134,7 @@ describe("renderPanel summary variant", () => {
     // The Grok row shows the honest per-session note, never a "Resets…" line.
     const grokRow = root.querySelector(".gauge-card.prov-grok .gauge-row");
     const note = grokRow?.querySelector(".gauge-reset")?.textContent ?? "";
-    expect(note).toBe("Per-session; resets on new session");
+    expect(note).toBe("This conversation's memory; a new chat starts at 0%");
     expect(note).not.toContain("Resets");
     // Context fill 55% → 45% left in the hero digits.
     expect(grokRow?.querySelector(".gauge-value")?.textContent).toBe("45");

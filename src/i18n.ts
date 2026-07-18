@@ -148,7 +148,7 @@ const en = {
   "note.resets": "Resets {r}",
   "note.resetsIn": "Resets in {d}",
   // Grok context-fill note — no reset schedule; empties on a new session (T-917).
-  "note.grokSession": "Per-session; resets on new session",
+  "note.grokSession": "This conversation's memory; a new chat starts at 0%",
 
   // Island context menu (D4)
   "menu.pinClaude": "Pin Claude",
@@ -341,7 +341,7 @@ const zhTW = {
   "note.lockedResets": "已鎖定 · {r} 重置",
   "note.resets": "{r} 重置",
   "note.resetsIn": "{d} 後重置",
-  "note.grokSession": "單一 session 用量,新對話歸零",
+  "note.grokSession": "目前對話的記憶容量,開新對話從 0% 開始",
 
   "menu.pinClaude": "釘選 Claude",
   "menu.pinCodex": "釘選 Codex",
