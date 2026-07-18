@@ -35,4 +35,12 @@
 
 **答覆（非 bug）**
 
-- 「ICON 那行右側的 X% left 是顯示最緊急的？」——是。狀態膠囊取**所有視窗中剩餘 % 最小**者顯示（panel.ts `statusPill`：known limits 取 `min(pctLeft)`），顏色跟著整體最差狀態（locked > near > stale > safe）。
+- 「ICON 那行右側的 X% left 是顯示最緊急的？」——是。狀態膠囊取**所有視窗中剩餘 % 最小**者顯示（panel.ts `statusPill`：known limits 取 `min(pctLeft)`），顏色跟著整體最差狀態（locked > near > stale > safe）。（該行已於三次驗收依使用者要求整行移除，見 F-10。）
+
+## 2026-07-18 三次驗收回饋（v0.6 輪）
+
+**本輪已修（3 commit，verifier 全數 CONFIRMED）**
+
+- F-08 [visual] GaugeCard「X% left」大字下方重複同值細字（使用者核准移除）。detail 行只留 Unavailable／estimate／stale 徽章。→ `0d8f38e`。
+- F-09 [func] 總覽切去其他頁籤會卡、載入很慢。**根因**：快取 key 含 snapshot `updated_at`，每輪新 snapshot 都讓 key 失效 → 頁籤一點就 await 數秒的後端掃描，舊畫面死在原地無回饋。**修**：stale-while-revalidate——同 range/filter 只是世代較舊 → 立刻畫舊資料、背景刷新；全冷 → 立刻出 skeleton；同 key 掃描去重；落地重繪防 range／filter／report 超越；重繪保留捲動位置。→ `0e9d8a7`。（掃描本身增量化仍留下輪。）
+- F-10 [visual] ϟ 圖示 + 右側 min % left 膠囊整行移除（使用者要求；與量測列表一眼可見的資訊重複）。相關 CSS 全清，首個 section head 去頂線避免與 header 髮絲線疊雙。→ `d2a4662`。
