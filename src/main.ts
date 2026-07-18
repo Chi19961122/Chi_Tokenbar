@@ -358,10 +358,16 @@ async function setCompact(compact: boolean) {
 async function applyCompact() {
   document.body.classList.toggle("compact", ui.compact);
   renderTabs();
-  if (ui.expanded && !ui.compact) {
-    renderSubtabs();
-    renderToggles();
-    beginAnalytics();
+  if (ui.expanded) {
+    // Re-render the limits before measuring: the variant (full list vs summary
+    // digest) follows the tab, and fitWindow() measuring the *old* variant
+    // locks the window at the wrong height until the next mode change.
+    renderCards();
+    if (!ui.compact) {
+      renderSubtabs();
+      renderToggles();
+      beginAnalytics();
+    }
   }
   fitWindow();
 }
