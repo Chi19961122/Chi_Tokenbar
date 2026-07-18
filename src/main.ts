@@ -353,20 +353,37 @@ function beginAnalytics(): void {
 // each Usage-mode entry for the same reason: every subtab uses the same box.
 
 /** Natural panel height at mode entry: children sum. */
+/** Desired analytics-box height, used ONLY for window sizing. The box itself
+ *  flex-fills the panel (T-908), so any gap between this number and the real
+ *  window height — DPI rounding, the OS clamping the resize, content growing
+ *  after entry (quota list expand) — is absorbed by the box instead of pushing
+ *  its bottom edge out of the clipped panel (拆分頁「其他專案」被擋 bug). */
+let analyticsDesiredH = 300;
+
 function contentHeight(): number {
   let h = 14; // panel top margin (6) + border (2) + breathing room
-  for (const el of $("panel").children) h += (el as HTMLElement).offsetHeight;
+  for (const el of $("panel").children) {
+    const child = el as HTMLElement;
+    // The analytics box is flex-filled, so its rendered height tracks the
+    // CURRENT window — measuring it would echo the old size back. Use the
+    // desired height instead (0 while hidden: compact / settings page).
+    if (child.id === "analytics") {
+      if (getComputedStyle(child).display !== "none") h += analyticsDesiredH;
+    } else {
+      h += child.offsetHeight;
+    }
+  }
   return Math.max(h, 120);
 }
 
-/** Size the shared analytics box once per Usage-mode entry. The current box is
- * subtracted from the panel measurement so a previous mode's height cannot
- * feed back into the next calculation. Subtab clicks and ticks never call it. */
+/** Size the shared analytics box once per Usage-mode entry. The previous
+ *  desired height is subtracted back out of the measurement so it cannot feed
+ *  into the next calculation. Subtab clicks and ticks never call it. */
 function sizeAnalytics(): void {
   const box = $("analytics");
-  const otherPanelHeight = Math.max(0, contentHeight() - box.offsetHeight);
-  const h = analyticsHeight(window.screen?.availHeight ?? Number.NaN, otherPanelHeight);
-  document.documentElement.style.setProperty("--analytics-h", `${h}px`);
+  const visible = getComputedStyle(box).display !== "none";
+  const otherPanelHeight = Math.max(0, contentHeight() - (visible ? analyticsDesiredH : 0));
+  analyticsDesiredH = analyticsHeight(window.screen?.availHeight ?? Number.NaN, otherPanelHeight);
 }
 
 /** Collapsed island width depends on layout (dual providers need more room).

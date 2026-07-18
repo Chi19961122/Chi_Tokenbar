@@ -95,7 +95,10 @@
      as well as the large gauge numerals). */
   --near: #F59E0B;   /* 8.6:1 on panel */
   --locked: #F87171; /* 6.7:1 on panel */
-  --safe: #22C55E;   /* 8.1:1 on panel */
+  /* Deliberately dimmer than the zinc-green ramp suggests: #22C55E read as
+     neon on the dark limits page (使用者回饋). 4.8:1 on panel still clears AA
+     at the 10px status size, and the 60px numerals only need 3:1. */
+  --safe: #2F9D57;
   /* --stale (#A1A1AA) already reads ~7:1 on dark — kept. */
 
   --accent: #F472B6;
@@ -415,7 +418,10 @@ body.expanded #island {
   width: 380px;
   max-width: 100vw;
   /* Window height is locked per display mode (fitWindow at mode entry);
-     the panel fills it exactly — no scrollbar, overflow is clipped. */
+     the panel fills it exactly — no scrollbar, overflow is clipped. A flex
+     column so #analytics can fill the remainder exactly (T-908). */
+  display: flex;
+  flex-direction: column;
   height: calc(100vh - 10px);
   overflow: hidden;
   background: var(--panel-bg);
@@ -941,10 +947,13 @@ body.settings-open #gear {
 
 #analytics {
   padding: 4px 20px 14px;
-  /* Sized once per Usage-mode entry, then fixed so every subtab uses the same
-     height and page switches never resize the OS window. Richer panes may
-     exceed the box and continue to scroll inside. */
-  height: var(--analytics-h, 300px);
+  /* The panel is a fixed-height flex column and this box fills whatever
+     remains (T-908) — its bottom edge always lands inside the window, so the
+     scroll can always reach the last row. The *desired* height only feeds
+     fitWindow's window-size math (main.ts analyticsDesiredH); page switches
+     still never resize the OS window. */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
