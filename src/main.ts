@@ -61,13 +61,15 @@ let settings: Settings | null = null; // cached; compact toggle persists through
 let todayRate: number | null = null; // today's tok/min for the island (refreshed every 60s)
 let todayCost: number | null = null; // today's est. cost for the island aux (60s cache)
 
-// Last Analytics payload, keyed so an expand can paint from it instantly instead
-// of blocking on the get_analytics IPC (100-500ms). The key captures everything
-// that changes what the backend returns for a fetch — range, the provider
-// filter, and the snapshot generation (updated_at) — but NOT subtab/metric/group,
-// which only re-slice the *same* payload at render time. Single-entry on purpose
-// (§ expand speed): the common case is re-opening onto the same data.
-let cachedAnalytics: { key: string; data: Analytics } | null = null;
+// Analytics payloads, cached per data *slice* (range|provider-filter) so range
+// hopping repaints from what's on hand instead of dead-waiting a log scan
+// (single-entry meant today↔week↔month evicted each other). Each entry keeps
+// its full fetch key; an entry whose trailing snapshot generation is behind is
+// stale — still painted immediately, then revalidated behind itself. subtab/
+// metric/group are deliberately absent from keys: they re-slice the same data.
+const analyticsCache = new Map<string, { key: string; data: Analytics }>();
+/** Fetch keys in flight — a duplicate request for the same key is folded. */
+const analyticsInflight = new Set<string>();
 
 // ── rendering ────────────────────────────────────────────────────────
 
@@ -159,10 +161,11 @@ function renderRefresh() {
   el.innerHTML = t("header.refreshIn", { v: `<span class="num">${remaining}s</span>` });
 }
 
-/** Cache key for a get_analytics *fetch* — the inputs that change the payload.
- *  subtab/metric/group are deliberately absent: they re-slice the same data. */
-function analyticsDataKey(): string {
-  return `${ui.range}|${settings?.providers ?? "both"}|${lastSnap?.updated_at ?? 0}`;
+type AnalyticsRange = "today" | "week" | "month";
+
+/** Full fetch key for one range: the inputs that change the payload. */
+function analyticsKeyFor(range: AnalyticsRange): string {
+  return `${range}|${settings?.providers ?? "both"}|${lastSnap?.updated_at ?? 0}`;
 }
 
 /** The range|filter prefix of an analytics key — what selects the data *slice*.
@@ -170,6 +173,11 @@ function analyticsDataKey(): string {
  *  is still the right chart, just slightly stale. */
 function analyticsSliceOf(key: string): string {
   return key.split("|").slice(0, 2).join("|");
+}
+
+/** The range the visible analytics pane reads from (report has its own). */
+function currentAnalyticsRange(): AnalyticsRange {
+  return ui.subtab === "report" ? ui.shareRange : ui.range;
 }
 
 /** Paint the analytics layer from an already-fetched payload (no IPC). */
@@ -195,9 +203,8 @@ function showAnalyticsSkeleton(): void {
 }
 
 // ── 階段 D 戰報 Share (report subtab) ────────────────────────────────
-// The report panel uses its own range (ui.shareRange), independent of the usage
-// analytics range, so it keeps a separate one-entry cache.
-let shareCache: { range: string; data: Analytics } | null = null;
+// The report panel uses its own range (ui.shareRange) but shares the sliced
+// analytics cache above — same payload, same staleness rules.
 
 function persistShare(): void {
   if (!settings) return;
@@ -228,7 +235,7 @@ function paintReport(a: Analytics): void {
     setRange: (r) => {
       ui.shareRange = r;
       persistShare();
-      void renderReportNow();
+      void renderAnalyticsNow();
     },
     setFuelGroup: (g) => {
       ui.shareFuelGroup = g;
@@ -241,62 +248,64 @@ function paintReport(a: Analytics): void {
   });
 }
 
-/** Fetch (or reuse) the share-range analytics and paint the report panel. */
-async function renderReportNow(): Promise<void> {
-  const range = ui.shareRange;
-  if (shareCache && shareCache.range === range) {
-    paintReport(shareCache.data);
-    return;
-  }
-  // Cold fetch: the log scan can take seconds, so give immediate feedback
-  // rather than leaving the previous pane sitting under a dead click.
-  showAnalyticsSkeleton();
-  const a = await getAnalytics(range);
-  shareCache = { range, data: a };
-  // Guard against a rapid range switch / subtab change superseding this fetch.
-  if (ui.subtab === "report" && ui.shareRange === range) paintReport(a);
+/** Repaint the visible pane (usage charts or report) from the cache, iff the
+ *  slice that just landed is the one on screen. The single landing point for
+ *  every fetch — user-initiated, warming, or the island's 60s today refresh —
+ *  so a fetch that got folded as a duplicate still paints when its twin lands. */
+function paintIfShowing(slice: string): void {
+  if (!ui.expanded || ui.compact) return;
+  if (analyticsSliceOf(analyticsKeyFor(currentAnalyticsRange())) !== slice) return;
+  const entry = analyticsCache.get(slice);
+  if (!entry) return;
+  if (ui.subtab === "report") paintReport(entry.data);
+  else renderAnalyticsInto(entry.data);
 }
 
-/** The key currently being fetched, so subtab-hopping while a scan is in
- *  flight re-slices what's on hand instead of piling up duplicate scans. */
-let analyticsInflight: string | null = null;
+/** Fetch one range into the cache and repaint whatever pane shows its slice.
+ *  Folded (→ null) when that exact key is already in flight. Never rejects:
+ *  getAnalytics falls back internally. */
+async function fetchAnalytics(range: AnalyticsRange): Promise<Analytics | null> {
+  const key = analyticsKeyFor(range);
+  if (analyticsInflight.has(key)) return null;
+  analyticsInflight.add(key);
+  try {
+    const a = await getAnalytics(range);
+    analyticsCache.set(analyticsSliceOf(key), { key, data: a });
+    paintIfShowing(analyticsSliceOf(key));
+    return a;
+  } finally {
+    analyticsInflight.delete(key);
+  }
+}
+
+/** Warm the ranges the user hasn't visited yet — one scan at a time so the
+ *  disk isn't thrashed, once per run — so the first click on another range
+ *  finds a payload instead of a seconds-long scan. */
+let warmedAnalytics = false;
+function warmAnalytics(): void {
+  if (warmedAnalytics) return;
+  warmedAnalytics = true;
+  void (async () => {
+    for (const r of ["today", "week", "month"] as const) {
+      if (!analyticsCache.has(analyticsSliceOf(analyticsKeyFor(r)))) await fetchAnalytics(r);
+    }
+  })();
+}
 
 /** Paint the analytics layer, fetching if needed — synchronously before its
  *  first await, so callers can fitWindow() right after without waiting on IPC:
- *    exact cache hit  → paint, done (no fetch).
- *    stale slice hit  → paint the stale payload now (same range+filter, only
- *                       the snapshot generation behind — the right chart,
- *                       slightly dated), then revalidate behind it.
- *    cold miss        → skeleton now, paint when the fetch lands.
- *  The landing paint is guarded: a superseding range/filter switch, or having
- *  moved to the report subtab (whose pane renderAnalyticsInto cannot draw),
- *  drops the repaint but still fills the cache. */
+ *    exact cache hit → paint (no fetch); stale slice hit → paint the dated
+ *    payload now, revalidate behind it; cold miss → skeleton until the fetch
+ *    lands (paintIfShowing then draws whichever pane is current). */
 async function renderAnalyticsNow(): Promise<void> {
-  if (ui.subtab === "report") {
-    await renderReportNow();
-    return;
-  }
-  const key = analyticsDataKey();
-  if (cachedAnalytics && cachedAnalytics.key === key) {
-    renderAnalyticsInto(cachedAnalytics.data);
-    return;
-  }
-  if (cachedAnalytics && analyticsSliceOf(cachedAnalytics.key) === analyticsSliceOf(key)) {
-    renderAnalyticsInto(cachedAnalytics.data);
-  } else {
-    showAnalyticsSkeleton();
-  }
-  if (analyticsInflight === key) return; // this key's scan is already under way
-  analyticsInflight = key;
-  try {
-    const a = await getAnalytics(ui.range);
-    cachedAnalytics = { key, data: a };
-    // Re-read subtab past the await (the cast defeats TS's stale narrowing from
-    // the early return: the user can move to "report" while the scan runs).
-    if ((ui.subtab as SubTab) !== "report" && analyticsDataKey() === key) renderAnalyticsInto(a);
-  } finally {
-    if (analyticsInflight === key) analyticsInflight = null;
-  }
+  const range = currentAnalyticsRange();
+  const key = analyticsKeyFor(range);
+  const entry = analyticsCache.get(analyticsSliceOf(key));
+  if (!entry) showAnalyticsSkeleton();
+  else if (ui.subtab === "report") paintReport(entry.data);
+  else renderAnalyticsInto(entry.data);
+  if (!entry || entry.key !== key) await fetchAnalytics(range);
+  warmAnalytics();
 }
 
 /** Non-blocking entry used on mode entry (expand / compact toggle). */
@@ -919,9 +928,15 @@ async function boot() {
   // fetch failure both go null so the aux shows nothing rather than a fake 0.
   const refreshToday = async () => {
     try {
-      const a = await getAnalytics("today");
-      todayRate = a.tokPerMin;
-      todayCost = a.totalCostUsd;
+      // Routed through the shared cache: keeps the "today" slice warm (and any
+      // on-screen today charts fresh) as a side effect of the island readout.
+      // A folded duplicate fetch (null) falls back to whatever is cached.
+      const a =
+        (await fetchAnalytics("today")) ??
+        analyticsCache.get(analyticsSliceOf(analyticsKeyFor("today")))?.data ??
+        null;
+      todayRate = a?.tokPerMin ?? null;
+      todayCost = a?.totalCostUsd ?? null;
     } catch {
       todayRate = null;
       todayCost = null;
