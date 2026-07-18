@@ -20,7 +20,7 @@ use std::time::Duration;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager, PhysicalPosition, State,
+    AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_notification::NotificationExt;
 
@@ -68,6 +68,34 @@ struct AppData {
     settings: Mutex<Settings>,
     /// Wakes the scheduler for an immediate forced poll (manual refresh).
     refresh_tx: Sender<()>,
+}
+
+#[derive(Default)]
+struct SharePreviewState {
+    data_url: Mutex<Option<String>>,
+}
+
+impl SharePreviewState {
+    fn replace(&self, data_url: String) {
+        *self
+            .data_url
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(data_url);
+    }
+
+    fn get(&self) -> Option<String> {
+        self.data_url
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SharePreviewPayload {
+    data_url: String,
+    locale: String,
 }
 
 #[tauri::command]
@@ -249,6 +277,82 @@ fn save_share_png(bytes: Vec<u8>, filename: String) -> Result<String, String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
+#[tauri::command]
+fn get_share_preview(
+    preview: State<'_, SharePreviewState>,
+    data: State<'_, AppData>,
+) -> Result<SharePreviewPayload, String> {
+    let data_url = preview
+        .get()
+        .ok_or_else(|| "share preview is unavailable".to_string())?;
+    let locale = data
+        .settings
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .locale
+        .clone();
+    Ok(SharePreviewPayload { data_url, locale })
+}
+
+/// Store the newest export and recreate the dedicated preview WebView. Rebuild
+/// is deliberately used instead of an event listener: every window boot reads
+/// the already-replaced State, so there is no listener-registration race or
+/// chance for an older image to remain visible.
+#[tauri::command]
+async fn open_share_preview(
+    app: AppHandle,
+    preview: State<'_, SharePreviewState>,
+    data_url: String,
+) -> Result<(), String> {
+    preview.replace(data_url);
+
+    if let Some(existing) = app.get_webview_window("share-preview") {
+        existing.destroy().map_err(|error| error.to_string())?;
+    }
+
+    let current_monitor = if let Some(main) = app.get_webview_window("main") {
+        main.current_monitor().map_err(|error| error.to_string())?
+    } else {
+        None
+    };
+    let monitor = match current_monitor {
+        Some(monitor) => monitor,
+        None => app
+            .primary_monitor()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "no monitor available".to_string())?,
+    };
+    let work = monitor.work_area();
+    let width = ((work.size.width as f64) * 0.9).round() as u32;
+    let height = ((work.size.height as f64) * 0.9).round() as u32;
+    let scale = monitor.scale_factor();
+    let logical_width = width as f64 / scale;
+    let logical_height = height as f64 / scale;
+    let x = work.position.x + ((work.size.width - width) / 2) as i32;
+    let y = work.position.y + ((work.size.height - height) / 2) as i32;
+
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "share-preview",
+        WebviewUrl::App("index.html#share-preview".into()),
+    )
+    .title("TokenBar Share Preview")
+    .inner_size(logical_width, logical_height)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .focused(true)
+    .visible(false)
+    .build()
+    .map_err(|error| error.to_string())?;
+    window
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|error| error.to_string())?;
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = config::load();
@@ -274,6 +378,7 @@ pub fn run() {
             settings: Mutex::new(settings.clone()),
             refresh_tx,
         })
+        .manage(SharePreviewState::default())
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             get_analytics,
@@ -281,7 +386,9 @@ pub fn run() {
             set_settings,
             refresh_now,
             relogin,
-            save_share_png
+            save_share_png,
+            get_share_preview,
+            open_share_preview
         ])
         .setup(move |app| {
             build_tray(app.handle())?;
@@ -756,6 +863,14 @@ mod tests {
     }
 
     // ── 階段 D share PNG filename sanitization ─────────────────────────
+
+    #[test]
+    fn share_preview_state_keeps_only_the_latest_png() {
+        let state = SharePreviewState::default();
+        state.replace("data:image/png;base64,first".into());
+        state.replace("data:image/png;base64,second".into());
+        assert_eq!(state.get().as_deref(), Some("data:image/png;base64,second"));
+    }
 
     #[test]
     fn sanitize_keeps_a_plain_filename() {

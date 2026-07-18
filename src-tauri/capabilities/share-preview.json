@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "share-preview",
+  "description": "Minimal capability for the dedicated share-card preview window",
+  "windows": ["share-preview"],
+  "permissions": [
+    "core:window:allow-close"
+  ]
+}

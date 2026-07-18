@@ -33,6 +33,7 @@ import { getLocale, resolveLocale, setLocale, t } from "./i18n";
 import { applyTheme, watchSystemTheme } from "./theme";
 import { activateSegment, readSegmentValue, segmentHtml } from "./settings-controls";
 import { analyticsHeight } from "./analytics-height";
+import { bootSharePreview, isSharePreviewHash } from "./share-preview";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -939,6 +940,11 @@ function wireDevBar() {
 // ── boot ─────────────────────────────────────────────────────────────
 
 async function boot() {
+  if (isSharePreviewHash(location.hash)) {
+    await bootSharePreview();
+    return;
+  }
+
   wireEvents();
   wireDevBar();
   setupEdgeSnap();

@@ -199,6 +199,9 @@ const en = {
   "share.quotaNote": "Quota line",
   "share.size": "Size",
   "share.sizeAuto": "Current",
+  "share.previewTitle": "Open large preview",
+  "share.previewHint": "Esc / click to close",
+  "share.previewFailed": "Preview failed",
 } as const;
 
 // ── 繁體中文 (checked exhaustively against `en`) ───────────────────────
@@ -373,6 +376,9 @@ const zhTW = {
   "share.quotaNote": "額度行",
   "share.size": "尺寸",
   "share.sizeAuto": "目前",
+  "share.previewTitle": "開啟大圖預覽",
+  "share.previewHint": "Esc / 點擊關閉",
+  "share.previewFailed": "預覽失敗",
 } satisfies Record<keyof typeof en, string>;
 
 export type I18nKey = keyof typeof en;

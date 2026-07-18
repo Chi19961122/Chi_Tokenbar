@@ -27,6 +27,8 @@ const SAMPLE_KEYS = [
   "relogin.button",
   "list.noTools",
   "island.hideAria",
+  "share.previewTitle",
+  "share.previewHint",
 ] as const;
 
 afterEach(() => setLocale("en"));
@@ -118,5 +120,14 @@ describe("t() 佔位插值", () => {
     setLocale("en");
     const out = t("header.refreshIn", { v: "5s" });
     expect(out).toBe("Refresh in 5s");
+  });
+});
+
+describe("share preview copy", () => {
+  it("provides the exact close hint in both locales", () => {
+    setLocale("en");
+    expect(t("share.previewHint")).toBe("Esc / click to close");
+    setLocale("zh-TW");
+    expect(t("share.previewHint")).toBe("Esc / 點擊關閉");
   });
 });

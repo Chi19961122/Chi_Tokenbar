@@ -118,6 +118,8 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
   // to fit a fixed height).
   const dim = CARD_DIM[o.size];
   const scaleHost = container.querySelector<HTMLElement>("#sharep-scale")!;
+  const previewMat = container.querySelector<HTMLElement>(".sharep-preview")!;
+  previewMat.title = T("share.previewTitle");
   scaleHost.style.width = `${dim.w}px`;
   const preview = renderShareCard(o.style, data, o.locale, {
     fuelGroup: o.fuelGroup,
@@ -192,6 +194,25 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
       holder.remove();
     }
   };
+
+  let previewOpening = false;
+  previewMat.addEventListener("click", async () => {
+    if (previewOpening || !isTauri()) return;
+    previewOpening = true;
+    previewMat.classList.add("busy");
+    previewMat.setAttribute("aria-busy", "true");
+    try {
+      const { dataUrl } = await rasterize();
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_share_preview", { dataUrl });
+    } catch {
+      setStatus(T("share.previewFailed"), true);
+    } finally {
+      previewOpening = false;
+      previewMat.classList.remove("busy");
+      previewMat.removeAttribute("aria-busy");
+    }
+  });
 
   container.querySelector("#sharep-save")!.addEventListener("click", async () => {
     const sizeTag = o.size === "story" ? "-9x16" : "";
