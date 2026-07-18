@@ -47,6 +47,11 @@
 
 ## 2026-07-18 v0.8 輪決策記錄
 
+- **T-913** 分享改版四決定（使用者對比稿 `design/refs/share-redesign-preview.html` 定案）：
+  1. **卡片額度% = 已用 %**（38/42/55「% used」）。⚠️ 與 app 前端「剩餘 %」油量慣例相反；分享面自帶 `--share-*` 獨立語彙，視為刻意的分享品牌選擇。T-915 只在分享卡用 util%（已用），app 本體維持 `% left` 不動。
+  2. **額度儀表**：只放 **Island Card** 一款；其餘五款維持各自風格差異化。
+  3. **署名日期**：**月年 `JUL 2026`**（去日精確化）。
+  4. **六款方向**：statement / diagnostics / minimal / fuel / island_card / wa **全過**，照比稿實作（16:9 + 9:16）。
 - **T-918** Grok 退回 usage-only（使用者定案）：context 填充率卡「單一 session、新對話歸零」的語意與訂閱額度差太多，移除限額卡、分析頁用量保留。**未來路徑**：前端 Provider::Grok 渲染鏈（PROVIDER_META、prov-grok 色、i18n、filter arm）全部保留沉睡，xAI 若開放額度查詢 API，只需新增一個回傳 grok 5h/週 Limit 的資料來源即可點亮；context 讀數的舊 provider 在 git 歷史（`ed72347` 的 providers/grok.rs）。
 
 ## 2026-07-18 四次驗收回饋（v0.6 輪）
