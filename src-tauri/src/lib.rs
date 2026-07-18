@@ -81,7 +81,10 @@ fn refresh_now(data: State<'_, AppData>) {
 }
 
 #[tauri::command]
-fn get_analytics(data: State<'_, AppData>, range: String) -> analytics::Analytics {
+async fn get_analytics(
+    data: State<'_, AppData>,
+    range: String,
+) -> Result<analytics::Analytics, String> {
     // Read the live in-memory setting, not config::load(): set_settings updates
     // this immediately, so switching the filter reflects on the next fetch
     // instead of waiting for a disk round-trip.
@@ -91,7 +94,15 @@ fn get_analytics(data: State<'_, AppData>, range: String) -> analytics::Analytic
         .ok()
         .map(|s| (s.providers.clone(), s.tool_opencode, s.tool_gemini))
         .unwrap_or_else(|| ("both".into(), true, true));
-    analytics::compute_with(&range, &filter, tool_opencode, tool_gemini)
+    // The scan re-parses every session log in range (hundreds of MB on a heavy
+    // machine). As a sync command that ran on the main thread and froze the
+    // whole app — window drag, island, every IPC — for the scan's duration, so
+    // it must stay on a blocking worker, never the UI or async-runtime threads.
+    tauri::async_runtime::spawn_blocking(move || {
+        analytics::compute_with(&range, &filter, tool_opencode, tool_gemini)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
