@@ -89,7 +89,9 @@ describe("renderPanel summary variant", () => {
 
     expect(root.querySelector("[data-quota-toggle]")).toBeNull();
     expect(root.querySelectorAll(".gauge-row").length).toBe(LIMITS.length);
-    expect(root.querySelector(".status-pill")?.textContent).toContain("0% left");
+    expect(root.querySelector(".status-row")).toBeNull(); // ϟ status row removed
+    // The hero digits are the one place a row says "% left" — no small-type echo.
+    expect(root.querySelector(".gauge-row .gauge-detail")?.textContent ?? "").not.toContain("% left");
     expect(root.querySelector(".section-number")?.textContent).toBe("01");
     expect(root.querySelector(".section-editorial")).toBeNull();
     expect(root.querySelectorAll(".gauge-card").length).toBe(2);
