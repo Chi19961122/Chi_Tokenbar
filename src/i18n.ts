@@ -16,6 +16,7 @@ const en = {
   "tab.usage": "Usage",
   "header.refreshTitle": "Refresh",
   "header.settingsTitle": "Settings",
+  "header.shareTitle": "Share",
   "header.collapseTitle": "Collapse",
   "header.refreshIn": "Refresh in {v}",
 
@@ -81,7 +82,6 @@ const en = {
   "subtab.share": "Breakdown",
   "subtab.hourly": "Hourly",
   "subtab.stats": "Stats",
-  "subtab.report": "Share",
 
   // Analytics toggles
   "toggle.today": "Today",
@@ -220,6 +220,7 @@ const zhTW = {
   "tab.usage": "分析",
   "header.refreshTitle": "重新整理",
   "header.settingsTitle": "設定",
+  "header.shareTitle": "分享",
   "header.collapseTitle": "收合",
   "header.refreshIn": "{v} 後更新",
 
@@ -281,7 +282,6 @@ const zhTW = {
   "subtab.share": "拆分",
   "subtab.hourly": "每時",
   "subtab.stats": "統計",
-  "subtab.report": "戰報",
 
   "toggle.today": "今日",
   "toggle.week": "本週",

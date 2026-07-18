@@ -20,7 +20,7 @@ function esc(s: string): string {
 // chart *is* the overview's main chart), and "models"/"agents" collapsed into a
 // single "share" breakdown switched by the model/agent group toggle — one less
 // navigation layer either way.
-export type SubTab = "overview" | "hourly" | "share" | "stats" | "report";
+export type SubTab = "overview" | "hourly" | "share" | "stats";
 export type Metric = "tokens" | "price";
 export type Group = "model" | "agent";
 

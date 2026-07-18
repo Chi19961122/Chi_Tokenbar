@@ -484,6 +484,7 @@ body.expanded #island {
 }
 #collapse,
 #gear,
+#share-btn,
 #refresh {
   display: inline-flex;
   align-items: center;
@@ -501,13 +502,18 @@ body.expanded #island {
 }
 #collapse:hover,
 #gear:hover,
+#share-btn:hover,
 #refresh:hover {
   color: var(--text);
   background: var(--btn-hover);
 }
 #collapse:active,
 #gear:active,
+#share-btn:active,
 #refresh:active { transform: scale(.95); }
+/* The share glyph is an inline SVG (no text glyph like the other three) — keep
+   it optically centered with the icon buttons around it. */
+#share-btn svg { display: block; }
 
 /* Compact mode ("Limits" tab): hide the analytics layer (§ compact). */
 body.compact #subtabs,
@@ -542,6 +548,27 @@ body.settings-open .rate {
 }
 /* Gear reads as active while its page is open. */
 body.settings-open #gear {
+  color: var(--accent);
+}
+/* Settings and Share are mutually exclusive full pages: if a stale #share
+   render lingers, keep it hidden while settings is the open page. */
+body.settings-open #share {
+  display: none;
+}
+
+/* Share (T-914) is a full page just like settings — the header share icon
+   swaps the panel body out for the share/report panel. Same hide-everything
+   rule, plus it hides #settings so the two pages can never stack. */
+body.share-open #cards,
+body.share-open #subtabs,
+body.share-open #toggles,
+body.share-open #analytics,
+body.share-open #settings,
+body.share-open .rate {
+  display: none;
+}
+/* Share icon reads as active while its page is open. */
+body.share-open #share-btn {
   color: var(--accent);
 }
 #refresh.busy {
@@ -1456,6 +1483,19 @@ body.settings-open #gear {
   flex-direction: column;
 }
 #settings[hidden] {
+  display: none;
+}
+/* Share full page (T-914): mirrors #settings — natural-height flex column, the
+   window sizes to its content. The `.sharep` controls/preview inside carry
+   their own layout. Explicit [hidden] rule because the display:flex below would
+   otherwise override the attribute's default display:none. */
+#share {
+  padding: 4px 20px 14px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+}
+#share[hidden] {
   display: none;
 }
 .sgroup {

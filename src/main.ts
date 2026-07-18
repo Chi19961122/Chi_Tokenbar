@@ -45,6 +45,19 @@ import { bootSharePreview, isSharePreviewHash } from "./share-preview";
 
 const $ = (id: string) => document.getElementById(id)!;
 
+/** True while the Share full page (T-914) is the open page. Read from the DOM —
+ *  like the settings `hidden` check — so open/close routing has one source of
+ *  truth and no separate boolean to keep in sync. */
+const shareOpen = () => !$("share").hasAttribute("hidden");
+
+/** The four analytics sub-tabs (階段 C). Any persisted/legacy value outside this
+ *  set — e.g. an older build's removed "report" tab (T-914) — coerces to the
+ *  overview default so it can never land on a dead tab. subtab is session-only
+ *  (not in Settings/Rust), so this only guards the click handler today. */
+const SUBTABS: readonly SubTab[] = ["overview", "share", "hourly", "stats"];
+const coerceSubTab = (v: string): SubTab =>
+  (SUBTABS as readonly string[]).includes(v) ? (v as SubTab) : "overview";
+
 const ui = {
   expanded: false,
   compact: false,
@@ -93,7 +106,6 @@ function renderSubtabs() {
     ["share", t("subtab.share")],
     ["hourly", t("subtab.hourly")],
     ["stats", t("subtab.stats")],
-    ["report", t("subtab.report")],
   ];
   $("subtabs").innerHTML = subs
     .map(([id, label]) => `<button data-sub="${id}" class="${ui.subtab === id ? "on" : ""}">${label}</button>`)
@@ -101,12 +113,6 @@ function renderSubtabs() {
 }
 
 function renderToggles() {
-  // The report panel owns its own controls (style/range/etc), so the shared
-  // range/metric/group toggles render nothing there.
-  if (ui.subtab === "report") {
-    $("toggles").innerHTML = "";
-    return;
-  }
   // Scope each toggle to where it actually changes something:
   //  · metric (tokens/price): overview, share, hourly — NOT stats, whose
   //    token-type breakdown has no price variant.
@@ -221,9 +227,10 @@ function analyticsSliceOf(key: string): string {
   return key.split("|").slice(0, 2).join("|");
 }
 
-/** The range the visible analytics pane reads from (report has its own). */
+/** The range the visible pane reads from: the Share full page (T-914) has its
+ *  own range (ui.shareRange); the analytics sub-tabs use ui.range. */
 function currentAnalyticsRange(): AnalyticsRange {
-  return ui.subtab === "report" ? ui.shareRange : ui.range;
+  return shareOpen() ? ui.shareRange : ui.range;
 }
 
 /** Paint the analytics layer from an already-fetched payload (no IPC). */
@@ -248,8 +255,8 @@ function showAnalyticsSkeleton(): void {
     `</div><div class="chart-wrap"><div class="sk sk-chart"></div></div></div>`;
 }
 
-// ── 階段 D 戰報 Share (report subtab) ────────────────────────────────
-// The report panel uses its own range (ui.shareRange) but shares the sliced
+// ── 階段 D 分享 Share (T-914: header full page, was the "report" sub-tab) ──
+// The share page uses its own range (ui.shareRange) but shares the sliced
 // analytics cache above — same payload, same staleness rules.
 
 function persistShare(): void {
@@ -260,12 +267,13 @@ function persistShare(): void {
   void setSettings(settings);
 }
 
-/** Paint the share panel from an already-fetched payload (no IPC). */
-function paintReport(a: Analytics): void {
+/** Paint the share panel from an already-fetched payload (no IPC). Mounts into
+ *  the #share full-page container (T-914), not the analytics box. */
+function paintShare(a: Analytics): void {
   $("rate").textContent = `${fmtTokens(a.tokPerMin)} ${t("analytics.tokPerMin")}`;
   const style = ui.shareStyle;
   const quotaNote = ui.shareQuotaNote ?? style === "island_card";
-  renderSharePanel($("analytics"), {
+  renderSharePanel($("share"), {
     analytics: a,
     limits: visibleLimits(),
     locale: getLocale(),
@@ -278,7 +286,7 @@ function paintReport(a: Analytics): void {
       ui.shareStyle = s;
       ui.shareQuotaNote = null; // reset override so the new style's default applies
       persistShare();
-      paintReport(a);
+      paintShare(a);
     },
     setRange: (r) => {
       ui.shareRange = r;
@@ -288,15 +296,15 @@ function paintReport(a: Analytics): void {
     setSize: (s) => {
       ui.shareSize = s;
       persistShare();
-      paintReport(a);
+      paintShare(a);
     },
     setFuelGroup: (g) => {
       ui.shareFuelGroup = g;
-      paintReport(a);
+      paintShare(a);
     },
     setQuotaNote: (on) => {
       ui.shareQuotaNote = on;
-      paintReport(a);
+      paintShare(a);
     },
   });
 }
@@ -310,7 +318,7 @@ function paintIfShowing(slice: string): void {
   if (analyticsSliceOf(analyticsKeyFor(currentAnalyticsRange())) !== slice) return;
   const entry = analyticsCache.get(slice);
   if (!entry) return;
-  if (ui.subtab === "report") paintReport(entry.data);
+  if (shareOpen()) paintShare(entry.data);
   else renderAnalyticsInto(entry.data);
 }
 
@@ -354,8 +362,9 @@ async function renderAnalyticsNow(): Promise<void> {
   const range = currentAnalyticsRange();
   const key = analyticsKeyFor(range);
   const entry = analyticsCache.get(analyticsSliceOf(key));
-  if (!entry) showAnalyticsSkeleton();
-  else if (ui.subtab === "report") paintReport(entry.data);
+  if (!entry) {
+    if (!shareOpen()) showAnalyticsSkeleton();
+  } else if (shareOpen()) paintShare(entry.data);
   else renderAnalyticsInto(entry.data);
   if (!entry || entry.key !== key) await fetchAnalytics(range);
   warmAnalytics();
@@ -442,6 +451,7 @@ function applyStaticI18n() {
   $("tab-limits").textContent = t("tab.limits");
   $("tab-analytics").textContent = t("tab.usage");
   $("refresh").title = t("header.refreshTitle");
+  $("share-btn").title = t("header.shareTitle");
   $("gear").title = t("header.settingsTitle");
   $("collapse").title = t("header.collapseTitle");
 }
@@ -703,6 +713,12 @@ function readSettingsForm(): Settings {
 async function openSettingsPanel(): Promise<void> {
   const el = $("settings");
   if (!el.hasAttribute("hidden")) return; // already open
+  // Mutual exclusion (T-914): Settings and Share are both full pages and must
+  // never stack — drop Share's page/class before opening Settings.
+  if (shareOpen()) {
+    $("share").setAttribute("hidden", "");
+    document.body.classList.remove("share-open");
+  }
   if (!ui.expanded) setExpanded(true);
   // Render the settings form BEFORE fitWindow measures — it is the only visible
   // content on the settings page, so its natural height is the window height.
@@ -719,6 +735,56 @@ async function openSettingsPanel(): Promise<void> {
 function closeSettings(): void {
   $("settings").setAttribute("hidden", "");
   document.body.classList.remove("settings-open");
+  renderCards();
+  if (!ui.compact) {
+    renderSubtabs();
+    renderToggles();
+    beginAnalytics();
+    sizeAnalytics();
+  }
+  fitWindow();
+}
+
+/** Open the Share full page (T-914) — architecturally identical to
+ *  openSettingsPanel: render the share panel BEFORE fitWindow measures (the
+ *  share panel is then the only visible content, so its natural height is the
+ *  window height — the F-06 render-before-measure lesson). Settings and Share
+ *  are mutually exclusive, so close Settings first if it is open. */
+async function openSharePanel(): Promise<void> {
+  const el = $("share");
+  if (!el.hasAttribute("hidden")) return; // already open
+  if (!$("settings").hasAttribute("hidden")) {
+    $("settings").setAttribute("hidden", "");
+    document.body.classList.remove("settings-open");
+  }
+  if (!ui.expanded) setExpanded(true);
+  // Reveal + flag BEFORE painting so shareOpen() reads true inside the render
+  // path (currentAnalyticsRange → ui.shareRange, paintIfShowing → paintShare).
+  el.removeAttribute("hidden");
+  document.body.classList.add("share-open");
+  // Paint from cache (exact or stale) synchronously; on a cold miss await the
+  // fetch so fitWindow measures a populated panel, not an empty one.
+  const range = ui.shareRange;
+  const key = analyticsKeyFor(range);
+  const entry = analyticsCache.get(analyticsSliceOf(key));
+  if (entry) paintShare(entry.data);
+  else {
+    await fetchAnalytics(range);
+    const fresh = analyticsCache.get(analyticsSliceOf(key));
+    if (fresh) paintShare(fresh.data);
+  }
+  fitWindow();
+  // Revalidate a stale slice behind the painted one (paintIfShowing → paintShare
+  // when it lands, since share-open is already set); warm the other ranges.
+  if (entry && entry.key !== key) void fetchAnalytics(range);
+  warmAnalytics();
+}
+
+/** Leave the Share page back to whichever tab (Limits/Usage) is active — mirror
+ *  of closeSettings: re-render the about-to-be-visible tab BEFORE fitWindow. */
+function closeShare(): void {
+  $("share").setAttribute("hidden", "");
+  document.body.classList.remove("share-open");
   renderCards();
   if (!ui.compact) {
     renderSubtabs();
@@ -842,6 +908,14 @@ function wireEvents() {
     if ($("settings").hasAttribute("hidden")) await openSettingsPanel();
     else closeSettings();
   });
+
+  // Share (T-914): a header icon next to the gear opens the share/report panel
+  // as its own full page (same page-swap model as settings, mutually exclusive
+  // with it). The icon toggles it closed, restoring the previously-active tab.
+  $("share-btn").addEventListener("click", async () => {
+    if ($("share").hasAttribute("hidden")) await openSharePanel();
+    else closeShare();
+  });
   const commitSettings = async () => {
     const prevLocale = getLocale();
     settings = readSettingsForm();
@@ -882,13 +956,22 @@ function wireEvents() {
   // hidden one, then switch (which renders the target tab + re-measures).
   const onTab = async (compact: boolean) => {
     const settingsOpen = !$("settings").hasAttribute("hidden");
-    if (settingsOpen && ui.compact === compact) {
-      closeSettings();
+    const shareOpenNow = shareOpen();
+    // Same tab while a full page is open → just close back to it (re-renders +
+    // re-measures for the restored tab). Different tab → strip the page class so
+    // setCompact measures the visible tab, not the hidden page, then switch.
+    if ((settingsOpen || shareOpenNow) && ui.compact === compact) {
+      if (settingsOpen) closeSettings();
+      else closeShare();
       return;
     }
     if (settingsOpen) {
       $("settings").setAttribute("hidden", "");
       document.body.classList.remove("settings-open");
+    }
+    if (shareOpenNow) {
+      $("share").setAttribute("hidden", "");
+      document.body.classList.remove("share-open");
     }
     await setCompact(compact);
   };
@@ -949,7 +1032,7 @@ function wireEvents() {
   $("subtabs").addEventListener("click", (e) => {
     const t = (e.target as HTMLElement).closest("[data-sub]");
     if (!t) return;
-    ui.subtab = t.getAttribute("data-sub") as SubTab;
+    ui.subtab = coerceSubTab(t.getAttribute("data-sub") ?? "");
     renderSubtabs();
     renderToggles();
     renderAnalyticsNow();
