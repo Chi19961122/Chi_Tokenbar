@@ -163,9 +163,6 @@
 .prov-grok {
   --fam: var(--prov-grok);
 }
-.prov-grok {
-  --fam: var(--prov-grok);
-}
 
 * {
   margin: 0;
