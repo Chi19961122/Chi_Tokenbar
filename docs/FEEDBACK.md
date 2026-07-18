@@ -14,7 +14,7 @@
 - F-03 [func] 跑很慢整個程式很卡。**根因**：1s tick 每秒 `renderCards()` 全量重建整個 Limits 面板 innerHTML（+island），讓 gauge 700ms transition 永遠重啟、serif 每秒重排版。**修**：signature guard，island/cards 只在可見輸出真的會變時重建（snapshot/UI/分鐘桶；reset 前最後一分鐘降秒桶），重建次數降到約 1/60；renderRefresh 維持每秒。→ `49e71c5`。
 - F-04 [visual] 移除 3D 熱力圖。連 three.js 相依一起清除，保留 2D。→ `c73eeab`。
 
-**下輪待辦（較大工程／需先決策，尚未動工）**
+**下輪待辦（較大工程／需先決策）→ ✅ 已於 v0.7.0 輪全數完成（見 docs/ROUND-v070.md；T-901 `6c2130a`、T-902 `2449442`、T-903 `f6fd181`、T-904 `e8a579e`）**
 
 - F-02c [visual] 分析頁出現 scrollbar、下方仍有空白。**非一行修正**：`#analytics` 固定 300px + 內捲是刻意 anti-jank（切 subtab 不 resize 視窗）；使用者大螢幕上顯得過小。正解要**解耦「視窗高 vs analytics 高」+ 螢幕感知**，與 anti-jank 相衝、需真實資料量測。→ 併 F-02e 一起做（同屬版面/視窗架構）。
 - F-02d [visual] 設定下拉選單要重新設計（互動重構）。
