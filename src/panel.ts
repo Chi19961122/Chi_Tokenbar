@@ -220,13 +220,6 @@ function list(limits: Limit[], opts: PanelOpts): string {
   return groups || `<div class="empty-note">${t("list.noTools")}</div>`;
 }
 
-function sectionHeader(number: "01" | "02", title: "limits" | "usage"): string {
-  return `<div class="section-head">
-    <span class="section-number">${number}</span>
-    <span class="section-title">${t(`section.${title}`)}</span>
-  </div>`;
-}
-
 // ── Usage-tab quota summary (階段 C) ──────────────────────────────────
 
 /** Fixed-English provider labels for the summary line (mirrors the island's
@@ -286,13 +279,14 @@ function summaryBar(limits: Limit[], expanded: boolean): string {
   </button>`;
 }
 
+// No section head here: the header tabs directly above are the page title, and
+// repeating it ("01 LIMITS" under 限額) was pure duplication (三次驗收).
 export function renderPanel(container: HTMLElement, snap: Snapshot | null, opts: PanelOpts): void {
   const limits = snap?.limits ?? [];
   if (opts.variant === "summary") {
     const expanded = opts.summaryExpanded ?? false;
-    container.innerHTML = sectionHeader("02", "usage") +
-      summaryBar(limits, expanded) + (expanded ? list(limits, opts) : "");
+    container.innerHTML = summaryBar(limits, expanded) + (expanded ? list(limits, opts) : "");
     return;
   }
-  container.innerHTML = sectionHeader("01", "limits") + list(limits, opts);
+  container.innerHTML = list(limits, opts);
 }

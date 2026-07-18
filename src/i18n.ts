@@ -18,8 +18,6 @@ const en = {
   "header.settingsTitle": "Settings",
   "header.collapseTitle": "Collapse",
   "header.refreshIn": "Refresh in {v}",
-  "section.limits": "Limits",
-  "section.usage": "Usage",
 
   // Settings form
   "settings.startupWindow": "Startup & Window",
@@ -205,8 +203,6 @@ const zhTW = {
   "header.settingsTitle": "設定",
   "header.collapseTitle": "收合",
   "header.refreshIn": "{v} 後更新",
-  "section.limits": "限額",
-  "section.usage": "分析",
 
   "settings.startupWindow": "啟動與視窗",
   "settings.launchAtStartup": "開機時啟動",

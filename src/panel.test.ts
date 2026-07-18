@@ -92,8 +92,7 @@ describe("renderPanel summary variant", () => {
     expect(root.querySelector(".status-row")).toBeNull(); // ϟ status row removed
     // The hero digits are the one place a row says "% left" — no small-type echo.
     expect(root.querySelector(".gauge-row .gauge-detail")?.textContent ?? "").not.toContain("% left");
-    expect(root.querySelector(".section-number")?.textContent).toBe("01");
-    expect(root.querySelector(".section-editorial")).toBeNull();
+    expect(root.querySelector(".section-head")).toBeNull(); // tabs are the page title
     expect(root.querySelectorAll(".gauge-card").length).toBe(2);
     expect(root.querySelector(".gauge-card.prov-claude .picon")).not.toBeNull();
     expect(root.querySelector(".gauge-card.prov-claude .picon")?.getAttribute("width")).toBe("14");
