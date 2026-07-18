@@ -31,6 +31,7 @@ import type { ShareStyle } from "./share";
 import { fmtTokens, nowSecs } from "./format";
 import { getLocale, resolveLocale, setLocale, t } from "./i18n";
 import { applyTheme, watchSystemTheme } from "./theme";
+import { activateSegment, readSegmentValue, segmentHtml } from "./settings-controls";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -488,30 +489,30 @@ async function renderSettings() {
 
     <div class="sgroup">
       <div class="lsec-head">${t("settings.displayNotifications")}</div>
-      <label class="srow">
+      <div class="srow srow-seg">
         <span class="slabel">${t("settings.language")}</span>
-        <select id="s-locale">
-          <option value="system" ${s.locale !== "en" && s.locale !== "zh-TW" ? "selected" : ""}>${t("settings.localeSystem")}</option>
-          <option value="zh-TW" ${s.locale === "zh-TW" ? "selected" : ""}>中文</option>
-          <option value="en" ${s.locale === "en" ? "selected" : ""}>English</option>
-        </select>
-      </label>
-      <label class="srow">
+        ${segmentHtml("s-locale", s.locale === "en" || s.locale === "zh-TW" ? s.locale : "system", [
+          ["system", t("settings.localeSystem")],
+          ["zh-TW", "中文"],
+          ["en", "English"],
+        ])}
+      </div>
+      <div class="srow srow-seg">
         <span class="slabel">${t("settings.theme")}</span>
-        <select id="s-theme">
-          <option value="system" ${s.theme !== "light" && s.theme !== "dark" ? "selected" : ""}>${t("settings.themeSystem")}</option>
-          <option value="light" ${s.theme === "light" ? "selected" : ""}>${t("settings.themeLight")}</option>
-          <option value="dark" ${s.theme === "dark" ? "selected" : ""}>${t("settings.themeDark")}</option>
-        </select>
-      </label>
-      <label class="srow">
+        ${segmentHtml("s-theme", s.theme === "light" || s.theme === "dark" ? s.theme : "system", [
+          ["system", t("settings.themeSystem")],
+          ["light", t("settings.themeLight")],
+          ["dark", t("settings.themeDark")],
+        ])}
+      </div>
+      <div class="srow srow-seg">
         <span class="slabel">${t("settings.providers")}</span>
-        <select id="s-providers">
-          <option value="both" ${s.providers !== "claude" && s.providers !== "codex" ? "selected" : ""}>${t("settings.providersBoth")}</option>
-          <option value="claude" ${s.providers === "claude" ? "selected" : ""}>${t("settings.providersClaude")}</option>
-          <option value="codex" ${s.providers === "codex" ? "selected" : ""}>${t("settings.providersCodex")}</option>
-        </select>
-      </label>
+        ${segmentHtml("s-providers", s.providers === "claude" || s.providers === "codex" ? s.providers : "both", [
+          ["both", t("settings.providersBoth")],
+          ["claude", t("settings.providersClaude")],
+          ["codex", t("settings.providersCodex")],
+        ])}
+      </div>
       <div class="srow">
         <span class="slabel">${t("settings.notifyAt")}<span class="snote">${t("settings.notifyNote")}</span></span>
         <span class="sfields">
@@ -524,13 +525,13 @@ async function renderSettings() {
 
     <div class="sgroup">
       <div class="lsec-head">${t("settings.island")}</div>
-      <label class="srow">
+      <div class="srow srow-seg">
         <span class="slabel">${t("settings.expandDefault")}</span>
-        <select id="s-expand">
-          <option value="compact" ${s.expand_default !== "usage" ? "selected" : ""}>${t("settings.expandCompact")}</option>
-          <option value="usage" ${s.expand_default === "usage" ? "selected" : ""}>${t("settings.expandUsage")}</option>
-        </select>
-      </label>
+        ${segmentHtml("s-expand", s.expand_default === "usage" ? "usage" : "compact", [
+          ["compact", t("settings.expandCompact")],
+          ["usage", t("settings.expandUsage")],
+        ])}
+      </div>
       <label class="srow">
         <span class="slabel">${t("settings.pinClaude")}</span>
         <select id="s-pin-claude">${pinOptionsHtml("anthropic", s.island_pin_claude)}</select>
@@ -539,40 +540,48 @@ async function renderSettings() {
         <span class="slabel">${t("settings.pinCodex")}</span>
         <select id="s-pin-codex">${pinOptionsHtml("codex", s.island_pin_codex)}</select>
       </label>
-      <label class="srow">
+      <div class="srow srow-seg">
         <span class="slabel">${t("settings.islandAux")}</span>
-        <select id="s-aux">
-          <option value="off" ${s.island_aux === "off" ? "selected" : ""}>${t("settings.auxOff")}</option>
-          <option value="tok_per_min" ${s.island_aux !== "off" && s.island_aux !== "cost_today" ? "selected" : ""}>${t("settings.auxTokPerMin")}</option>
-          <option value="cost_today" ${s.island_aux === "cost_today" ? "selected" : ""}>${t("settings.auxCostToday")}</option>
-        </select>
-      </label>
-      <label class="srow">
+        ${segmentHtml(
+          "s-aux",
+          s.island_aux === "off" || s.island_aux === "cost_today" ? s.island_aux : "tok_per_min",
+          [
+            ["off", t("settings.auxOff")],
+            ["tok_per_min", t("settings.auxTokPerMin")],
+            ["cost_today", t("settings.auxCostToday")],
+          ],
+        )}
+      </div>
+      <div class="srow srow-seg">
         <span class="slabel">${t("settings.resetDisplay")}</span>
-        <select id="s-reset">
-          <option value="relative" ${s.reset_display !== "clock" ? "selected" : ""}>${t("settings.resetRelative")}</option>
-          <option value="clock" ${s.reset_display === "clock" ? "selected" : ""}>${t("settings.resetClock")}</option>
-        </select>
-      </label>
+        ${segmentHtml("s-reset", s.reset_display === "clock" ? "clock" : "relative", [
+          ["relative", t("settings.resetRelative")],
+          ["clock", t("settings.resetClock")],
+        ])}
+      </div>
     </div>
 
     <div class="sgroup">
       <div class="lsec-head">${t("settings.dataSources")}</div>
-      <label class="srow">
+      <div class="srow srow-seg">
         <span class="slabel">${t("settings.claudeRefresh")}<span class="warn">${t("settings.claudeRefreshWarn")}</span></span>
-        <select id="s-refresh">
-          <option value="off" ${s.allow_token_refresh ? "" : "selected"}>${t("settings.refreshOff")}</option>
-          <option value="on" ${s.allow_token_refresh ? "selected" : ""}>${t("settings.refreshOn")}</option>
-        </select>
-      </label>
-      <label class="srow">
+        ${segmentHtml("s-refresh", s.allow_token_refresh ? "on" : "off", [
+          ["off", t("settings.refreshOff")],
+          ["on", t("settings.refreshOn")],
+        ])}
+      </div>
+      <div class="srow srow-seg">
         <span class="slabel">${t("settings.codexSource")}<span class="snote">${t("settings.codexSourceNote")}</span></span>
-        <select id="s-codex-source">
-          <option value="live" ${s.codex_usage_source === "live" ? "selected" : ""}>${t("settings.codexLive")}</option>
-          <option value="auto" ${s.codex_usage_source === "auto" ? "selected" : ""}>${t("settings.codexAuto")}</option>
-          <option value="local" ${s.codex_usage_source !== "live" && s.codex_usage_source !== "auto" ? "selected" : ""}>${t("settings.codexLocal")}</option>
-        </select>
-      </label>
+        ${segmentHtml(
+          "s-codex-source",
+          s.codex_usage_source === "live" || s.codex_usage_source === "auto" ? s.codex_usage_source : "local",
+          [
+            ["live", t("settings.codexLive")],
+            ["auto", t("settings.codexAuto")],
+            ["local", t("settings.codexLocal")],
+          ],
+        )}
+      </div>
       <label class="srow">
         <span class="slabel">${t("settings.toolOpencode")}<span class="snote">${t("settings.toolNote")}</span></span>
         <input type="checkbox" id="s-tool-opencode" ${s.tool_opencode ? "checked" : ""}/>
@@ -586,6 +595,7 @@ async function renderSettings() {
 
 function readSettingsForm(): Settings {
   const v = (id: string) => $(id) as HTMLInputElement;
+  const segVal = (id: string) => readSegmentValue($("settings"), id, "");
   // Merge the form fields over the cached settings so fields with no form
   // control (階段 D share_style / share_range, and any future non-form setting)
   // are preserved rather than silently dropped on an unrelated settings change.
@@ -593,19 +603,19 @@ function readSettingsForm(): Settings {
     ...(settings ?? ({} as Settings)),
     autostart: v("s-autostart").checked,
     always_on_top: v("s-always-on-top").checked,
-    allow_token_refresh: ($("s-refresh") as HTMLSelectElement).value === "on",
+    allow_token_refresh: segVal("s-refresh") === "on",
     warn_pct: +v("s-warn").value || 75,
     crit_pct: +v("s-crit").value || 90,
     compact: ui.compact,
-    providers: (($("s-providers") as HTMLSelectElement).value || "both") as Settings["providers"],
-    codex_usage_source: (($("s-codex-source") as HTMLSelectElement).value || "local") as Settings["codex_usage_source"],
-    locale: ($("s-locale") as HTMLSelectElement).value || "system",
-    expand_default: (($("s-expand") as HTMLSelectElement).value || "compact") as Settings["expand_default"],
+    providers: (segVal("s-providers") || "both") as Settings["providers"],
+    codex_usage_source: (segVal("s-codex-source") || "local") as Settings["codex_usage_source"],
+    locale: segVal("s-locale") || "system",
+    expand_default: (segVal("s-expand") || "compact") as Settings["expand_default"],
     island_pin_claude: ($("s-pin-claude") as HTMLSelectElement).value || "auto",
     island_pin_codex: ($("s-pin-codex") as HTMLSelectElement).value || "auto",
-    island_aux: (($("s-aux") as HTMLSelectElement).value || "tok_per_min") as Settings["island_aux"],
-    reset_display: (($("s-reset") as HTMLSelectElement).value || "relative") as Settings["reset_display"],
-    theme: (($("s-theme") as HTMLSelectElement).value || "system") as Settings["theme"],
+    island_aux: (segVal("s-aux") || "tok_per_min") as Settings["island_aux"],
+    reset_display: (segVal("s-reset") || "relative") as Settings["reset_display"],
+    theme: (segVal("s-theme") || "system") as Settings["theme"],
     tool_opencode: v("s-tool-opencode").checked,
     tool_gemini: v("s-tool-gemini").checked,
   };
@@ -753,7 +763,7 @@ function wireEvents() {
     if ($("settings").hasAttribute("hidden")) await openSettingsPanel();
     else closeSettings();
   });
-  $("settings").addEventListener("change", async () => {
+  const commitSettings = async () => {
     const prevLocale = getLocale();
     settings = readSettingsForm();
     applyTheme(settings.theme); // re-apply before any re-render below
@@ -777,6 +787,11 @@ function wireEvents() {
     // The provider filter is part of the analytics cache key, so this misses
     // the stale entry and re-fetches; non-blocking so the settings UI stays live.
     if (ui.expanded && !ui.compact) void renderAnalyticsNow();
+  };
+  $("settings").addEventListener("change", commitSettings);
+  $("settings").addEventListener("click", async (event) => {
+    if (!activateSegment(event.target)) return;
+    await commitSettings();
   });
 
   // Header tabs = the compact/analytics display switch (was the ⊟/⊞ button).

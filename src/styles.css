@@ -43,6 +43,12 @@
 
   /* Interactive button hover surface (icon buttons, context-menu items). */
   --btn-hover: #F4F4F5;
+  /* Native/settings control chrome. Borders stay visible at small sizes while
+     the control fill remains quieter than selected segmented buttons. */
+  --control-bg: #FFFFFF;
+  --control-border: #71717A;
+  --control-knob: #FFFFFF;
+  --settings-row-hover: #F4F4F5;
   /* Accent-colored translucent ring (heatmap "today" outline). */
   --accent-soft: rgba(236, 72, 153, 0.38);
 
@@ -108,6 +114,10 @@
   --faint: #86868F;   /* 4.8:1 on card */
 
   --btn-hover: #26262B;
+  --control-bg: #202025;
+  --control-border: #78787F;
+  --control-knob: #F4F4F5;
+  --settings-row-hover: #202025;
   --accent-soft: rgba(244, 114, 182, 0.38);
 
   --tile-accent-bg: #ECECEF; /* invert: a light standout tile */
@@ -850,6 +860,16 @@ body.settings-open #gear {
   background: var(--seg-on-bg);
   color: var(--seg-on-fg);
 }
+.seg-set {
+  flex: none;
+  max-width: 100%;
+  margin-left: auto;
+}
+.seg-set button {
+  min-height: 23px;
+  font-family: var(--sans);
+  white-space: nowrap;
+}
 
 #analytics {
   padding: 4px 20px 14px;
@@ -1268,7 +1288,16 @@ body.settings-open #gear {
   cursor: pointer;
 }
 .srow:hover {
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--settings-row-hover);
+}
+/* Fixed choices stay label-left/control-right when they fit. A long zh/en
+   segmented group wraps as one unit below the label instead of clipping or
+   squeezing individual buttons onto separate lines. */
+.srow-seg {
+  flex-wrap: wrap;
+}
+.srow-seg .slabel {
+  flex-basis: 108px;
 }
 /* Label + its explanation stack; the control keeps the right edge. min-width:0
    lets long notes wrap instead of widening the row past the panel. */
@@ -1314,7 +1343,7 @@ body.settings-open #gear {
   height: 20px;
   border-radius: 999px;
   background: var(--track);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--control-border);
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
@@ -1325,8 +1354,10 @@ body.settings-open #gear {
   left: 2px;
   width: 14px;
   height: 14px;
+  box-sizing: border-box;
   border-radius: 50%;
-  background: #dfe3e8;
+  background: var(--control-knob);
+  border: 1px solid var(--control-border);
   transition: transform 0.15s ease;
 }
 .srow input[type="checkbox"]:checked {
@@ -1335,34 +1366,46 @@ body.settings-open #gear {
 }
 .srow input[type="checkbox"]:checked::after {
   transform: translateX(14px);
+  background: var(--seg-on-fg);
+  border-color: transparent;
 }
 
 /* Glass fields for numbers and selects. */
 .srow input[type="number"] {
   width: 46px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  min-height: 27px;
+  box-sizing: border-box;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
   border-radius: 8px;
   color: var(--text);
   padding: 3px 5px;
   font-family: var(--mono);
 }
 .srow select {
+  appearance: none;
+  -webkit-appearance: none;
   flex: none;
   /* Capped so the longest option ("Local session snapshot") cannot widen the
      row past the fixed 380px panel and get clipped. */
   max-width: 180px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  min-height: 27px;
+  box-sizing: border-box;
+  background-color: var(--control-bg);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 10px) 11px,
+    calc(100% - 6px) 11px;
+  background-repeat: no-repeat;
+  background-size: 4px 4px, 4px 4px;
+  border: 1px solid var(--control-border);
   border-radius: 8px;
   color: var(--text);
-  padding: 4px 6px;
+  padding: 4px 20px 4px 7px;
   font-size: 12px;
   font-family: var(--sans);
-}
-.srow select option {
-  background: #16181c;
-  color: var(--text);
 }
 
 /* ── Dev-only mock switcher ───────────────────────────────────────── */
