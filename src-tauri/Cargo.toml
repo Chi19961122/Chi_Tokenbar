@@ -1,12 +1,12 @@
 [package]
-name = "tokenbar"
+name = "atoll"
 version = "0.6.0"
-description = "TokenBar — AI coding quota runway monitor"
+description = "Atoll — AI coding quota runway monitor"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "tokenbar_lib"
+name = "atoll_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

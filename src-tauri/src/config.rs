@@ -1,7 +1,7 @@
 //! Persisted settings (UX Spec v3 §10). Stored as JSON in the OS config dir.
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
@@ -271,10 +271,46 @@ impl Default for Settings {
 }
 
 fn path() -> Option<PathBuf> {
+    Some(dirs::config_dir()?.join("Atoll").join("settings.json"))
+}
+
+/// The pre-rename settings location (`%APPDATA%\TokenBar\settings.json`). Kept
+/// only so `load()` can perform the one-time TokenBar→Atoll migration; nothing
+/// ever writes here.
+fn legacy_path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("TokenBar").join("settings.json"))
 }
 
+/// One-time TokenBar→Atoll settings migration decision. Pure so the three
+/// states are unit-testable without touching disk:
+///   (a) old exists, new absent → true  (copy once)
+///   (b) new exists              → false (never overwrite a migrated/newer file)
+///   (c) neither exists          → false (fall through to defaults)
+fn should_migrate_legacy(new_exists: bool, old_exists: bool) -> bool {
+    !new_exists && old_exists
+}
+
+/// Copy the legacy TokenBar settings into the new Atoll location exactly once,
+/// creating the Atoll dir first. A no-op unless `should_migrate_legacy` holds,
+/// so it is safe to call on every startup. Best-effort: any IO error leaves the
+/// new path absent and `load` falls through to defaults, same as a fresh user.
+fn migrate_legacy(new_path: &Path, old_path: &Path) {
+    if !should_migrate_legacy(new_path.exists(), old_path.exists()) {
+        return;
+    }
+    if let Some(dir) = new_path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::copy(old_path, new_path);
+}
+
 pub fn load() -> Settings {
+    // Migrate the user's pre-rename settings before the first read of the new
+    // path (see `migrate_legacy`): if the Atoll file is absent but a TokenBar
+    // file exists, copy it over once. Runs every startup but only acts once.
+    if let (Some(new_p), Some(old_p)) = (path(), legacy_path()) {
+        migrate_legacy(&new_p, &old_p);
+    }
     path()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|s| load_from_str(&s))
@@ -696,5 +732,85 @@ mod tests {
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(!load_from_str(&json).always_on_top, "取消置頂被存檔洗掉了");
+    }
+
+    // ── TokenBar → Atoll settings-dir migration (T-920) ─────────────────
+    //
+    // The settings dir moved from %APPDATA%\TokenBar to %APPDATA%\Atoll. A
+    // one-time copy in `load()` must keep an existing user's settings. Three
+    // states, tested pure (the copy decision) and on disk (the copy itself).
+
+    #[test]
+    fn migrate_decision_covers_three_states() {
+        // (a) old exists, new absent → copy.
+        assert!(should_migrate_legacy(false, true));
+        // (b) new exists → never overwrite (regardless of old).
+        assert!(!should_migrate_legacy(true, true));
+        assert!(!should_migrate_legacy(true, false));
+        // (c) neither → defaults, no copy.
+        assert!(!should_migrate_legacy(false, false));
+    }
+
+    /// A unique scratch dir under the OS temp dir, so parallel test threads and
+    /// repeat runs never collide. Cleaned up at the end of each test.
+    fn unique_tmp_dir(tag: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("atoll-mig-{tag}-{nanos}-{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// (a) old exists, new absent → the old file's contents are copied to new.
+    #[test]
+    fn migrate_copies_old_to_new_when_new_absent() {
+        let base = unique_tmp_dir("copy");
+        let old_p = base.join("TokenBar").join("settings.json");
+        let new_p = base.join("Atoll").join("settings.json");
+        std::fs::create_dir_all(old_p.parent().unwrap()).unwrap();
+        std::fs::write(&old_p, r#"{"warn_pct": 42.0}"#).unwrap();
+
+        migrate_legacy(&new_p, &old_p);
+
+        assert!(new_p.exists(), "新檔應被建立");
+        let migrated = load_from_str(&std::fs::read_to_string(&new_p).unwrap());
+        assert_eq!(migrated.warn_pct, 42.0, "舊值應被遷移");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// (b) new exists → migration must NOT overwrite it with the old file.
+    #[test]
+    fn migrate_never_overwrites_existing_new() {
+        let base = unique_tmp_dir("keep");
+        let old_p = base.join("TokenBar").join("settings.json");
+        let new_p = base.join("Atoll").join("settings.json");
+        std::fs::create_dir_all(old_p.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(new_p.parent().unwrap()).unwrap();
+        std::fs::write(&old_p, r#"{"warn_pct": 42.0}"#).unwrap();
+        std::fs::write(&new_p, r#"{"warn_pct": 88.0}"#).unwrap();
+
+        migrate_legacy(&new_p, &old_p);
+
+        let kept = load_from_str(&std::fs::read_to_string(&new_p).unwrap());
+        assert_eq!(kept.warn_pct, 88.0, "既有新檔不可被舊檔覆蓋");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// (c) neither exists → no file is created; caller falls through to defaults.
+    #[test]
+    fn migrate_creates_nothing_when_neither_exists() {
+        let base = unique_tmp_dir("none");
+        let old_p = base.join("TokenBar").join("settings.json");
+        let new_p = base.join("Atoll").join("settings.json");
+
+        migrate_legacy(&new_p, &old_p);
+
+        assert!(!new_p.exists(), "皆無時不應建立任何檔");
+        std::fs::remove_dir_all(&base).ok();
     }
 }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "TokenBar",
+  "productName": "Atoll",
   "version": "0.6.0",
-  "identifier": "com.qqq01.tokenbar",
+  "identifier": "com.qqq01.atoll",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "TokenBar",
+        "title": "Atoll",
         "width": 340,
         "height": 52,
         "resizable": false,

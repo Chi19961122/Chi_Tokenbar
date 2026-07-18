@@ -1,5 +1,5 @@
 // Copy build artifacts from Tauri's deep bundle path into a sibling folder
-// OUTSIDE the repo (../TokenBar-release), so build output never clutters the
+// OUTSIDE the repo (../Atoll-release), so build output never clutters the
 // project tree or git. Run via `npm run build:release` (or standalone after
 // any `npm run tauri build`).
 
@@ -10,10 +10,10 @@ const root = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "
 const rel = (...p) => join(root, ...p);
 
 const bundleDir = rel("src-tauri", "target", "release", "bundle");
-// Sibling of the repo folder (e.g. C:\Coding\TokenBar\TokenBar-release, next to
+// Sibling of the repo folder (e.g. C:\Coding\TokenBar\Atoll-release, next to
 // TokenBar-Src); namespaced so it won't collide with other projects.
-const outDir = join(root, "..", "TokenBar-release");
-const outName = "TokenBar-release";
+const outDir = join(root, "..", "Atoll-release");
+const outName = "Atoll-release";
 mkdirSync(outDir, { recursive: true });
 
 const version = JSON.parse(readFileSync(rel("package.json"), "utf8")).version;
@@ -40,10 +40,10 @@ for (const { dir, ext } of picks) {
 
 // 免安裝版
 try {
-  const exe = rel("src-tauri", "target", "release", "tokenbar.exe");
-  const portable = join(outDir, "TokenBar-portable.exe");
+  const exe = rel("src-tauri", "target", "release", "atoll.exe");
+  const portable = join(outDir, "Atoll-portable.exe");
   cpSync(exe, portable);
-  console.log(`${outName}/TokenBar-portable.exe  (${(statSync(portable).size / 1048576).toFixed(1)} MB)`);
+  console.log(`${outName}/Atoll-portable.exe  (${(statSync(portable).size / 1048576).toFixed(1)} MB)`);
   copied++;
 } catch {
   /* portable exe not built */
@@ -55,11 +55,11 @@ if (copied === 0) {
 }
 
 // Keep only the current version's installers in the release folder; sweep any
-// older versioned installer (TokenBar_<x.y.z>_...) into archive/ as a backup.
+// older versioned installer (Atoll_<x.y.z>_...) into archive/ as a backup.
 // Runs AFTER copying because Tauri's bundle dir accumulates past builds, so the
 // copy step above may re-introduce stale versions.
 const archiveDir = join(outDir, "archive");
-const versioned = /^TokenBar_(\d+\.\d+\.\d+)_/;
+const versioned = /^Atoll_(\d+\.\d+\.\d+)_/;
 let archived = 0;
 for (const f of readdirSync(outDir)) {
   const m = f.match(versioned);

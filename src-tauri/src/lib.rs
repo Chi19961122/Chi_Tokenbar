@@ -366,7 +366,7 @@ async fn open_share_preview(
         "share-preview",
         WebviewUrl::App("index.html#share-preview".into()),
     )
-    .title("TokenBar Share Preview")
+    .title("Atoll Share Preview")
     .inner_size(logical_width, logical_height)
     .decorations(false)
     .always_on_top(true)
@@ -438,15 +438,15 @@ pub fn run() {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, "toggle", "Show / Hide", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit TokenBar", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Atoll", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&toggle, &quit])?;
 
-    TrayIconBuilder::with_id("tokenbar")
+    TrayIconBuilder::with_id("atoll")
         // The app logo (icon-source.png → bundle icons in tauri.conf.json),
         // set once and never updated: the tray shows *who* this is, the tooltip
         // shows how much is left. `update_tray` must not set an icon.
         .icon(app.default_window_icon().unwrap().clone())
-        .tooltip("TokenBar — starting…")
+        .tooltip("Atoll — starting…")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
@@ -705,9 +705,9 @@ pub fn apply_provider_filter(sources: &[String], limits: Vec<Limit>) -> Vec<Limi
 /// carries the quota numbers, which makes it worth pinning down.
 fn tray_tooltip(snap: &Snapshot) -> String {
     if snap.limits.is_empty() {
-        return "TokenBar — no data".to_string();
+        return "Atoll — no data".to_string();
     }
-    let mut lines = vec!["TokenBar".to_string()];
+    let mut lines = vec!["Atoll".to_string()];
     for l in &snap.limits {
         let val = match l.status {
             // A failed source's util is a 0.0 placeholder, not a reading —
@@ -731,7 +731,7 @@ fn tray_tooltip(snap: &Snapshot) -> String {
 /// island still carries the colour-coded capsule. Do not reintroduce a
 /// state-dependent icon here as a "compromise".
 fn update_tray(app: &AppHandle, snap: &Snapshot) {
-    let Some(tray) = app.tray_by_id("tokenbar") else {
+    let Some(tray) = app.tray_by_id("atoll") else {
         return;
     };
     let _ = tray.set_tooltip(Some(&tray_tooltip(snap)));
@@ -826,7 +826,7 @@ fn fire_notifications(
     // user could only find out by opening the panel — a SourceFailed limit's
     // util is a 0.0 placeholder, so the quota loop below never fires for one.
     for body in due_source_notices(snap, notified, now) {
-        let _ = app.notification().builder().title("TokenBar").body(body).show();
+        let _ = app.notification().builder().title("Atoll").body(body).show();
     }
 
     for l in &snap.limits {
@@ -874,7 +874,7 @@ fn fire_notifications(
         } else {
             format!("{} at {:.0}% ({}). {}", l.label, l.util, level, tip)
         };
-        let _ = app.notification().builder().title("TokenBar").body(body).show();
+        let _ = app.notification().builder().title("Atoll").body(body).show();
     }
 }
 
@@ -1229,7 +1229,7 @@ mod tests {
 
     #[test]
     fn tooltip_without_any_limits_still_says_something() {
-        assert_eq!(tray_tooltip(&snapshot_with(vec![])), "TokenBar — no data");
+        assert_eq!(tray_tooltip(&snapshot_with(vec![])), "Atoll — no data");
     }
 
     // ── claude launcher resolution ───────────────────────────────────

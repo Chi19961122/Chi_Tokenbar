@@ -99,7 +99,7 @@ impl FailureStage {
             // user's time, so this one names the real suspects instead.
             FailureStage::UsageTransport(_) => "Can't reach Claude. Check your network; a corporate network or antivirus may be blocking the connection.",
             FailureStage::RefreshJson | FailureStage::UsageJson | FailureStage::UsageShape => {
-                "Claude's response wasn't recognized; TokenBar may need an update."
+                "Claude's response wasn't recognized; Atoll may need an update."
             }
         }
     }
@@ -423,7 +423,7 @@ fn get_usage(token: &str) -> Result<Value, FailureStage> {
     ureq::get(USAGE_URL)
         .set("Authorization", &format!("Bearer {}", token))
         .set("anthropic-beta", BETA_HEADER)
-        .set("User-Agent", "tokenbar")
+        .set("User-Agent", "atoll")
         .call()
         .map_err(|e| classify(e, FailureStage::UsageHttp, FailureStage::UsageTransport))?
         .into_json()
@@ -729,9 +729,9 @@ mod tests {
         for s in stages {
             let h = s.user_hint();
             assert!(!h.is_empty(), "{:?} 沒有提示文案", s);
-            // "TokenBar" is the product name, not jargon — drop it before the
+            // "Atoll" is the product name, not jargon — drop it before the
             // scan so the case-insensitive "token" check stays meaningful.
-            let scan = h.replace("TokenBar", "").to_lowercase();
+            let scan = h.replace("Atoll", "").to_lowercase();
             for jargon in [
                 "tls", "http", "oauth", "token", "transport", "json", "proxy", "certificate",
                 "socket", "timeout", "server error",

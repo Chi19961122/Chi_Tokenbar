@@ -1,4 +1,4 @@
-# TokenBar — 專案指引
+# Atoll — 專案指引
 
 Windows 常駐的 AI coding 額度 runway 監控器（Tauri 2 + vanilla TS）。監控 Claude Code 與 Codex 的 5h/週限制，island pill + 系統匣電量膠囊 + 展開面板 + 用量分析。
 
@@ -7,16 +7,16 @@ Windows 常駐的 AI coding 額度 runway 監控器（Tauri 2 + vanilla TS）。
 - `Ai_Assistant/data-sources-findings.md` — 各 provider 的實測資料 schema 與安全注意
 - `Ai_Assistant/CONFIG.md` — 所有設定與內建參數總表
 - `Ai_Assistant/HANDOFF.md` — 目前進度快照與待辦
-- 目錄約定：`src/`+`src-tauri/` = 程式碼、`Ai_Assistant/` = AI 產出文件與規範；安裝檔在 repo 外同層 `..\TokenBar-release\`
+- 目錄約定：`src/`+`src-tauri/` = 程式碼、`Ai_Assistant/` = AI 產出文件與規範；安裝檔在 repo 外同層 `..\Atoll-release\`
 
 ## 常用指令
 - 測試：`cargo test --manifest-path src-tauri\Cargo.toml`（PATH 需先加 `%USERPROFILE%\.cargo\bin`）
 - 開發：`npm run tauri dev`（設 `TOKENBAR_DEBUG=1` 可在 stderr 看 `[tb]` 每輪數值）
-- 打包：`npm run build:release` → 安裝檔集中複製到 repo 外的 `..\TokenBar-release\`（NSIS/MSI/免安裝 exe）
+- 打包：`npm run build:release` → 安裝檔集中複製到 repo 外的 `..\Atoll-release\`（NSIS/MSI/免安裝 exe）
 - 圖示重生：`npm run tauri icon src-tauri/icon-source.png`
 
 ## 鐵則與陷阱
-- **Port 1420 互斥**：`tauri dev` 與瀏覽器 preview 都要 1420（tauri.conf devUrl + vite strictPort），同時只能跑一個；打包前先 `taskkill /IM tokenbar.exe /F` 與 `taskkill /IM TokenBar-portable.exe /F`（exe 檔案鎖；`..\TokenBar-release\` 的免安裝版行程名是 TokenBar-portable）。
+- **Port 1420 互斥**：`tauri dev` 與瀏覽器 preview 都要 1420（tauri.conf devUrl + vite strictPort），同時只能跑一個；打包前先 `taskkill /IM atoll.exe /F` 與 `taskkill /IM Atoll-portable.exe /F`（exe 檔案鎖；`..\Atoll-release\` 的免安裝版行程名是 Atoll-portable）。
 - **瀏覽器 preview = mock 模式**：非 Tauri 環境自動用 `src/mock.ts` 的情境（devbar 可切 safe/near/locked/degraded/stale/empty）。
 - **機密**：`~/.claude/.credentials.json` 與 `~/.codex/auth.json` 的 token 任何情況不得印出/寫 log（部分遮蔽也不行）。
 - **Codex 本機來源數值語意**（providers/codex.rs，勿回退）：快照 `resets_at` 已過 → util=0 + Idle；視窗未到期但檔案 >15min 舊 → 保留最後已知值 + Stale。本機快照只在使用者跑 Codex 時更新；需要即時值可在設定切 `codex_usage_source` 為 live/auto（providers/codex_live.rs，唯讀查詢）。

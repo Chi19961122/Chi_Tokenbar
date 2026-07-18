@@ -63,7 +63,7 @@ impl CodexLiveProvider {
         let usage = ureq::get(USAGE_URL)
             .set("Authorization", &format!("Bearer {}", creds.access_token))
             .set("ChatGPT-Account-Id", &creds.account_id)
-            .set("User-Agent", "tokenbar")
+            .set("User-Agent", "atoll")
             .call()
             .ok()?
             .into_json::<Value>()
