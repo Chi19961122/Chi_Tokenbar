@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TokenBar 分享卡片 — 六樣態重設計預覽</title>
+<style>
+/* ============================================================================
+   TokenBar share-card REDESIGN preview — standalone, no build, open directly.
+   字型說明:Geist / Geist Mono / Playfair Display 在獨立檔案中無法取得,以下用
+   系統字近似(Segoe UI / SF 系列 → 近似 Geist;Cascadia/Consolas → 近似 Geist
+   Mono;Georgia → 近似 Playfair 襯線)。真機請換回專案 bundle 的 Geist。
+   六張卡片沿用專案 pin 死的 --share-* 淺色調色盤,主題不變。
+   ========================================================================== */
+
+:root{
+  --geist: 'Geist','Inter',-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono: 'Geist Mono','Cascadia Code','SF Mono','Consolas','Roboto Mono',ui-monospace,monospace;
+  --serif: 'Playfair Display',Georgia,'Times New Roman',serif;
+  --seal-serif: 'Yu Mincho','Songti SC','SimSun',serif;
+}
+
+/* ── page chrome (刻意極簡,讓卡片主導) ─────────────────────────────── */
+*{ box-sizing:border-box; }
+html,body{ margin:0; }
+body{
+  background:#0b0b0d; color:#e6e6e9;
+  font-family:var(--geist);
+  -webkit-font-smoothing:antialiased;
+  padding:56px 40px 120px;
+  line-height:1.55;
+}
+.page{ max-width:1320px; margin:0 auto; }
+.intro{ max-width:820px; margin-bottom:64px; }
+.intro h1{ font-size:30px; font-weight:800; letter-spacing:-.02em; margin:0 0 14px; color:#fafafa; }
+.intro p{ font-size:14.5px; color:#a1a1aa; margin:0 0 10px; }
+.intro .note{ font-size:12.5px; color:#7c7c85; border-left:2px solid #EC4899; padding-left:14px; margin-top:18px; }
+.intro code{ font-family:var(--mono); font-size:12px; color:#d4d4d8; background:#1a1a1e; padding:1px 6px; border-radius:4px; }
+
+section.tpl{ margin-bottom:78px; }
+.tpl-head{ display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:6px; }
+.tpl-head .idx{ font-family:var(--mono); font-size:12px; color:#EC4899; letter-spacing:.14em; }
+.tpl-head h2{ font-size:21px; font-weight:700; letter-spacing:-.01em; margin:0; color:#fafafa; }
+.tpl-head .fam{ font-family:var(--mono); font-size:11px; color:#71717a; letter-spacing:.08em; }
+.tpl-rationale{ max-width:940px; font-size:13.5px; color:#9a9aa2; margin:0 0 26px; }
+.tpl-rationale b{ color:#d4d4d8; font-weight:600; }
+
+.cards{ display:flex; gap:34px; align-items:flex-start; flex-wrap:wrap; }
+.cardwrap{ display:flex; flex-direction:column; gap:9px; }
+.cardwrap .cap{ font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; color:#6b6b73; text-transform:uppercase; }
+
+/* stage: scale the true-size card down to a preview box without leaving gaps */
+.stage16{ width:600px; height:337.5px; position:relative; }
+.stage16 > .card{ position:absolute; top:0; left:0; transform:scale(.5); transform-origin:top left; }
+.stage916{ width:360px; height:640px; position:relative; }
+.stage916 > .card{ position:absolute; top:0; left:0; }
+
+/* ── shared card tokens (pinned light palette — theme-invariant) ─────── */
+.card{
+  --bg:#FAFAFA; --surface:#FFFFFF; --ink:#09090B; --primary:#18181B;
+  --secondary:#52525B; --muted:#71717A; --faint:#A1A1AA; --border:#E4E4E7;
+  --soft:#F4F4F5; --mid:#D4D4D8; --accent:#EC4899;
+  font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased;
+}
+.tnum{ font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1,"lnum" 1; }
+.card .batt{ display:inline-block; vertical-align:middle; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   1 · STATEMENT — 用量結算單 (finance document)
+   ════════════════════════════════════════════════════════════════════ */
+.st{
+  width:1200px; height:675px; padding:60px 66px 52px; overflow:hidden;
+  background:var(--bg); color:var(--ink); font-family:var(--geist);
+  box-shadow:0 8px 40px rgba(0,0,0,.10),0 1px 4px rgba(0,0,0,.05);
+  display:flex; flex-direction:column; position:relative;
+}
+.st::after{ content:""; position:absolute; inset:16px; border:1px solid var(--border); pointer-events:none; }
+.st-mast{ display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:16px; border-bottom:2px solid var(--ink); }
+.st-mast .ttl{ font-family:var(--serif); font-size:34px; font-weight:800; letter-spacing:-.01em; line-height:1; }
+.st-mast .sub{ font-size:11px; letter-spacing:.28em; text-transform:uppercase; color:var(--muted); margin-top:11px; font-weight:600; }
+.st-mast .meta{ text-align:right; }
+.st-mast .meta .pd{ font-size:15px; color:var(--secondary); letter-spacing:.01em; }
+.st-mast .meta .no{ font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--faint); margin-top:9px; }
+.st-hero{ display:grid; grid-template-columns:1.55fr 1fr; margin-top:30px; }
+.st-hero .cell{ padding-top:6px; }
+.st-hero .cell.cost{ padding-left:44px; border-left:1px solid var(--border); }
+.st-lbl{ font-size:10.5px; letter-spacing:.22em; text-transform:uppercase; font-weight:700; color:var(--muted); margin-bottom:14px; }
+.st-tok{ font-family:var(--serif); font-weight:800; font-size:92px; line-height:.82; letter-spacing:-.03em; color:var(--ink); }
+.st-tok em{ font-style:normal; font-size:40px; color:var(--muted); font-weight:700; margin-left:4px; }
+.st-tsub{ font-size:12.5px; letter-spacing:.02em; color:var(--secondary); margin-top:16px; }
+.st-cost{ font-weight:800; font-size:56px; line-height:.86; letter-spacing:-.03em; color:var(--primary); }
+.st-cost i{ font-style:normal; font-size:30px; color:var(--muted); vertical-align:top; margin-right:2px; }
+.st-cost small{ display:block; font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); margin-top:14px; font-weight:600; }
+.st-ledger{ margin-top:auto; }
+.st-lhead{ display:grid; grid-template-columns:1fr 60px 150px; font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); padding-bottom:8px; border-bottom:1px solid var(--ink); font-weight:600; }
+.st-lhead span:nth-child(2){ text-align:right; }
+.st-lhead span:nth-child(3){ text-align:right; }
+.st-lrow{ display:grid; grid-template-columns:auto 1fr auto 150px; align-items:baseline; column-gap:0; padding:9px 0; border-bottom:1px solid var(--soft); }
+.st-lrow .nm{ font-size:17px; font-weight:600; color:var(--primary); }
+.st-lrow .lead{ border-bottom:1px dotted var(--mid); transform:translateY(-5px); margin:0 16px; }
+.st-lrow .pct{ font-size:12px; color:var(--muted); text-align:right; width:52px; }
+.st-lrow .val{ font-size:20px; font-weight:700; color:var(--ink); text-align:right; letter-spacing:-.01em; }
+.st-lrow .val em{ font-style:normal; font-size:12px; color:var(--muted); margin-left:5px; }
+.st-foot{ display:flex; justify-content:space-between; align-items:center; margin-top:22px; padding-top:15px; border-top:2px solid var(--ink); }
+
+/* shared footer signature system */
+.sig{ display:flex; align-items:center; gap:10px; }
+.sig .mk{ color:var(--accent); display:inline-flex; }
+.sig .bn{ font-size:18px; font-weight:700; letter-spacing:-.01em; color:var(--ink); }
+.sig-r{ font-family:var(--mono); font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); }
+
+/* statement · 9:16 */
+.st.p{ width:360px; height:640px; padding:40px 34px 34px; }
+.st.p::after{ inset:12px; }
+.st.p .st-mast{ flex-direction:column; gap:12px; padding-bottom:14px; }
+.st.p .st-mast .ttl{ font-size:26px; }
+.st.p .st-mast .meta{ text-align:left; }
+.st.p .st-hero{ grid-template-columns:1fr; margin-top:24px; row-gap:22px; }
+.st.p .st-hero .cell.cost{ padding-left:0; border-left:none; padding-top:20px; border-top:1px solid var(--border); }
+.st.p .st-tok{ font-size:58px; }
+.st.p .st-tok em{ font-size:26px; }
+.st.p .st-cost{ font-size:44px; }
+.st.p .st-lrow{ grid-template-columns:auto 1fr auto 96px; }
+.st.p .st-lrow .nm{ font-size:15px; }
+.st.p .st-lrow .val{ font-size:16px; }
+.st.p .st-lhead{ grid-template-columns:1fr 44px 96px; }
+.st.p .sig .bn{ font-size:16px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   2 · DIAGNOSTICS — 系統診斷 (terminal)
+   ════════════════════════════════════════════════════════════════════ */
+.dx{
+  width:1200px; height:675px; padding:0; overflow:hidden;
+  font-family:var(--mono); background:var(--surface); color:var(--ink);
+  border:1px solid var(--border); display:flex; flex-direction:column;
+  box-shadow:0 8px 40px rgba(0,0,0,.10),0 1px 4px rgba(0,0,0,.05); position:relative;
+}
+.dx-bar{ height:38px; flex:none; display:flex; align-items:center; padding:0 18px; background:var(--soft); border-bottom:1px solid var(--border); }
+.dx-bar .dots{ display:flex; gap:8px; }
+.dx-bar .dots i{ width:11px; height:11px; border-radius:50%; background:var(--mid); display:block; }
+.dx-bar .dots i:first-child{ background:var(--accent); }
+.dx-bar .win{ margin:0 auto; font-size:12px; letter-spacing:.06em; color:var(--muted); }
+.dx-body{ flex:1; padding:34px 44px 28px; display:flex; flex-direction:column; }
+.dx-cmd{ font-size:18px; color:var(--primary); }
+.dx-cmd .p{ color:var(--accent); }
+.dx-cmd .fl{ color:var(--muted); }
+.dx-cmd .cur{ display:inline-block; width:9px; height:19px; background:var(--accent); vertical-align:-3px; margin-left:3px; animation:none; }
+.dx-cmt{ font-size:12.5px; color:var(--faint); margin-top:8px; }
+.dx-focal{ margin-top:26px; display:flex; align-items:flex-end; gap:40px; }
+.dx-focal .big{ }
+.dx-focal .big .k{ font-size:11px; letter-spacing:.14em; color:var(--muted); }
+.dx-focal .big .v{ font-size:64px; font-weight:700; letter-spacing:-.03em; line-height:.9; color:var(--ink); margin-top:8px; }
+.dx-focal .big .v em{ font-style:normal; color:var(--muted); font-size:30px; }
+.dx-focal .kv{ display:flex; gap:36px; padding-bottom:8px; }
+.dx-focal .kv .k{ font-size:11px; letter-spacing:.12em; color:var(--muted); }
+.dx-focal .kv .v{ font-size:26px; font-weight:700; color:var(--primary); margin-top:7px; letter-spacing:-.01em; }
+.dx-focal .kv .v small{ font-size:12px; color:var(--muted); font-weight:500; }
+.dx-spark{ margin-top:24px; }
+.dx-spark .lbl{ font-size:10.5px; letter-spacing:.14em; color:var(--muted); display:flex; justify-content:space-between; margin-bottom:8px; }
+.dx-spark .lbl b{ color:var(--secondary); font-weight:600; }
+.dx-spark .bars{ display:flex; align-items:flex-end; gap:3px; height:44px; }
+.dx-spark .bars i{ flex:1; background:var(--mid); display:block; }
+.dx-spark .bars i.pk{ background:var(--accent); }
+.dx-tbl{ margin-top:24px; border-top:1px solid var(--border); padding-top:14px; }
+.dx-tbl .hd,.dx-tbl .tr{ display:grid; grid-template-columns:20px 150px 1fr 130px 56px; align-items:center; column-gap:14px; font-size:15px; padding:6px 0; }
+.dx-tbl .hd{ font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding-bottom:6px; }
+.dx-tbl .hd span:nth-child(4),.dx-tbl .hd span:nth-child(5){ text-align:right; }
+.dx-tbl .g{ color:var(--accent); }
+.dx-tbl .nm{ color:var(--primary); }
+.dx-tbl .tr.dim .nm{ color:var(--muted); }
+.dx-tbl .barcell{ height:9px; background:var(--soft); position:relative; }
+.dx-tbl .barcell i{ position:absolute; left:0; top:0; height:100%; background:var(--primary); display:block; }
+.dx-tbl .tr.dim .barcell i{ background:var(--faint); }
+.dx-tbl .num{ text-align:right; color:var(--primary); font-weight:700; }
+.dx-tbl .pc{ text-align:right; color:var(--muted); }
+.dx-foot{ margin-top:auto; padding-top:18px; display:flex; justify-content:space-between; align-items:center; }
+.dx-foot .eof{ font-size:12px; letter-spacing:.3em; color:var(--faint); }
+.dx-foot .sig .bn{ font-size:16px; }
+.dx-foot .sig-r{ font-size:10px; }
+
+/* diagnostics · 9:16 */
+.dx.p{ width:360px; height:640px; }
+.dx.p .dx-body{ padding:26px 26px 22px; }
+.dx.p .dx-cmd{ font-size:14px; }
+.dx.p .dx-cmt{ font-size:11px; }
+.dx.p .dx-focal{ flex-direction:column; align-items:flex-start; gap:22px; margin-top:22px; }
+.dx.p .dx-focal .big .v{ font-size:52px; }
+.dx.p .dx-focal .big .v em{ font-size:24px; }
+.dx.p .dx-focal .kv{ gap:28px; padding-bottom:0; }
+.dx.p .dx-focal .kv .v{ font-size:22px; }
+.dx.p .dx-spark{ margin-top:22px; }
+.dx.p .dx-tbl .hd,.dx.p .dx-tbl .tr{ grid-template-columns:14px 1fr 78px 40px; column-gap:8px; font-size:13px; }
+.dx.p .dx-tbl .barcell{ display:none; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   3 · MINIMAL — 極簡 (one giant number)
+   ════════════════════════════════════════════════════════════════════ */
+.mn{
+  width:1200px; height:675px; padding:74px 80px 64px; overflow:hidden;
+  font-family:var(--geist); background:var(--bg); color:var(--ink);
+  display:flex; flex-direction:column;
+  box-shadow:0 8px 40px rgba(0,0,0,.10),0 1px 4px rgba(0,0,0,.05); position:relative;
+}
+.mn-top{ display:flex; justify-content:space-between; align-items:center; }
+.mn-top .tag{ font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+.mn-top .rt{ font-size:13px; color:var(--muted); }
+.mn-top .rt b{ color:var(--primary); font-weight:700; }
+.mn-hero{ margin-top:auto; margin-bottom:auto; }
+.mn-big{ font-weight:800; font-size:224px; line-height:.8; letter-spacing:-.06em; color:var(--ink); }
+.mn-big span{ color:var(--accent); }
+.mn-cap{ font-size:16px; letter-spacing:.01em; color:var(--secondary); margin-top:26px; display:flex; gap:14px; align-items:center; }
+.mn-cap b{ color:var(--primary); font-weight:600; }
+.mn-cap .dot{ width:4px; height:4px; border-radius:50%; background:var(--mid); }
+.mn-split{ margin-top:44px; display:grid; grid-template-columns:1fr 1fr; column-gap:56px; row-gap:16px; max-width:900px; }
+.mn-brow{ display:flex; align-items:center; gap:16px; }
+.mn-brow .nm{ font-size:13px; color:var(--secondary); width:96px; letter-spacing:.01em; }
+.mn-brow .tr{ flex:1; height:2px; background:var(--border); position:relative; }
+.mn-brow .tr i{ position:absolute; left:0; top:-1px; height:4px; background:var(--primary); display:block; }
+.mn-brow .tk{ font-size:12px; color:var(--muted); width:64px; text-align:right; }
+.mn-foot{ margin-top:52px; display:flex; justify-content:space-between; align-items:center; }
+.mn-foot .sig .bn{ font-weight:600; }
+
+/* minimal · 9:16 */
+.mn.p{ width:360px; height:640px; padding:48px 38px 40px; }
+.mn.p .mn-big{ font-size:98px; letter-spacing:-.05em; }
+.mn.p .mn-cap{ font-size:13px; margin-top:18px; flex-wrap:wrap; gap:8px; }
+.mn.p .mn-split{ grid-template-columns:1fr; max-width:none; margin-top:34px; row-gap:14px; }
+.mn.p .mn-brow .nm{ width:88px; font-size:12px; }
+.mn.p .mn-foot{ margin-top:36px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   4 · FUEL — AI 加油站 (gas-pump receipt)
+   ════════════════════════════════════════════════════════════════════ */
+.fl{
+  width:1200px; height:675px; overflow:hidden; border-radius:16px;
+  font-family:var(--geist); background:var(--bg); color:var(--ink); position:relative;
+  box-shadow:0 8px 40px rgba(0,0,0,.10),0 1px 4px rgba(0,0,0,.05),inset 0 0 0 1px var(--border);
+}
+.fl-grate{ position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,rgba(9,9,11,.022) 0,rgba(9,9,11,.022) 1px,transparent 1px,transparent 6px); }
+.fl-canopy{ position:absolute; top:0; left:0; right:0; height:7px; background:var(--accent); }
+.fl-in{ position:relative; height:100%; padding:44px 54px 40px; display:flex; flex-direction:column; }
+.fl-head{ display:flex; justify-content:space-between; align-items:flex-start; }
+.fl-brand{ display:flex; align-items:center; gap:15px; }
+.fl-pump{ width:42px; height:26px; border:2px solid var(--primary); border-radius:5px; position:relative; padding:3px; display:flex; align-items:center; }
+.fl-pump:after{ content:""; position:absolute; right:-6px; top:8px; width:4px; height:8px; background:var(--primary); border-radius:0 2px 2px 0; }
+.fl-pump i{ display:block; height:100%; width:64%; background:var(--primary); border-radius:2px; }
+.fl-nm b{ display:block; font-weight:800; font-size:25px; letter-spacing:5px; color:var(--ink); line-height:1; }
+.fl-nm span{ display:block; font-family:var(--mono); font-size:11px; letter-spacing:3px; color:var(--muted); margin-top:7px; }
+.fl-chip{ display:flex; border:1px solid var(--mid); border-radius:8px; overflow:hidden; font-size:11px; font-weight:600; letter-spacing:2px; }
+.fl-chip span{ padding:9px 15px; color:var(--muted); }
+.fl-chip span.on{ background:var(--primary); color:var(--bg); }
+/* pump reading — the big total on the pump display */
+.fl-display{ margin-top:26px; background:var(--ink); border-radius:10px; padding:22px 28px; display:flex; justify-content:space-between; align-items:flex-end; }
+.fl-display .grp .k{ font-family:var(--mono); font-size:10px; letter-spacing:.2em; color:#9a9aa2; }
+.fl-display .grp .v{ font-family:var(--mono); font-weight:700; font-size:58px; line-height:.9; letter-spacing:-.02em; color:#FAFAFA; margin-top:8px; }
+.fl-display .grp .v em{ font-style:normal; font-size:26px; color:#a1a1aa; }
+.fl-display .grp.cost{ text-align:right; }
+.fl-display .grp.cost .v{ font-size:40px; color:var(--accent); }
+.fl-display .grp .u{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:#71717a; margin-top:6px; }
+.fl-board{ flex:1; margin-top:16px; display:flex; flex-direction:column; justify-content:center; }
+.fl-row{ display:grid; grid-template-columns:44px auto 1fr auto auto; align-items:baseline; column-gap:16px; padding:10px 0; border-bottom:1px solid var(--border); }
+.fl-row .gr{ font-family:var(--mono); font-size:11px; color:var(--faint); letter-spacing:.1em; }
+.fl-mdl{ font-weight:700; font-size:20px; letter-spacing:3px; color:var(--primary); }
+.fl-dots{ border-bottom:2px dotted var(--mid); transform:translateY(-6px); }
+.fl-tok{ font-family:var(--mono); font-weight:700; font-size:28px; letter-spacing:-.02em; color:var(--ink); text-align:right; min-width:116px; }
+.fl-tok em{ font-style:normal; font-size:15px; color:var(--muted); }
+.fl-pct{ font-family:var(--mono); font-weight:600; font-size:18px; color:var(--secondary); text-align:right; min-width:56px; }
+.fl-foot{ margin-top:16px; display:flex; justify-content:space-between; align-items:center; padding-top:4px; }
+.fl-foot .sig .bn{ font-size:16px; }
+
+/* fuel · 9:16 */
+.fl.p{ width:360px; height:640px; }
+.fl.p .fl-in{ padding:34px 28px 28px; }
+.fl.p .fl-head{ flex-direction:column; gap:16px; align-items:stretch; }
+.fl.p .fl-nm b{ font-size:20px; letter-spacing:3px; }
+.fl.p .fl-chip{ align-self:flex-start; }
+.fl.p .fl-display{ margin-top:20px; padding:18px 20px; flex-direction:column; align-items:stretch; gap:16px; }
+.fl.p .fl-display .grp.cost{ text-align:left; border-top:1px solid #2a2a2e; padding-top:14px; }
+.fl.p .fl-display .grp .v{ font-size:46px; }
+.fl.p .fl-display .grp.cost .v{ font-size:34px; }
+.fl.p .fl-row{ grid-template-columns:34px 1fr auto; column-gap:10px; padding:9px 0; }
+.fl.p .fl-dots{ display:none; }
+.fl.p .fl-mdl{ font-size:15px; letter-spacing:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fl.p .fl-tok{ font-size:20px; min-width:0; }
+.fl.p .fl-pct{ display:none; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   5 · ISLAND_CARD — 島嶼卡 (the pill on a card)
+   ════════════════════════════════════════════════════════════════════ */
+.ic{
+  width:1200px; height:675px; border-radius:20px; padding:46px 54px 42px; overflow:hidden;
+  font-family:var(--geist); background:var(--bg); color:var(--ink); position:relative;
+  box-shadow:0 8px 40px rgba(0,0,0,.10),0 1px 4px rgba(0,0,0,.05),inset 0 0 0 1px var(--border);
+  display:flex; flex-direction:column;
+}
+.ic-glow{ position:absolute; inset:0; border-radius:20px; pointer-events:none;
+  background:radial-gradient(64% 46% at 82% 4%,rgba(236,72,153,.06),transparent 62%); }
+.ic-top{ position:relative; display:flex; align-items:center; justify-content:space-between; }
+/* the island pill — hero identity element */
+.ic-pill{ display:inline-flex; align-items:center; gap:14px; background:var(--ink); border-radius:999px; padding:11px 22px 11px 16px; box-shadow:0 6px 20px rgba(9,9,11,.16); }
+.ic-pill .pb{ width:26px; height:15px; border:1.5px solid #FAFAFA; border-radius:3px; position:relative; padding:2px; }
+.ic-pill .pb:after{ content:""; position:absolute; right:-4px; top:4px; width:2.5px; height:5px; background:#FAFAFA; border-radius:0 2px 2px 0; }
+.ic-pill .pb i{ display:block; height:100%; width:66%; background:#FAFAFA; border-radius:1px; }
+.ic-pill b{ font-size:15px; letter-spacing:.5px; color:#FAFAFA; font-weight:600; }
+.ic-pill .sep{ width:1px; height:14px; background:#3f3f46; }
+.ic-pill .liv{ font-size:12px; color:#EC4899; font-weight:600; letter-spacing:.04em; }
+.ic-period{ font-size:14px; color:var(--muted); letter-spacing:.01em; }
+.ic-hero{ position:relative; margin-top:38px; }
+.ic-htag{ font-size:10.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.ic-big{ margin-top:12px; display:flex; align-items:baseline; gap:26px; }
+.ic-big b{ font-weight:800; font-size:96px; line-height:.86; letter-spacing:-.05em; color:var(--ink); }
+.ic-big b em{ font-style:normal; font-weight:700; font-size:44px; color:var(--muted); margin-left:4px; }
+.ic-big .cost{ font-weight:700; font-size:30px; color:var(--accent); letter-spacing:-.01em; }
+.ic-big .cost u{ text-decoration:none; font-size:14px; color:var(--muted); margin-left:6px; }
+.ic-big .sess{ margin-left:auto; text-align:right; }
+.ic-big .sess .n{ font-weight:700; font-size:30px; color:var(--primary); }
+.ic-big .sess .l{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+.ic-quota{ position:relative; flex:1; margin-top:34px; display:flex; flex-direction:column; justify-content:center; gap:18px; }
+.ic-qhead{ font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--faint); font-weight:700; }
+.ic-qrow{ display:grid; grid-template-columns:150px 1fr 96px; align-items:center; column-gap:20px; }
+.ic-qlbl{ font-size:14px; color:var(--secondary); font-weight:500; }
+.ic-qlbl small{ color:var(--faint); font-weight:400; }
+.ic-track{ height:16px; border-radius:999px; background:var(--soft); overflow:hidden; box-shadow:inset 0 0 0 1px var(--border); }
+.ic-fill{ height:100%; border-radius:999px; }
+.ic-qval{ font-size:15px; font-weight:700; color:var(--primary); text-align:right; }
+.ic-qval small{ font-weight:500; color:var(--muted); font-size:11px; }
+.ic-foot{ position:relative; margin-top:30px; padding-top:18px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+
+/* island · 9:16 */
+.ic.p{ width:360px; height:640px; padding:44px 34px 38px; }
+.ic.p .ic-top{ flex-direction:column; align-items:flex-start; gap:14px; }
+.ic.p .ic-hero{ margin-top:auto; }
+.ic.p .ic-big{ flex-direction:column; align-items:flex-start; gap:12px; }
+.ic.p .ic-big b{ font-size:78px; }
+.ic.p .ic-big b em{ font-size:36px; }
+.ic.p .ic-big .sess{ margin-left:0; text-align:left; display:flex; align-items:baseline; gap:8px; }
+.ic.p .ic-quota{ flex:none; margin-top:38px; }
+.ic.p .ic-qrow{ grid-template-columns:120px 1fr 74px; column-gap:12px; }
+.ic.p .ic-foot{ margin-top:auto; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   6 · WA — 和 (zen ledger with 量 seal)
+   ════════════════════════════════════════════════════════════════════ */
+.wa{
+  width:1200px; height:675px; overflow:hidden; border-radius:4px; position:relative;
+  color:var(--ink); background:var(--bg); font-family:var(--geist);
+  box-shadow:0 8px 40px rgba(0,0,0,.10),0 1px 4px rgba(0,0,0,.05),inset 0 0 0 1px var(--border);
+}
+.wa-rule{ position:absolute; top:64px; bottom:64px; left:214px; width:1px; background:var(--mid); }
+.wa-side{ position:absolute; left:70px; top:62px; bottom:58px; width:130px; display:flex; flex-direction:column; }
+.wa-brand{ display:flex; align-items:center; gap:10px; }
+.wa-brand .pb{ width:24px; height:14px; border:1.5px solid var(--primary); border-radius:2px; position:relative; padding:2px; }
+.wa-brand .pb:after{ content:""; position:absolute; right:-3.5px; top:3.5px; width:2px; height:4px; background:var(--primary); border-radius:0 1px 1px 0; }
+.wa-brand .pb i{ display:block; height:100%; width:66%; background:var(--primary); border-radius:1px; }
+.wa-brand b{ font-size:15px; letter-spacing:1px; color:var(--primary); font-weight:700; }
+.wa-vert{ margin-top:26px; writing-mode:vertical-rl; text-orientation:mixed; font-family:var(--serif); font-size:15px; letter-spacing:.24em; color:var(--secondary); }
+.wa-vsub{ margin-top:auto; writing-mode:vertical-rl; font-family:var(--mono); font-size:10px; letter-spacing:.2em; color:var(--faint); }
+.wa-in{ position:relative; height:100%; padding:62px 70px 56px 262px; display:flex; flex-direction:column; }
+.wa-head{ display:flex; flex-direction:column; gap:9px; }
+.wa-kicker{ font-size:10.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.wa-period{ font-family:var(--serif); font-size:20px; color:var(--secondary); letter-spacing:.01em; }
+.wa-main{ flex:1; display:flex; flex-direction:column; justify-content:center; }
+.wa-num{ font-family:var(--serif); font-weight:800; font-size:100px; line-height:.86; letter-spacing:-.03em; color:var(--ink); }
+.wa-num em{ font-style:normal; font-size:32px; font-weight:700; color:var(--muted); letter-spacing:1px; margin-left:14px; }
+.wa-cost{ margin-top:18px; font-size:21px; color:var(--primary); font-weight:600; letter-spacing:.01em; }
+.wa-cost u{ text-decoration:none; font-size:12px; color:var(--muted); margin-left:8px; text-transform:uppercase; letter-spacing:.14em; }
+.wa-split{ margin-top:36px; display:flex; flex-direction:column; gap:13px; max-width:600px; }
+.wa-srow{ display:grid; grid-template-columns:110px 1fr 70px; align-items:center; column-gap:18px; }
+.wa-slbl{ font-size:13px; color:var(--secondary); letter-spacing:.01em; }
+.wa-strack{ height:1px; background:var(--border); position:relative; }
+.wa-sfill{ position:absolute; left:0; top:-1.5px; height:4px; background:var(--primary); }
+.wa-sval{ font-family:var(--mono); font-size:13px; color:var(--secondary); text-align:right; }
+.wa-foot{ position:absolute; left:262px; bottom:56px; display:flex; align-items:center; gap:10px; }
+.wa-foot .sig-r{ font-size:10px; }
+.wa-seal{ position:absolute; right:70px; bottom:64px; width:118px; height:118px; background:var(--accent); border-radius:8px; display:flex; align-items:center; justify-content:center;
+  box-shadow:inset 0 0 0 3px rgba(255,255,255,.3),inset 0 0 0 6px rgba(255,255,255,.5); }
+.wa-seal span{ font-family:var(--seal-serif); font-weight:900; font-size:74px; line-height:1; color:#FFF; }
+
+/* wa · 9:16 */
+.wa.p{ width:360px; height:640px; }
+.wa.p .wa-rule{ display:none; }
+.wa.p .wa-side{ position:static; width:auto; flex-direction:row; align-items:center; justify-content:space-between; padding:44px 34px 0; }
+.wa.p .wa-vert{ writing-mode:horizontal-tb; margin-top:0; font-size:13px; letter-spacing:.18em; }
+.wa.p .wa-vsub{ writing-mode:horizontal-tb; margin-top:0; }
+.wa.p .wa-in{ position:static; height:auto; padding:28px 34px 0; }
+.wa.p .wa-num{ font-size:52px; }
+.wa.p .wa-num em{ font-size:20px; margin-left:8px; }
+.wa.p .wa-cost{ font-size:18px; margin-top:12px; }
+.wa.p .wa-split{ margin-top:30px; max-width:none; gap:12px; }
+.wa.p .wa-srow{ grid-template-columns:92px 1fr 60px; column-gap:12px; }
+.wa.p .wa-foot{ position:static; margin-top:24px; padding:0 34px 34px; }
+.wa.p .wa-seal{ right:34px; bottom:30px; width:80px; height:80px; }
+.wa.p .wa-seal span{ font-size:50px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="intro">
+    <h1>TokenBar 分享卡片 — 六樣態重設計預覽</h1>
+    <p>這是「分享」功能六張可分享用量卡的<b style="color:#e6e6e9">全面重設計</b>提案,實作前先用純 HTML 預覽。每個樣態同時呈現重設計後的 <code>16:9</code>(1200×675,縮放至約 600px 寬)與 <code>9:16</code>(360×640 原尺寸),左右並排,使用真實硬編數據。</p>
+    <p>設計方向沿用 App 的極簡編輯部語彙:zinc 灰階 + <span style="color:#EC4899">#EC4899</span> 洋紅點綴、強烈焦點數字、tabular 對齊數字、letterspaced 大寫微標籤,並跨六卡統一頁尾署名系統(電池標記 + TokenBar + 大寫日期)。嚴守 §0 隱私鐵則 —— 全程無任何專案名稱。</p>
+    <p class="note">字型註記:Geist / Geist Mono / Playfair Display 在獨立檔中無法載入,此預覽以系統字近似(Segoe UI / Consolas / Georgia)。真機請換回專案 <code>public/fonts/</code> 的 Geist bundle,字重與字距會更緊緻。此檔<b style="color:#e6e6e9">不修改任何 repo 檔案</b>。</p>
+  </div>
+
+  <!-- ══ 1 · STATEMENT ══════════════════════════════════════════════ -->
+  <section class="tpl">
+    <div class="tpl-head">
+      <span class="idx">01</span><h2>用量結算單 · Statement</h2><span class="fam">.shst-</span>
+    </div>
+    <p class="tpl-rationale">身份是<b>財務對帳單</b>。重設計把刊頭換成襯線大標 + 雙細規線,建立「正式文件」權威感;主數字改用襯線特大號 <b>324.9M</b> 當單一焦點,成本退為右側次要欄。下方分帳表用點狀引導線(dotted leader)把名稱與 tabular 數值串起,金額全部右對齊在同一條數字軸上。頁尾雙規線內放統一署名。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9 — 1200×675</span>
+        <div class="stage16">
+          <div class="card st">
+            <div class="st-mast">
+              <div><div class="ttl">Usage Statement</div><div class="sub">Cumulative for period</div></div>
+              <div class="meta"><div class="pd">This week · Jul 12 – 18</div><div class="no">NO. TB-2026-0718</div></div>
+            </div>
+            <div class="st-hero">
+              <div class="cell"><div class="st-lbl">Total tokens</div><div class="st-tok tnum">324.9<em>M</em></div><div class="st-tsub">across 2 agents · 37 sessions · streak 12d · peak 12.4M/day</div></div>
+              <div class="cell cost"><div class="st-lbl">Est. cost</div><div class="st-cost tnum"><i>$</i>310.42</div><small>est. usd</small></div>
+            </div>
+            <div class="st-ledger">
+              <div class="st-lhead"><span>Agent</span><span>Share</span><span>Tokens</span></div>
+              <div class="st-lrow"><span class="nm">Claude Code</span><span class="lead"></span><span class="pct">66%</span><span class="val tnum">213,400,000</span></div>
+              <div class="st-lrow"><span class="nm">Codex CLI</span><span class="lead"></span><span class="pct">34%</span><span class="val tnum">111,500,000</span></div>
+            </div>
+            <div class="st-foot">
+              <div class="sig"><span class="mk"><svg class="batt" width="26" height="15" viewBox="0 0 28 16" fill="none"><rect x="1" y="2" width="22" height="12" rx="3" stroke="currentColor" stroke-width="1.6"/><rect x="24" y="6" width="2.6" height="4" rx="1" fill="currentColor"/><rect x="3.4" y="4.4" width="12" height="7.2" rx="1.4" fill="currentColor"/></svg></span><span class="bn">TokenBar</span></div>
+              <div class="sig-r">Generated · Jul 2026</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cardwrap"><span class="cap">9 : 16 — 360×640</span>
+        <div class="stage916">
+          <div class="card st p">
+            <div class="st-mast">
+              <div><div class="ttl">Usage Statement</div><div class="sub">Cumulative for period</div></div>
+              <div class="meta"><div class="pd">This week · Jul 12 – 18</div><div class="no">NO. TB-2026-0718</div></div>
+            </div>
+            <div class="st-hero">
+              <div class="cell"><div class="st-lbl">Total tokens</div><div class="st-tok tnum">324.9<em>M</em></div><div class="st-tsub">2 agents · 37 sessions · streak 12d</div></div>
+              <div class="cell cost"><div class="st-lbl">Est. cost</div><div class="st-cost tnum"><i>$</i>310.42</div><small>est. usd</small></div>
+            </div>
+            <div class="st-ledger">
+              <div class="st-lhead"><span>Agent</span><span>Share</span><span>Tokens</span></div>
+              <div class="st-lrow"><span class="nm">Claude Code</span><span class="lead"></span><span class="pct">66%</span><span class="val tnum">213.4M</span></div>
+              <div class="st-lrow"><span class="nm">Codex CLI</span><span class="lead"></span><span class="pct">34%</span><span class="val tnum">111.5M</span></div>
+            </div>
+            <div class="st-foot">
+              <div class="sig"><span class="mk"><svg class="batt" width="24" height="14" viewBox="0 0 28 16" fill="none"><rect x="1" y="2" width="22" height="12" rx="3" stroke="currentColor" stroke-width="1.6"/><rect x="24" y="6" width="2.6" height="4" rx="1" fill="currentColor"/><rect x="3.4" y="4.4" width="12" height="7.2" rx="1.4" fill="currentColor"/></svg></span><span class="bn">TokenBar</span></div>
+              <div class="sig-r">Jul 2026</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 2 · DIAGNOSTICS ════════════════════════════════════════════ -->
+  <section class="tpl">
+    <div class="tpl-head">
+      <span class="idx">02</span><h2>系統診斷 · Diagnostics</h2><span class="fam">.shdx-</span>
+    </div>
+    <p class="tpl-rationale">身份是<b>終端機視窗</b>。重設計換上真實感的 macOS 標題列(左紅點點綴、置中視窗名),命令列提示符改洋紅 <code>$</code> + 閃現游標方塊。焦點區把 <b>TOTAL_TOKENS</b> 放大成 64px 主數字,旁邊兩個 KV 欄(cost / sessions)。新增一條 <b>24h 用量 sparkline</b>,14:00 尖峰用洋紅高亮,呼應終端「輸出資料」的氣質。下方表格改成有內嵌長條的等寬排版,尾端 <code>EOF</code> + 署名。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9 — 1200×675</span>
+        <div class="stage16">
+          <div class="card dx">
+            <div class="dx-bar"><div class="dots"><i></i><i></i><i></i></div><div class="win">tokenbar — report — 80×24</div></div>
+            <div class="dx-body">
+              <div class="dx-cmd"><span class="p">$ </span>tokenbar <span class="fl">--report --range week</span><span class="cur"></span></div>
+              <div class="dx-cmt"># This week · Jul 12 – 18 · streak 12d · peak 12.4M/day</div>
+              <div class="dx-focal">
+                <div class="big"><div class="k tnum">TOTAL_TOKENS</div><div class="v tnum">324.9<em>M</em></div></div>
+                <div class="kv">
+                  <div><div class="k">EST_COST_USD</div><div class="v tnum">310.42 <small>est</small></div></div>
+                  <div><div class="k">SESSIONS</div><div class="v tnum">37</div></div>
+                </div>
+              </div>
+              <div class="dx-spark">
+                <div class="lbl"><span>HOURLY_LOAD [00–23]</span><span>peak <b>14:00</b></span></div>
+                <div class="bars">
+                  <i style="height:3%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:3%"></i><i style="height:6%"></i><i style="height:13%"></i><i style="height:28%"></i><i style="height:44%"></i><i style="height:52%"></i><i style="height:58%"></i><i style="height:63%"></i><i style="height:74%"></i><i class="pk" style="height:100%"></i><i style="height:88%"></i><i style="height:74%"></i><i style="height:66%"></i><i style="height:70%"></i><i style="height:61%"></i><i style="height:48%"></i><i style="height:33%"></i><i style="height:20%"></i><i style="height:9%"></i>
+                </div>
+              </div>
+              <div class="dx-tbl">
+                <div class="hd"><span></span><span>agent</span><span>load</span><span>tokens</span><span>%</span></div>
+                <div class="tr"><span class="g">&gt;</span><span class="nm">Claude Code</span><span class="barcell"><i style="width:100%"></i></span><span class="num tnum">213.4M</span><span class="pc tnum">66%</span></div>
+                <div class="tr dim"><span class="g">&gt;</span><span class="nm">Codex CLI</span><span class="barcell"><i style="width:52%"></i></span><span class="num tnum">111.5M</span><span class="pc tnum">34%</span></div>
+              </div>
+              <div class="dx-foot">
+                <div class="eof">— EOF —</div>
+                <div class="sig"><span class="mk"><svg class="batt" width="22" height="13" viewBox="0 0 28 16" fill="none"><rect x="1" y="2" width="22" height="12" rx="3" stroke="currentColor" stroke-width="1.6"/><rect x="24" y="6" width="2.6" height="4" rx="1" fill="currentColor"/><rect x="3.4" y="4.4" width="12" height="7.2" rx="1.4" fill="currentColor"/></svg></span><span class="bn">TokenBar</span><span class="sig-r">Jul 2026</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cardwrap"><span class="cap">9 : 16 — 360×640</span>
+        <div class="stage916">
+          <div class="card dx p">
+            <div class="dx-bar"><div class="dots"><i></i><i></i><i></i></div><div class="win">tokenbar</div></div>
+            <div class="dx-body">
+              <div class="dx-cmd"><span class="p">$ </span>tokenbar <span class="fl">--report</span><span class="cur"></span></div>
+              <div class="dx-cmt"># Jul 12 – 18 · streak 12d</div>
+              <div class="dx-focal">
+                <div class="big"><div class="k tnum">TOTAL_TOKENS</div><div class="v tnum">324.9<em>M</em></div></div>
+                <div class="kv">
+                  <div><div class="k">COST_USD</div><div class="v tnum">310.42</div></div>
+                  <div><div class="k">SESSIONS</div><div class="v tnum">37</div></div>
+                </div>
+              </div>
+              <div class="dx-spark">
+                <div class="lbl"><span>HOURLY [00–23]</span><span>peak <b>14:00</b></span></div>
+                <div class="bars">
+                  <i style="height:3%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:2%"></i><i style="height:3%"></i><i style="height:6%"></i><i style="height:13%"></i><i style="height:28%"></i><i style="height:44%"></i><i style="height:52%"></i><i style="height:58%"></i><i style="height:63%"></i><i style="height:74%"></i><i class="pk" style="height:100%"></i><i style="height:88%"></i><i style="height:74%"></i><i style="height:66%"></i><i style="height:70%"></i><i style="height:61%"></i><i style="height:48%"></i><i style="height:33%"></i><i style="height:20%"></i><i style="height:9%"></i>
+                </div>
+              </div>
+              <div class="dx-tbl">
+                <div class="hd"><span></span><span>agent</span><span>tokens</span><span>%</span></div>
+                <div class="tr"><span class="g">&gt;</span><span class="nm">Claude Code</span><span class="num tnum">213.4M</span><span class="pc tnum">66%</span></div>
+                <div class="tr dim"><span class="g">&gt;</span><span class="nm">Codex CLI</span><span class="num tnum">111.5M</span><span class="pc tnum">34%</span></div>
+              </div>
+              <div class="dx-foot">
+                <div class="eof">— EOF —</div>
+                <div class="sig"><span class="bn">TokenBar</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 3 · MINIMAL ════════════════════════════════════════════════ -->
+  <section class="tpl">
+    <div class="tpl-head">
+      <span class="idx">03</span><h2>極簡 · Minimal</h2><span class="fam">.shmn-</span>
+    </div>
+    <p class="tpl-rationale">身份是<b>一個超大數字</b>。重設計把 <b>324.9M</b> 推到 224px、佔滿視覺重心,<span style="color:#EC4899">M</span> 用洋紅收尾成為唯一色彩事件。頂列僅留極小標籤 + 成本,主數字下方一行 caption(tokens · 期間 · 場次)。分帳改成雙欄極細軌條,克制到只是註腳,把留白讓給數字本身。頁尾右側輕署名 —— 這張卡的賭注是「大到縮圖也能一眼讀出量級」。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9 — 1200×675</span>
+        <div class="stage16">
+          <div class="card mn">
+            <div class="mn-top"><div class="tag">Usage report</div><div class="rt"><b>$310.42</b> est · 37 sessions</div></div>
+            <div class="mn-hero">
+              <div class="mn-big tnum">324.9<span>M</span></div>
+              <div class="mn-cap"><b>tokens</b><span class="dot"></span>This week · Jul 12 – 18<span class="dot"></span>streak 12d</div>
+              <div class="mn-split">
+                <div class="mn-brow"><span class="nm">Claude Code</span><span class="tr"><i style="width:100%"></i></span><span class="tk tnum">213.4M</span></div>
+                <div class="mn-brow"><span class="nm">Codex CLI</span><span class="tr"><i style="width:52%"></i></span><span class="tk tnum">111.5M</span></div>
+              </div>
+            </div>
+            <div class="mn-foot">
+              <div class="sig-r">Peak 14:00</div>
+              <div class="sig"><span class="mk"><svg class="batt" width="24" height="14" viewBox="0 0 28 16" fill="none"><rect x="1" y="2" width="22" height="12" rx="3" stroke="currentColor" stroke-width="1.6"/><rect x="24" y="6" width="2.6" height="4" rx="1" fill="currentColor"/><rect x="3.4" y="4.4" width="12" height="7.2" rx="1.4" fill="currentColor"/></svg></span><span class="bn">TokenBar · Jul 2026</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cardwrap"><span class="cap">9 : 16 — 360×640</span>
+        <div class="stage916">
+          <div class="card mn p">
+            <div class="mn-top"><div class="tag">Usage report</div><div class="rt"><b>$310.42</b> est</div></div>
+            <div class="mn-hero">
+              <div class="mn-big tnum">324.9<span>M</span></div>
+              <div class="mn-cap"><b>tokens</b><span class="dot"></span>Jul 12 – 18<span class="dot"></span>37 sessions</div>
+              <div class="mn-split">
+                <div class="mn-brow"><span class="nm">Claude Code</span><span class="tr"><i style="width:100%"></i></span><span class="tk tnum">213.4M</span></div>
+                <div class="mn-brow"><span class="nm">Codex CLI</span><span class="tr"><i style="width:52%"></i></span><span class="tk tnum">111.5M</span></div>
+              </div>
+            </div>
+            <div class="mn-foot">
+              <div class="sig-r">Peak 14:00</div>
+              <div class="sig"><span class="bn">TokenBar</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 4 · FUEL ═══════════════════════════════════════════════════ -->
+  <section class="tpl">
+    <div class="tpl-head">
+      <span class="idx">04</span><h2>AI 加油站 · Fuel</h2><span class="fam">.shfl-</span>
+    </div>
+    <p class="tpl-rationale">身份是<b>加油機收據</b>。重設計新增一塊<b>黑底幫浦讀數面板</b>(pump display):等寬螢光數字顯示總加注量 324.9M 與金額 $310.42,直接把「油槍讀數」的隱喻具象化,成為明確焦點。下方模型列改成加油「等級」(01–04 grade 編號 + 名稱 + 點狀引導 + tabular 用量),頂部洋紅遮篷條與細網格保留站點質感。頁尾統一署名。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9 — 1200×675</span>
+        <div class="stage16">
+          <div class="card fl">
+            <div class="fl-canopy"></div><div class="fl-grate"></div>
+            <div class="fl-in">
+              <div class="fl-head">
+                <div class="fl-brand"><div class="fl-pump"><i></i></div><div class="fl-nm"><b>TOKEN STATION</b><span>TOKENBAR FUEL DEPOT · JUL 2026</span></div></div>
+                <div class="fl-chip"><span class="on">MODELS</span><span>AGENTS</span></div>
+              </div>
+              <div class="fl-display">
+                <div class="grp"><div class="k">FUEL DISPENSED</div><div class="v tnum">324.9<em>M</em></div><div class="u">TOKENS · WEEK JUL 12–18</div></div>
+                <div class="grp cost"><div class="k">TOTAL SALE</div><div class="v tnum">$310.42</div><div class="u">EST. USD</div></div>
+              </div>
+              <div class="fl-board">
+                <div class="fl-row"><span class="gr">01</span><span class="fl-mdl">CLAUDE-FABLE-5</span><span class="fl-dots"></span><span class="fl-tok tnum">168.2<em>M</em></span><span class="fl-pct tnum">52%</span></div>
+                <div class="fl-row"><span class="gr">02</span><span class="fl-mdl">GPT-5.3-CODEX</span><span class="fl-dots"></span><span class="fl-tok tnum">86.9<em>M</em></span><span class="fl-pct tnum">27%</span></div>
+                <div class="fl-row"><span class="gr">03</span><span class="fl-mdl">CLAUDE-SONNET-5</span><span class="fl-dots"></span><span class="fl-tok tnum">45.2<em>M</em></span><span class="fl-pct tnum">14%</span></div>
+                <div class="fl-row"><span class="gr">04</span><span class="fl-mdl">GPT-5.3-CODEX-MINI</span><span class="fl-dots"></span><span class="fl-tok tnum">24.6<em>M</em></span><span class="fl-pct tnum">7%</span></div>
+              </div>
+              <div class="fl-foot">
+                <div class="sig-r">37 sessions · streak 12d</div>
+                <div class="sig"><span class="mk"><svg class="batt" width="22" height="13" viewBox="0 0 28 16" fill="none"><rect x="1" y="2" width="22" height="12" rx="3" stroke="currentColor" stroke-width="1.6"/><rect x="24" y="6" width="2.6" height="4" rx="1" fill="currentColor"/><rect x="3.4" y="4.4" width="12" height="7.2" rx="1.4" fill="currentColor"/></svg></span><span class="bn">TokenBar</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cardwrap"><span class="cap">9 : 16 — 360×640</span>
+        <div class="stage916">
+          <div class="card fl p">
+            <div class="fl-canopy"></div><div class="fl-grate"></div>
+            <div class="fl-in">
+              <div class="fl-head">
+                <div class="fl-brand"><div class="fl-pump"><i></i></div><div class="fl-nm"><b>TOKEN STATION</b><span>TOKENBAR FUEL DEPOT</span></div></div>
+                <div class="fl-chip"><span class="on">MODELS</span><span>AGENTS</span></div>
+              </div>
+              <div class="fl-display">
+                <div class="grp"><div class="k">FUEL DISPENSED</div><div class="v tnum">324.9<em>M</em></div><div class="u">TOKENS · JUL 12–18</div></div>
+                <div class="grp cost"><div class="k">TOTAL SALE</div><div class="v tnum">$310.42</div><div class="u">EST. USD</div></div>
+              </div>
+              <div class="fl-board">
+                <div class="fl-row"><span class="gr">01</span><span class="fl-mdl">CLAUDE-FABLE-5</span><span class="fl-tok tnum">168.2<em>M</em></span></div>
+                <div class="fl-row"><span class="gr">02</span><span class="fl-mdl">GPT-5.3-CODEX</span><span class="fl-tok tnum">86.9<em>M</em></span></div>
+                <div class="fl-row"><span class="gr">03</span><span class="fl-mdl">CLAUDE-SONNET-5</span><span class="fl-tok tnum">45.2<em>M</em></span></div>
+                <div class="fl-row"><span class="gr">04</span><span class="fl-mdl">GPT-5.3-CODEX-MINI</span><span class="fl-tok tnum">24.6<em>M</em></span></div>
+              </div>
+              <div class="fl-foot">
+                <div class="sig-r">37 sess</div>
+                <div class="sig"><span class="bn">TokenBar</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 5 · ISLAND_CARD ════════════════════════════════════════════ -->
+  <section class="tpl">
+    <div class="tpl-head">
+      <span class="idx">05</span><h2>島嶼卡 · Island Card</h2><span class="fam">.shic-</span>
+    </div>
+    <p class="tpl-rationale">身份是<b>卡片上的 Dynamic Island 膠囊</b>。重設計把膠囊做成真正的黑色浮起藥丸(含電池 + LIVE 洋紅點),直接引用 App 的 island pill 語言當招牌。中段大數字 <b>324.9M</b> 與成本、場次同一基線並排。下半改成本卡獨有的<b>額度儀表</b>:Claude 5h / Claude 週 / Codex 週 三條膠囊軌,gem 灰階漸層填色 + 右側百分比 —— 這是唯一能露出訂閱額度的卡,強化「即時感」。頁尾細規線 + 署名。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9 — 1200×675</span>
+        <div class="stage16">
+          <div class="card ic">
+            <div class="ic-glow"></div>
+            <div class="ic-top">
+              <div class="ic-pill"><span class="pb"><i></i></span><b>TokenBar</b><span class="sep"></span><span class="liv">LIVE</span></div>
+              <div class="ic-period">This week · Jul 12 – 18</div>
+            </div>
+            <div class="ic-hero">
+              <div class="ic-htag">Cumulative usage</div>
+              <div class="ic-big">
+                <b class="tnum">324.9<em>M</em></b>
+                <span class="cost tnum">$310.42<u>est</u></span>
+                <span class="sess"><div class="n tnum">37</div><div class="l">sessions</div></span>
+              </div>
+            </div>
+            <div class="ic-quota">
+              <div class="ic-qhead">Quota used · this cycle</div>
+              <div class="ic-qrow"><span class="ic-qlbl">Claude <small>· 5h</small></span><span class="ic-track"><span class="ic-fill" style="width:38%;background:#18181B"></span></span><span class="ic-qval tnum">38%<small> used</small></span></div>
+              <div class="ic-qrow"><span class="ic-qlbl">Claude <small>· week</small></span><span class="ic-track"><span class="ic-fill" style="width:42%;background:#52525B"></span></span><span class="ic-qval tnum">42%<small> used</small></span></div>
+              <div class="ic-qrow"><span class="ic-qlbl">Codex <small>· week</small></span><span class="ic-track"><span class="ic-fill" style="width:55%;background:#71717A"></span></span><span class="ic-qval tnum">55%<small> used</small></span></div>
+            </div>
+            <div class="ic-foot">
+              <div class="sig"><span class="mk"><svg class="batt" width="24" height="14" viewBox="0 0 28 16" fill="none"><rect x="1" y="2" width="22" height="12" rx="3" stroke="currentColor" stroke-width="1.6"/><rect x="24" y="6" width="2.6" height="4" rx="1" fill="currentColor"/><rect x="3.4" y="4.4" width="12" height="7.2" rx="1.4" fill="currentColor"/></svg></span><span class="bn">TokenBar</span></div>
+              <div class="sig-r">Jul 2026 · streak 12d</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cardwrap"><span class="cap">9 : 16 — 360×640</span>
+        <div class="stage916">
+          <div class="card ic p">
+            <div class="ic-glow"></div>
+            <div class="ic-top">
+              <div class="ic-pill"><span class="pb"><i></i></span><b>TokenBar</b><span class="sep"></span><span class="liv">LIVE</span></div>
+              <div class="ic-period">This week · Jul 12 – 18</div>
+            </div>
+            <div class="ic-hero">
+              <div class="ic-htag">Cumulative usage</div>
+              <div class="ic-big">
+                <b class="tnum">324.9<em>M</em></b>
+                <span class="sess"><span class="cost tnum">$310.42<u>est</u></span></span>
+                <span class="sess"><div class="n tnum">37</div><div class="l">sessions</div></span>
+              </div>
+            </div>
+            <div class="ic-quota">
+              <div class="ic-qhead">Quota used · this cycle</div>
+              <div class="ic-qrow"><span class="ic-qlbl">Claude 5h</span><span class="ic-track"><span class="ic-fill" style="width:38%;background:#18181B"></span></span><span class="ic-qval tnum">38%</span></div>
+              <div class="ic-qrow"><span class="ic-qlbl">Claude wk</span><span class="ic-track"><span class="ic-fill" style="width:42%;background:#52525B"></span></span><span class="ic-qval tnum">42%</span></div>
+              <div class="ic-qrow"><span class="ic-qlbl">Codex wk</span><span class="ic-track"><span class="ic-fill" style="width:55%;background:#71717A"></span></span><span class="ic-qval tnum">55%</span></div>
+            </div>
+            <div class="ic-foot">
+              <div class="sig"><span class="bn">TokenBar</span></div>
+              <div class="sig-r">Jul 2026</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 6 · WA ═════════════════════════════════════════════════════ -->
+  <section class="tpl">
+    <div class="tpl-head">
+      <span class="idx">06</span><h2>和 · Wa (禪帳)</h2><span class="fam">.shwa-</span>
+    </div>
+    <p class="tpl-rationale">身份是<b>直式禪意帳簿 + 量印</b>。重設計保留左側直排欄(垂直襯線 "Cumulative Ledger")與縱貫細規線,主數字改襯線特大 <b>324.9M</b>,期間也用襯線,強化書法帳冊氣質。分帳列收成 1px 髮絲軌(fill 溢出 1px 的克制手法),數值用等寬字。右下角 <b>量</b> 印維持洋紅方章 + 雙層白描邊。左下角統一署名,與印章形成對角平衡。留白是主角。</p>
+    <div class="cards">
+      <div class="cardwrap"><span class="cap">16 : 9 — 1200×675</span>
+        <div class="stage16">
+          <div class="card wa">
+            <div class="wa-rule"></div>
+            <div class="wa-side">
+              <div class="wa-brand"><span class="pb"><i></i></span><b>TokenBar</b></div>
+              <div class="wa-vert">Cumulative Ledger</div>
+              <div class="wa-vsub">JUL 2026</div>
+            </div>
+            <div class="wa-in">
+              <div class="wa-head"><div class="wa-kicker">Total tokens</div><div class="wa-period">This week · Jul 12 – 18</div></div>
+              <div class="wa-main">
+                <div class="wa-num tnum">324.9<em>M</em></div>
+                <div class="wa-cost tnum">$310.42<u>est. usd</u></div>
+                <div class="wa-split">
+                  <div class="wa-srow"><span class="wa-slbl">Claude Code</span><span class="wa-strack"><span class="wa-sfill" style="width:100%"></span></span><span class="wa-sval tnum">213.4M</span></div>
+                  <div class="wa-srow"><span class="wa-slbl">Codex CLI</span><span class="wa-strack"><span class="wa-sfill" style="width:52%"></span></span><span class="wa-sval tnum">111.5M</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="wa-foot"><span class="sig-r">TokenBar · Share Report · 37 sessions · streak 12d</span></div>
+            <div class="wa-seal"><span>量</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="cardwrap"><span class="cap">9 : 16 — 360×640</span>
+        <div class="stage916">
+          <div class="card wa p">
+            <div class="wa-side">
+              <div class="wa-brand"><span class="pb"><i></i></span><b>TokenBar</b></div>
+              <div class="wa-vert">Cumulative Ledger</div>
+            </div>
+            <div class="wa-in">
+              <div class="wa-head"><div class="wa-kicker">Total tokens</div><div class="wa-period">This week · Jul 12 – 18</div></div>
+              <div class="wa-main">
+                <div class="wa-num tnum">324.9<em>M</em></div>
+                <div class="wa-cost tnum">$310.42<u>est. usd</u></div>
+                <div class="wa-split">
+                  <div class="wa-srow"><span class="wa-slbl">Claude Code</span><span class="wa-strack"><span class="wa-sfill" style="width:100%"></span></span><span class="wa-sval tnum">213.4M</span></div>
+                  <div class="wa-srow"><span class="wa-slbl">Codex CLI</span><span class="wa-strack"><span class="wa-sfill" style="width:52%"></span></span><span class="wa-sval tnum">111.5M</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="wa-foot"><span class="sig-r">TokenBar · Jul 2026</span></div>
+            <div class="wa-seal"><span>量</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
