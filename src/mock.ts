@@ -171,7 +171,7 @@ export function mockAnalytics(range: "today" | "week" | "month"): Analytics {
       { kind: "other", tokens: Math.round(totalTokens * 0.16) },
     ],
     byProject: [
-      { name: "tokenbar", tokens: Math.round(totalTokens * 0.4) },
+      { name: "atoll", tokens: Math.round(totalTokens * 0.4) },
       { name: "webapp", tokens: Math.round(totalTokens * 0.24) },
       { name: "infra", tokens: Math.round(totalTokens * 0.14) },
       { name: "docs-site", tokens: Math.round(totalTokens * 0.08) },

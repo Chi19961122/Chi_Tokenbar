@@ -30,13 +30,16 @@ type ShareRasterOptions = {
 let fontEmbedCssPromise: Promise<string> | undefined;
 const SHARE_FONT_FAMILIES = "'Geist', 'Geist Mono', 'Playfair Display', 'Noto Sans TC'";
 
+// Display labels are the six Atoll style names (short English, matching the
+// panel's other plain-string controls). The ShareStyle KEY (first tuple element)
+// is unchanged — keys persist in settings.
 const STYLES: [ShareStyle, string][] = [
-  ["statement", "statement"],
-  ["diagnostics", "diagnostics"],
-  ["minimal", "minimal"],
-  ["fuel", "fuel"],
-  ["island_card", "island"],
-  ["wa", "wa"],
+  ["statement", "Ledger"],
+  ["diagnostics", "Terminal"],
+  ["minimal", "Minimal"],
+  ["fuel", "Sounding"],
+  ["island_card", "Atoll"],
+  ["wa", "Seal"],
 ];
 
 export interface SharePanelOpts {
@@ -261,7 +264,7 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
 
   container.querySelector("#sharep-save")!.addEventListener("click", async () => {
     const sizeTag = o.size === "story" ? "-9x16" : "";
-    const filename = `tokenbar-${o.range}${sizeTag}-${todayStamp()}.png`;
+    const filename = `atoll-${o.range}${sizeTag}-${todayStamp()}.png`;
     try {
       const dataUrl = await rasterizePng();
       if (isTauri()) {

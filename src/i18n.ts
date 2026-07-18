@@ -158,7 +158,7 @@ const en = {
   "menu.hide": "Hide island",
 
   // Re-login affordance
-  "relogin.cantLaunch": "TokenBar can't launch claude. Run this in your terminal:",
+  "relogin.cantLaunch": "Atoll can't launch claude. Run this in your terminal:",
   "relogin.copy": "Copy",
   "relogin.copied": "Copied",
   "relogin.ok": "Login window opened. Refresh with ⟳ above when done.",
@@ -366,7 +366,7 @@ const zhTW = {
   "menu.settings": "設定",
   "menu.hide": "隱藏島嶼",
 
-  "relogin.cantLaunch": "TokenBar 無法啟動 claude,請在終端機執行:",
+  "relogin.cantLaunch": "Atoll 無法啟動 claude,請在終端機執行:",
   "relogin.copy": "複製",
   "relogin.copied": "已複製",
   "relogin.ok": "已開啟登入視窗,完成後請按上方 ⟳ 重新整理。",

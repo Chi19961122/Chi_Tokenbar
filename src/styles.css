@@ -445,6 +445,19 @@ body.expanded #island {
   padding: 10px 20px 8px;
   border-bottom: 1px solid var(--hairline);
 }
+.pbrand {
+  /* flex-none brand slot; the header's own gap:8px provides the right spacing
+     to .ptabs (no extra margin — that would double it). */
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+}
+.pbrand svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+}
 .ptabs {
   display: inline-flex;
   gap: 2px;
