@@ -45,6 +45,10 @@
 - F-09 [func] 總覽切去其他頁籤會卡、載入很慢。**根因**：快取 key 含 snapshot `updated_at`，每輪新 snapshot 都讓 key 失效 → 頁籤一點就 await 數秒的後端掃描，舊畫面死在原地無回饋。**修**：stale-while-revalidate——同 range/filter 只是世代較舊 → 立刻畫舊資料、背景刷新；全冷 → 立刻出 skeleton；同 key 掃描去重；落地重繪防 range／filter／report 超越；重繪保留捲動位置。→ `0e9d8a7`。（掃描本身增量化仍留下輪。）
 - F-10 [visual] ϟ 圖示 + 右側 min % left 膠囊整行移除（使用者要求；與量測列表一眼可見的資訊重複）。相關 CSS 全清，首個 section head 去頂線避免與 header 髮絲線疊雙。→ `d2a4662`。
 
+## 2026-07-18 v0.8 輪決策記錄
+
+- **T-918** Grok 退回 usage-only（使用者定案）：context 填充率卡「單一 session、新對話歸零」的語意與訂閱額度差太多，移除限額卡、分析頁用量保留。**未來路徑**：前端 Provider::Grok 渲染鏈（PROVIDER_META、prov-grok 色、i18n、filter arm）全部保留沉睡，xAI 若開放額度查詢 API，只需新增一個回傳 grok 5h/週 Limit 的資料來源即可點亮；context 讀數的舊 provider 在 git 歷史（`ed72347` 的 providers/grok.rs）。
+
 ## 2026-07-18 四次驗收回饋（v0.6 輪）
 
 **本輪已修（2 commit，verifier 全數 CONFIRMED）**

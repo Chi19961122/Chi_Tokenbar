@@ -572,7 +572,6 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             // empty UI).
             let want_codex = sources.iter().any(|s| s == "codex");
             let want_claude = sources.iter().any(|s| s == "claude");
-            let want_grok = sources.iter().any(|s| s == "grok");
 
             let live = if want_codex && matches!(codex_source.as_str(), "live" | "auto") {
                 codex_live.poll(now, force, refresh_secs)
@@ -597,13 +596,11 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             if want_claude {
                 limits.extend(anthropic.poll(now, force, allow_refresh, refresh_secs));
             }
-            // Grok's context-fill limit: a cheap local file stat + small JSON
-            // read every round (no network, no backoff needed). Always yields
-            // exactly one grok.ctx limit — a real reading, Stale, or an
-            // InsufficientData placeholder — so a selected Grok always has a card.
-            if want_grok {
-                limits.extend(providers::grok::read_limits());
-            }
+            // Grok deliberately produces NO limits (T-918 使用者定案): its only
+            // local reading is per-session context fill, which confused more
+            // than it informed — Grok stays usage-only (analytics). The
+            // frontend keeps its Provider::Grok rendering path dormant so a
+            // real 5h/week card can light up if xAI ever exposes a quota API.
             // The single filter node for the whole app (§ see apply_provider_filter).
             // Skipping polls above is an optimisation; this is the correctness
             // guarantee — it still runs so a future third provider cannot leak
@@ -676,8 +673,9 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
 }
 
 /// Filter limits to the selected `sources`. Anthropic limits show iff "claude"
-/// is selected, Codex iff "codex", and Grok's context-fill limit iff "grok"
-/// (T-917 — Grok is no longer usage-only; it produces one `grok.ctx` limit).
+/// is selected, Codex iff "codex". Grok currently produces no limits (T-918:
+/// usage-only again), but its filter arm stays so a future quota card is
+/// already gated correctly the day a real xAI quota source exists.
 ///
 /// Membership is explicit: an unselected provider is dropped, and an empty
 /// selection yields an empty island (an honest empty UI is the intended result
