@@ -18,9 +18,19 @@ const TOKEN_URL: &str = "https://console.anthropic.com/v1/oauth/token";
 /// Claude Code's public OAuth client id (community-known).
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const BETA_HEADER: &str = "oauth-2025-04-20";
-const REFRESH_SECS: i64 = 180; // cache window per §9 (~180s)
+const REFRESH_SECS: i64 = 180; // default cache window per §9 (~180s); the live
+                               // cadence now comes from settings.refresh_secs
 /// Floor for forced (manual) refreshes so button-spamming can't hammer the API.
 const FORCE_MIN_SECS: i64 = 5;
+/// T-910 429 backoff cap: the effective interval never exceeds this, no matter
+/// how many consecutive 429s pile up. Ten minutes keeps a genuinely
+/// rate-limited account off the shared bucket (docs/FEEDBACK.md F-01) while
+/// still recovering promptly once the 429s clear.
+const BACKOFF_CAP_SECS: i64 = 600;
+/// Ceiling on the strike counter. `base * 2^strikes` reaches `BACKOFF_CAP_SECS`
+/// after only a couple of strikes for any offered base (180*2^2 = 720 > 600),
+/// so this cap is purely overflow defence for the left-shift.
+const MAX_STRIKES: u32 = 16;
 
 /// Why a Claude fetch failed. Has **two readers**, and therefore two outputs:
 /// `label()` for developers (precise, via `TOKENBAR_DEBUG` stderr) and
@@ -150,6 +160,16 @@ fn classify(err: ureq::Error, http: fn(u16) -> FailureStage, transport: fn(&'sta
     }
 }
 
+/// Effective poll interval under 429 backoff: the base cadence doubled once per
+/// consecutive 429 strike, capped at `BACKOFF_CAP_SECS`. Pure (no `self`, no
+/// network) so the doubling/cap math is unit-testable in isolation. Orthogonal
+/// to `reconcile()`'s Stale retention — this only decides *when* to fetch next,
+/// never *what* to display.
+fn backoff_interval(base: i64, strikes: u32) -> i64 {
+    let factor = 1_i64.checked_shl(strikes).unwrap_or(i64::MAX);
+    base.saturating_mul(factor).min(BACKOFF_CAP_SECS)
+}
+
 pub struct AnthropicProvider {
     last_fetch: i64,
     cached: Vec<Limit>,
@@ -158,6 +178,14 @@ pub struct AnthropicProvider {
     /// Stale instead of blanking the whole provider. Empty until the first
     /// success. Holds only `Limit` data — never any token or credential.
     last_good: Vec<Limit>,
+    /// Consecutive 429 strikes for exponential backoff. Incremented only on a
+    /// 429, reset to 0 by any successful fetch. Separate from `last_good`: this
+    /// governs fetch *cadence*, that governs displayed *values*.
+    strikes: u32,
+    /// Effective interval (secs) chosen at the last poll, including any 429
+    /// backoff. Drives `next_fetch_at` so the header countdown reflects the real
+    /// next-fetch time, not the un-backed-off base. Holds no secret.
+    interval: i64,
 }
 
 impl AnthropicProvider {
@@ -166,29 +194,56 @@ impl AnthropicProvider {
             last_fetch: 0,
             cached: Vec::new(),
             last_good: Vec::new(),
+            strikes: 0,
+            interval: REFRESH_SECS,
         }
     }
 
-    /// Return limits, hitting the network at most every REFRESH_SECS
-    /// (FORCE_MIN_SECS when the user asked for a manual refresh).
-    /// `allow_refresh` is read from live settings each round so the toggle
-    /// takes effect without restarting the app.
-    pub fn poll(&mut self, now: i64, force: bool, allow_refresh: bool) -> Vec<Limit> {
-        let min_gap = if force { FORCE_MIN_SECS } else { REFRESH_SECS };
+    /// Return limits, hitting the network at most every `refresh_secs`
+    /// (FORCE_MIN_SECS when the user asked for a manual refresh). Both
+    /// `refresh_secs` and `allow_refresh` are read from live settings each round
+    /// so a change takes effect without restarting the app. Under 429 backoff
+    /// the effective interval is `refresh_secs` doubled per strike (see
+    /// `backoff_interval`).
+    pub fn poll(&mut self, now: i64, force: bool, allow_refresh: bool, refresh_secs: i64) -> Vec<Limit> {
+        let effective = backoff_interval(refresh_secs, self.strikes);
+        self.interval = effective;
+        let min_gap = if force { FORCE_MIN_SECS } else { effective };
         if now - self.last_fetch < min_gap && !self.cached.is_empty() {
             return self.cached.clone();
         }
         self.last_fetch = now;
         let result = self.fetch_inner(allow_refresh);
+        // 429 backoff, kept orthogonal to reconcile()'s Stale logic: only a 429
+        // slows the next fetch, and any success clears the penalty. Other
+        // failures (5xx / network / json / schema) leave the cadence untouched.
+        match &result {
+            Ok(_) => self.strikes = 0,
+            Err(FailureStage::UsageHttp(429)) => {
+                self.strikes = (self.strikes + 1).min(MAX_STRIKES);
+            }
+            Err(_) => {}
+        }
+        // Re-derive after the strike change so next_fetch_at points at the real
+        // next fetch.
+        self.interval = backoff_interval(refresh_secs, self.strikes);
+        if std::env::var("TOKENBAR_DEBUG").is_ok() {
+            // Backoff state only — never any response body or token material.
+            eprintln!(
+                "[tb] anthropic backoff: interval={} strikes={}",
+                self.interval, self.strikes
+            );
+        }
         self.cached = reconcile(&mut self.last_good, result);
         self.cached.clone()
     }
 
     /// Epoch secs of the next scheduled network fetch (cache expiry). Drives the
     /// header refresh countdown; the scheduler polls sooner but returns cached
-    /// data until this point.
+    /// data until this point. Reflects the current effective interval, so a 429
+    /// backoff lengthens the countdown too.
     pub fn next_fetch_at(&self) -> i64 {
-        self.last_fetch + REFRESH_SECS
+        self.last_fetch + self.interval
     }
 
     fn fetch_inner(&self, allow_refresh: bool) -> Result<Vec<Limit>, FailureStage> {
@@ -850,6 +905,41 @@ mod tests {
         // entry without percent skipped; entry without kind skipped
         assert_eq!(ls.len(), 1);
         assert_eq!(ls[0].id, "cc.5h");
+    }
+
+    // ── T-910 429 backoff math ─────────────────────────────────────────
+
+    /// No strikes → the base cadence is used unchanged.
+    #[test]
+    fn backoff_zero_strikes_is_base() {
+        assert_eq!(backoff_interval(30, 0), 30);
+        assert_eq!(backoff_interval(60, 0), 60);
+        assert_eq!(backoff_interval(180, 0), 180);
+    }
+
+    /// Each strike doubles the interval until the 600s cap.
+    #[test]
+    fn backoff_doubles_then_caps() {
+        // base 30: 30 → 60 → 120 → 240 → 480 → 600(capped from 960)
+        assert_eq!(backoff_interval(30, 1), 60);
+        assert_eq!(backoff_interval(30, 2), 120);
+        assert_eq!(backoff_interval(30, 3), 240);
+        assert_eq!(backoff_interval(30, 4), 480);
+        assert_eq!(backoff_interval(30, 5), 600);
+        assert_eq!(backoff_interval(30, 6), 600);
+        // base 180 reaches the cap after two strikes (720 → 600).
+        assert_eq!(backoff_interval(180, 1), 360);
+        assert_eq!(backoff_interval(180, 2), 600);
+    }
+
+    /// A large strike count must never overflow the left-shift — it stays at the
+    /// cap. (The provider also clamps strikes at MAX_STRIKES, but the math is
+    /// defended independently.)
+    #[test]
+    fn backoff_never_overflows() {
+        assert_eq!(backoff_interval(30, MAX_STRIKES), 600);
+        assert_eq!(backoff_interval(30, 1000), 600);
+        assert_eq!(backoff_interval(180, u32::MAX), 600);
     }
 
     /// Healthy good limits built from the live fixture, for the reconcile tests.

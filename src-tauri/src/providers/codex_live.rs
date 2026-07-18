@@ -9,12 +9,16 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
-const REFRESH_SECS: i64 = 180;
+const REFRESH_SECS: i64 = 180; // default cadence; the live value now comes from
+                               // settings.refresh_secs (T-910)
 const FORCE_MIN_SECS: i64 = 5;
 
 pub struct CodexLiveProvider {
     last_fetch: i64,
     cached: Option<Vec<Limit>>,
+    /// The interval (secs) used at the last poll, so `next_fetch_at`'s countdown
+    /// matches the cadence actually in force this round (T-910).
+    interval: i64,
 }
 
 impl CodexLiveProvider {
@@ -22,13 +26,23 @@ impl CodexLiveProvider {
         Self {
             last_fetch: 0,
             cached: None,
+            interval: REFRESH_SECS,
         }
     }
 
-    /// Return a cached live response for 180 seconds, or five seconds after a
-    /// user-forced refresh. Failures are cached too, avoiding retry storms.
-    pub fn poll(&mut self, now: i64, force: bool) -> Option<Vec<Limit>> {
-        let min_gap = if force { FORCE_MIN_SECS } else { REFRESH_SECS };
+    /// Return a cached live response for `refresh_secs` seconds, or five seconds
+    /// after a user-forced refresh. Failures are cached too, avoiding retry
+    /// storms. `refresh_secs` is read from live settings each round (T-910).
+    ///
+    /// NOTE: unlike the Anthropic provider this has *no* 429 exponential
+    /// backoff. That is deliberate: it hits a different host/rate bucket
+    /// (chatgpt.com, not the shared Claude Code OAuth bucket of F-01), and its
+    /// `fetch()` collapses every error into `None` via `.ok()?`, so it cannot
+    /// distinguish a 429 without restructuring its error handling — which would
+    /// be more than the mechanical interval change T-910 asks for here.
+    pub fn poll(&mut self, now: i64, force: bool, refresh_secs: i64) -> Option<Vec<Limit>> {
+        self.interval = refresh_secs;
+        let min_gap = if force { FORCE_MIN_SECS } else { refresh_secs };
         if now - self.last_fetch < min_gap {
             return self.cached.clone();
         }
@@ -41,7 +55,7 @@ impl CodexLiveProvider {
     /// header refresh countdown; the scheduler polls sooner but returns cached
     /// data until this point.
     pub fn next_fetch_at(&self) -> i64 {
-        self.last_fetch + REFRESH_SECS
+        self.last_fetch + self.interval
     }
 
     fn fetch(&self) -> Option<Vec<Limit>> {

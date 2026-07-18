@@ -96,6 +96,15 @@ pub struct Settings {
     /// `true` (detect-and-show). See `tool_opencode`.
     #[serde(default = "default_true")]
     pub tool_gemini: bool,
+    /// T-910 更新頻率: how often the quota APIs are polled over the network, in
+    /// seconds. One of {30, 60, 180}; serde default 180 (the conservative
+    /// cadence). Clamped on read via `refresh_secs_clamped` so a hand-edited
+    /// settings.json can never drive a faster-than-offered or absurd cadence —
+    /// 30s already runs 6× Claude Code's request rate against a *shared* rate
+    /// bucket (docs/FEEDBACK.md F-01), which is why the Anthropic provider pairs
+    /// this with 429 exponential backoff.
+    #[serde(default = "default_refresh_secs")]
+    pub refresh_secs: u32,
 }
 
 fn default_true() -> bool {
@@ -138,6 +147,33 @@ fn default_share_size() -> String {
     "auto".into()
 }
 
+fn default_refresh_secs() -> u32 {
+    180
+}
+
+/// The three offered refresh cadences (seconds). The settings UI only ever
+/// sends one of these; the clamp below is a defensive read for a hand-edited
+/// settings.json.
+pub const REFRESH_CHOICES: [u32; 3] = [30, 60, 180];
+
+/// Snap any stored `refresh_secs` to the nearest offered cadence. A too-fast
+/// value (e.g. a hand-edit to 5) floors to 30; a too-slow one (3600) caps at
+/// 180. Pure and standalone so the clamp is unit-testable.
+pub fn clamp_refresh_secs(secs: u32) -> u32 {
+    *REFRESH_CHOICES
+        .iter()
+        .min_by_key(|&&choice| choice.abs_diff(secs))
+        .expect("REFRESH_CHOICES is non-empty")
+}
+
+impl Settings {
+    /// `refresh_secs` snapped to an offered cadence — the value the scheduler
+    /// must gate on. Read every round so a change applies without a restart.
+    pub fn refresh_secs_clamped(&self) -> u32 {
+        clamp_refresh_secs(self.refresh_secs)
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -162,6 +198,7 @@ impl Default for Settings {
             share_size: default_share_size(),
             tool_opencode: true,
             tool_gemini: true,
+            refresh_secs: default_refresh_secs(),
         }
     }
 }
@@ -441,6 +478,57 @@ mod tests {
         let back = load_from_str(&json);
         assert!(!back.tool_opencode, "OpenCode 關閉被存檔洗掉了");
         assert!(!back.tool_gemini, "Gemini 關閉被存檔洗掉了");
+    }
+
+    // ── T-910 refresh_secs ─────────────────────────────────────────────
+    //
+    // Default must be the conservative 180 so an existing settings.json
+    // (written before the field existed) keeps today's cadence. The clamp is a
+    // defensive read: only {30, 60, 180} may ever reach the scheduler.
+
+    #[test]
+    fn defaults_to_conservative_refresh_secs() {
+        assert_eq!(Settings::default().refresh_secs, 180);
+        assert_eq!(Settings::default().refresh_secs_clamped(), 180);
+    }
+
+    #[test]
+    fn missing_refresh_secs_deserializes_to_180() {
+        let s = load_from_str(r#"{ "autostart": true }"#);
+        assert_eq!(s.refresh_secs, 180);
+    }
+
+    #[test]
+    fn clamp_keeps_offered_cadences() {
+        assert_eq!(clamp_refresh_secs(30), 30);
+        assert_eq!(clamp_refresh_secs(60), 60);
+        assert_eq!(clamp_refresh_secs(180), 180);
+    }
+
+    #[test]
+    fn clamp_snaps_out_of_range_values() {
+        // Too fast → floored to the 30s minimum.
+        assert_eq!(clamp_refresh_secs(0), 30);
+        assert_eq!(clamp_refresh_secs(5), 30);
+        // Too slow / absurd → capped at the 180s maximum.
+        assert_eq!(clamp_refresh_secs(3600), 180);
+        assert_eq!(clamp_refresh_secs(u32::MAX), 180);
+        // Between-bucket values snap to the nearest offered cadence.
+        assert_eq!(clamp_refresh_secs(40), 30);
+        assert_eq!(clamp_refresh_secs(90), 60);
+        assert_eq!(clamp_refresh_secs(150), 180);
+    }
+
+    #[test]
+    fn explicit_refresh_secs_survives_a_save_load_round_trip() {
+        let s = Settings {
+            refresh_secs: 30,
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back = load_from_str(&json);
+        assert_eq!(back.refresh_secs, 30);
+        assert_eq!(back.refresh_secs_clamped(), 30);
     }
 
     /// The whole point of the feature: an explicit opt-out must survive a

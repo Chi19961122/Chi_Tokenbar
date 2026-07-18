@@ -33,6 +33,8 @@ const DEFAULT_SETTINGS: Settings = {
   // 階段 E defaults — mirror config.rs `Settings::default()` (detect-and-show).
   tool_opencode: true,
   tool_gemini: true,
+  // T-910 default — conservative 180s cadence, mirror config.rs.
+  refresh_secs: 180,
 };
 
 export const isTauri = () =>

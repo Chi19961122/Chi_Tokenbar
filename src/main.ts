@@ -617,6 +617,14 @@ async function renderSettings() {
     <div class="sgroup">
       <div class="lsec-head">${t("settings.dataSources")}</div>
       <div class="srow srow-seg">
+        <span class="slabel">${t("settings.refreshInterval")}<span class="snote">${t("settings.refreshIntervalNote")}</span></span>
+        ${segmentHtml("s-refresh-secs", [30, 60, 180].includes(s.refresh_secs) ? String(s.refresh_secs) : "180", [
+          ["30", t("settings.refreshInterval30")],
+          ["60", t("settings.refreshInterval1m")],
+          ["180", t("settings.refreshInterval3m")],
+        ])}
+      </div>
+      <div class="srow srow-seg">
         <span class="slabel">${t("settings.claudeRefresh")}<span class="warn">${t("settings.claudeRefreshWarn")}</span></span>
         ${segmentHtml("s-refresh", s.allow_token_refresh ? "on" : "off", [
           ["off", t("settings.refreshOff")],
@@ -671,6 +679,7 @@ function readSettingsForm(): Settings {
     theme: (segVal("s-theme") || "system") as Settings["theme"],
     tool_opencode: v("s-tool-opencode").checked,
     tool_gemini: v("s-tool-gemini").checked,
+    refresh_secs: Number(segVal("s-refresh-secs")) || 180,
   };
 }
 

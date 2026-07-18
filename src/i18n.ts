@@ -48,6 +48,11 @@ const en = {
   "settings.toolOpencode": "Include OpenCode",
   "settings.toolGemini": "Include Gemini CLI",
   "settings.toolNote": "Usage only, from local logs; shown when data is found.",
+  "settings.refreshInterval": "Refresh interval",
+  "settings.refreshIntervalNote": "Faster polling may hit rate limits; backs off automatically.",
+  "settings.refreshInterval30": "30s",
+  "settings.refreshInterval1m": "1 min",
+  "settings.refreshInterval3m": "3 min",
 
   // Settings — 階段 B rows (island / expand / reset display)
   "settings.island": "Island",
@@ -240,6 +245,11 @@ const zhTW = {
   "settings.toolOpencode": "納入 OpenCode",
   "settings.toolGemini": "納入 Gemini CLI",
   "settings.toolNote": "僅用量,取自本機記錄;有資料才顯示。",
+  "settings.refreshInterval": "更新頻率",
+  "settings.refreshIntervalNote": "更快=更容易被限流,遇 429 會自動放慢。",
+  "settings.refreshInterval30": "30秒",
+  "settings.refreshInterval1m": "1 分",
+  "settings.refreshInterval3m": "3 分",
 
   "settings.island": "島嶼",
   "settings.expandDefault": "點島嶼展開到",

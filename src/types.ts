@@ -108,6 +108,10 @@ export interface Settings {
   tool_opencode: boolean;
   /** 階段 E 多工具: scan Gemini CLI local usage into analytics. Default true. */
   tool_gemini: boolean;
+  /** T-910 更新頻率: quota-API poll cadence in seconds. One of 30 | 60 | 180.
+   *  Defaults to 180 (mirrors config.rs `Settings::default()`); the backend
+   *  clamps to those three and applies 429 backoff on the Anthropic side. */
+  refresh_secs: number;
 }
 
 // ── Layer ③ analytics (UX Spec v3 §11) ──────────────────────────────

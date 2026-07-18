@@ -545,7 +545,7 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             let now = chrono::Utc::now().timestamp();
 
             // Read live settings once per round so every toggle applies without restart.
-            let (codex_source, allow_refresh, providers_filter) = app
+            let (codex_source, allow_refresh, providers_filter, refresh_secs) = app
                 .try_state::<AppData>()
                 .and_then(|data| {
                     data.settings.lock().ok().map(|s| {
@@ -553,10 +553,13 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
                             s.codex_usage_source.clone(),
                             s.allow_token_refresh,
                             s.providers.clone(),
+                            // Clamped on read to an offered cadence {30,60,180}.
+                            s.refresh_secs_clamped(),
                         )
                     })
                 })
-                .unwrap_or_else(|| ("local".into(), false, "both".into()));
+                .unwrap_or_else(|| ("local".into(), false, "both".into(), 180));
+            let refresh_secs = refresh_secs as i64;
 
             // Skip the polls a hidden provider does not need. Only an exact
             // "claude"/"codex" narrows anything: an unknown value must keep
@@ -566,7 +569,7 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
             let want_claude = providers_filter != "codex";
 
             let live = if want_codex && matches!(codex_source.as_str(), "live" | "auto") {
-                codex_live.poll(now, force)
+                codex_live.poll(now, force, refresh_secs)
             } else {
                 None
             };
@@ -586,7 +589,7 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
                 Vec::new()
             };
             if want_claude {
-                limits.extend(anthropic.poll(now, force, allow_refresh));
+                limits.extend(anthropic.poll(now, force, allow_refresh, refresh_secs));
             }
             // The single filter node for the whole app (§ see apply_provider_filter).
             // Skipping polls above is an optimisation; this is the correctness
