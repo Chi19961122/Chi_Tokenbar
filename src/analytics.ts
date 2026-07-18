@@ -233,7 +233,7 @@ function projectBars(byProject: ProjectCount[]): string {
       </div>`;
     })
     .join("");
-  return `<div class="bars">${rows}</div>`;
+  return `<div class="bars bars-stack">${rows}</div>`;
 }
 
 /** A titled sub-section wrapper for the extra Breakdown / overview dimensions. */
@@ -333,11 +333,11 @@ function shareBars(rec: Record<string, number>, price = false): string {
   const total = entries.reduce((s, [, v]) => s + v, 0);
   const label = (v: number) =>
     price ? `${fmtUsd(v)} · ${sharePct(v, total)}%` : shareLabel(v, total);
-  return `<div class="bars">${entries
+  return `<div class="bars bars-stack">${entries
     .map(
       ([k, v], i) => `
       <div class="bar-row">
-        <span class="bar-label">${k}</span>
+        <span class="bar-label" title="${esc(k)}">${esc(k)}</span>
         <div class="bar-track"><div class="bar-fill" style="width:${(v / max) * 100}%;background:${keyColor(k, i)}"></div></div>
         <span class="bar-val">${label(v)}</span>
       </div>`,

@@ -1077,6 +1077,33 @@ body.settings-open #gear {
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
+/* Stacked variant (model/agent share + projects): the name is load-bearing and
+   routinely outgrows any fixed label column ("claude-fable-5", long project
+   folders) — give it the whole row, value right, track full-width below. The
+   stats token-type breakdown keeps the compact 3-column form (fixed short
+   labels never truncate). */
+.bars-stack {
+  gap: 10px;
+}
+.bars-stack .bar-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label val"
+    "track track";
+  row-gap: 3px;
+}
+.bars-stack .bar-label {
+  grid-area: label;
+  text-align: left;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.bars-stack .bar-val {
+  grid-area: val;
+}
+.bars-stack .bar-track {
+  grid-area: track;
+}
 .kv {
   display: flex;
   gap: 10px;
