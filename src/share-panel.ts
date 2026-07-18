@@ -87,7 +87,7 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
       : "";
 
   const sizeSeg = `<div class="seg" data-seg="ssize">
-      <button data-ssize="auto" class="${o.size === "auto" ? "on" : ""}">${T("share.sizeAuto")}</button>
+      <button data-ssize="auto" class="${o.size === "auto" ? "on" : ""}">16:9</button>
       <button data-ssize="story" class="${o.size === "story" ? "on" : ""}">9:16</button>
     </div>`;
 
