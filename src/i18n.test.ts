@@ -124,10 +124,12 @@ describe("t() 佔位插值", () => {
 });
 
 describe("share preview copy", () => {
-  it("provides the exact close hint in both locales", () => {
+  it("provides the exact close and generating hints in both locales", () => {
     setLocale("en");
     expect(t("share.previewHint")).toBe("Esc / click to close");
+    expect(t("share.previewGenerating")).toBe("Rendering\u2026");
     setLocale("zh-TW");
+    expect(t("share.previewGenerating")).toBe("\u7522\u751f\u4e2d\u2026");
     expect(t("share.previewHint")).toBe("Esc / 點擊關閉");
   });
 });

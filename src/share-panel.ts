@@ -19,6 +19,17 @@ const CARD_DIM: Record<ShareSize, { w: number; h: number; ratio: number }> = {
   story: { w: 360, h: 640, ratio: 3 },
 };
 
+type ShareRasterOptions = {
+  width: number;
+  height: number;
+  pixelRatio: number;
+  cacheBust: boolean;
+  fontEmbedCSS: string;
+};
+
+let fontEmbedCssPromise: Promise<string> | undefined;
+const SHARE_FONT_FAMILIES = "'Geist', 'Geist Mono', 'Playfair Display', 'Noto Sans TC'";
+
 const STYLES: [ShareStyle, string][] = [
   ["statement", "statement"],
   ["diagnostics", "diagnostics"],
@@ -168,9 +179,11 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
 
   // ── export / copy ───────────────────────────────────────────────────
 
-  /** Mount the full-size card offscreen, run html-to-image, return {dataUrl,
-   *  blob}, then clean up. Fonts must be ready or the raster misses glyphs. */
-  const rasterize = async (): Promise<{ dataUrl: string; blob: Blob | null }> => {
+  /** Mount the full-size card offscreen, run the requested html-to-image
+   *  raster, then clean up. Fonts must be ready or the raster misses glyphs. */
+  const rasterize = async <T>(
+    renderRaster: (card: HTMLElement, opts: ShareRasterOptions) => Promise<T>,
+  ): Promise<T> => {
     await document.fonts.ready;
     const holder = document.createElement("div");
     holder.style.position = "fixed";
@@ -185,26 +198,58 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
     try {
       // Landscape → 1200×675 @1×; story → 360×640 @3× = 1080×1920 (social story).
       const { w, h, ratio } = CARD_DIM[o.size];
-      const opts = { width: w, height: h, pixelRatio: ratio, cacheBust: true };
-      const { toPng, toBlob } = await import("html-to-image");
-      const dataUrl = await toPng(card, opts);
-      const blob = await toBlob(card, opts);
-      return { dataUrl, blob };
+      const { getFontEmbedCSS } = await import("html-to-image");
+      if (!fontEmbedCssPromise) {
+        const fontProbe = document.createElement("div");
+        fontProbe.style.fontFamily = SHARE_FONT_FAMILIES;
+        holder.appendChild(fontProbe);
+        fontEmbedCssPromise = getFontEmbedCSS(fontProbe);
+      }
+      const fontEmbedCSS = await fontEmbedCssPromise;
+      const opts = {
+        width: w,
+        height: h,
+        pixelRatio: ratio,
+        cacheBust: true,
+        fontEmbedCSS,
+      };
+      return await renderRaster(card, opts);
     } finally {
       holder.remove();
     }
   };
 
   let previewOpening = false;
+
+  const rasterizePng = () =>
+    rasterize(async (card, opts) => {
+      const { toPng } = await import("html-to-image");
+      return toPng(card, opts);
+    });
+  const rasterizeBlob = () =>
+    rasterize(async (card, opts) => {
+      const { toBlob } = await import("html-to-image");
+      return toBlob(card, opts);
+    });
   previewMat.addEventListener("click", async () => {
     if (previewOpening || !isTauri()) return;
     previewOpening = true;
     previewMat.classList.add("busy");
     previewMat.setAttribute("aria-busy", "true");
     try {
-      const { dataUrl } = await rasterize();
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("open_share_preview", { dataUrl });
+      const openPromise = invoke("open_share_preview");
+      const pngPromise = rasterizePng();
+      try {
+        const [, dataUrl] = await Promise.all([openPromise, pngPromise]);
+        await invoke("update_share_preview", { dataUrl });
+      } catch (error) {
+        // If rasterization fails first, wait for the parallel window creation
+        // before closing it so a late-created generating window cannot survive.
+        await openPromise.catch(() => undefined);
+        await invoke("close_share_preview").catch(() => undefined);
+        throw error;
+      }
     } catch {
       setStatus(T("share.previewFailed"), true);
     } finally {
@@ -218,7 +263,7 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
     const sizeTag = o.size === "story" ? "-9x16" : "";
     const filename = `tokenbar-${o.range}${sizeTag}-${todayStamp()}.png`;
     try {
-      const { dataUrl } = await rasterize();
+      const dataUrl = await rasterizePng();
       if (isTauri()) {
         const bytes = Array.from(new Uint8Array(await (await fetch(dataUrl)).arrayBuffer()));
         const { invoke } = await import("@tauri-apps/api/core");
@@ -238,7 +283,7 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
 
   container.querySelector("#sharep-copy")!.addEventListener("click", async () => {
     try {
-      const { blob } = await rasterize();
+      const blob = await rasterizeBlob();
       if (!blob) throw new Error("no blob");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       setStatus(T("share.savedShort"));

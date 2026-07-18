@@ -4,6 +4,8 @@
   "description": "Minimal capability for the dedicated share-card preview window",
   "windows": ["share-preview"],
   "permissions": [
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
   ]
 }

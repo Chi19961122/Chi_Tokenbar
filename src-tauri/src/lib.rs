@@ -26,6 +26,7 @@ use tauri_plugin_notification::NotificationExt;
 
 const POLL_SECS: u64 = 15;
 const NOTIFY_SUPPRESS_SECS: i64 = 1800; // 30 min per limit (§10)
+const SHARE_PREVIEW_UPDATED_EVENT: &str = "share-preview-updated";
 
 /// 來源失效通知:恢復前只提醒一次(不像額度警告那樣重複提醒)。
 ///
@@ -83,6 +84,13 @@ impl SharePreviewState {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(data_url);
     }
 
+    fn clear(&self) {
+        *self
+            .data_url
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    }
+
     fn get(&self) -> Option<String> {
         self.data_url
             .lock()
@@ -94,7 +102,7 @@ impl SharePreviewState {
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SharePreviewPayload {
-    data_url: String,
+    data_url: Option<String>,
     locale: String,
 }
 
@@ -281,30 +289,47 @@ fn save_share_png(bytes: Vec<u8>, filename: String) -> Result<String, String> {
 fn get_share_preview(
     preview: State<'_, SharePreviewState>,
     data: State<'_, AppData>,
-) -> Result<SharePreviewPayload, String> {
-    let data_url = preview
-        .get()
-        .ok_or_else(|| "share preview is unavailable".to_string())?;
+) -> SharePreviewPayload {
+    let data_url = preview.get();
     let locale = data
         .settings
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .locale
         .clone();
-    Ok(SharePreviewPayload { data_url, locale })
+    SharePreviewPayload { data_url, locale }
 }
 
-/// Store the newest export and recreate the dedicated preview WebView. Rebuild
-/// is deliberately used instead of an event listener: every window boot reads
-/// the already-replaced State, so there is no listener-registration race or
-/// chance for an older image to remain visible.
 #[tauri::command]
-async fn open_share_preview(
+fn update_share_preview(
     app: AppHandle,
     preview: State<'_, SharePreviewState>,
     data_url: String,
 ) -> Result<(), String> {
+    // State is the source of truth: store first, then use the event only as a
+    // wake-up signal. A missed signal is recovered by the window's second pull.
     preview.replace(data_url);
+    app.emit_to("share-preview", SHARE_PREVIEW_UPDATED_EVENT, ())
+        .map_err(|error| error.to_string())
+}
+
+
+#[tauri::command]
+fn close_share_preview(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("share-preview") {
+        window.destroy().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+/// Clear any previous export and recreate the dedicated preview WebView so it
+/// can appear while the next PNG is still rendering.
+#[tauri::command]
+async fn open_share_preview(
+    app: AppHandle,
+    preview: State<'_, SharePreviewState>,
+) -> Result<(), String> {
+    preview.clear();
 
     if let Some(existing) = app.get_webview_window("share-preview") {
         existing.destroy().map_err(|error| error.to_string())?;
@@ -388,7 +413,9 @@ pub fn run() {
             relogin,
             save_share_png,
             get_share_preview,
-            open_share_preview
+            open_share_preview,
+            update_share_preview,
+            close_share_preview
         ])
         .setup(move |app| {
             build_tray(app.handle())?;
@@ -870,6 +897,9 @@ mod tests {
         state.replace("data:image/png;base64,first".into());
         state.replace("data:image/png;base64,second".into());
         assert_eq!(state.get().as_deref(), Some("data:image/png;base64,second"));
+
+        state.clear();
+        assert_eq!(state.get(), None);
     }
 
     #[test]

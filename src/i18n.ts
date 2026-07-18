@@ -199,6 +199,7 @@ const en = {
   "share.quotaNote": "Quota line",
   "share.previewTitle": "Open large preview",
   "share.previewHint": "Esc / click to close",
+  "share.previewGenerating": "Rendering\u2026",
   "share.previewFailed": "Preview failed",
 } as const;
 
@@ -374,6 +375,7 @@ const zhTW = {
   "share.quotaNote": "額度行",
   "share.previewTitle": "開啟大圖預覽",
   "share.previewHint": "Esc / 點擊關閉",
+  "share.previewGenerating": "\u7522\u751f\u4e2d\u2026",
   "share.previewFailed": "預覽失敗",
 } satisfies Record<keyof typeof en, string>;
 
