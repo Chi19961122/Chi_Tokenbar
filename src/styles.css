@@ -873,11 +873,10 @@ body.settings-open #gear {
 
 #analytics {
   padding: 4px 20px 14px;
-  /* Fixed box so every subtab renders at the same height → window never
-     resizes on page switches (mode-locked height policy). The richer 階段 C+
-     dimensions (heatmap, donut, project bars) can exceed it, so scroll inside
-     rather than resize the window: the height contract is preserved. */
-  height: 300px;
+  /* Sized once per Usage-mode entry, then fixed so every subtab uses the same
+     height and page switches never resize the OS window. Richer panes may
+     exceed the box and continue to scroll inside. */
+  height: var(--analytics-h, 300px);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -965,8 +964,17 @@ body.settings-open #gear {
 .tile.sk {
   height: 44px;
 }
+.analytics-skeleton {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.analytics-skeleton .chart-wrap {
+  flex: 1;
+}
 .sk-chart {
-  height: 200px;
+  height: 100%;
+  min-height: 200px;
   border-radius: 8px;
   background: var(--track);
 }

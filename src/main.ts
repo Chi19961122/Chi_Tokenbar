@@ -32,6 +32,7 @@ import { fmtTokens, nowSecs } from "./format";
 import { getLocale, resolveLocale, setLocale, t } from "./i18n";
 import { applyTheme, watchSystemTheme } from "./theme";
 import { activateSegment, readSegmentValue, segmentHtml } from "./settings-controls";
+import { analyticsHeight } from "./analytics-height";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -202,14 +203,14 @@ function renderAnalyticsInto(a: Analytics): void {
   box.scrollTop = scroll;
 }
 
-/** Glass placeholder sized to the fixed 300px #analytics box, shown while the
+/** Glass placeholder sized to the mode-locked #analytics box, shown while the
  *  first get_analytics for a key is in flight so the window measures its final
  *  height in one fitWindow() and never jumps a second time. */
 function showAnalyticsSkeleton(): void {
   $("analytics").innerHTML =
-    `<div class="tiles">` +
+    `<div class="analytics-skeleton"><div class="tiles">` +
     `<div class="tile sk"></div>`.repeat(4) +
-    `</div><div class="chart-wrap"><div class="sk sk-chart"></div></div>`;
+    `</div><div class="chart-wrap"><div class="sk sk-chart"></div></div></div>`;
 }
 
 // ── 階段 D 戰報 Share (report subtab) ────────────────────────────────
@@ -326,14 +327,24 @@ function beginAnalytics(): void {
 // ── window sizing (locked per display mode, bottom-right anchored) ───
 // The window is resized ONLY when a mode is entered (expand, compact toggle,
 // settings open/close) — never on subtab clicks or the 1s tick, so page
-// switches stay jank-free. #analytics has a fixed CSS height for the same
-// reason: every subtab renders into the same box.
+// switches stay jank-free. #analytics gets a screen-sized fixed height once at
+// each Usage-mode entry for the same reason: every subtab uses the same box.
 
 /** Natural panel height at mode entry: children sum. */
 function contentHeight(): number {
   let h = 14; // panel top margin (6) + border (2) + breathing room
   for (const el of $("panel").children) h += (el as HTMLElement).offsetHeight;
   return Math.max(h, 120);
+}
+
+/** Size the shared analytics box once per Usage-mode entry. The current box is
+ * subtracted from the panel measurement so a previous mode's height cannot
+ * feed back into the next calculation. Subtab clicks and ticks never call it. */
+function sizeAnalytics(): void {
+  const box = $("analytics");
+  const otherPanelHeight = Math.max(0, contentHeight() - box.offsetHeight);
+  const h = analyticsHeight(window.screen?.availHeight ?? Number.NaN, otherPanelHeight);
+  document.documentElement.style.setProperty("--analytics-h", `${h}px`);
 }
 
 /** Collapsed island width depends on layout (dual providers need more room).
@@ -413,6 +424,7 @@ async function applyCompact() {
       renderSubtabs();
       renderToggles();
       beginAnalytics();
+      sizeAnalytics();
     }
   }
   fitWindow();
@@ -647,6 +659,7 @@ function closeSettings(): void {
     renderSubtabs();
     renderToggles();
     beginAnalytics();
+    sizeAnalytics();
   }
   fitWindow();
 }
@@ -683,10 +696,11 @@ function setExpanded(on: boolean): void {
       // fitWindow() below measures the final height and resizes exactly once —
       // never waiting on the get_analytics IPC.
       beginAnalytics();
+      sizeAnalytics();
     }
   }
-  // Size the window immediately (analytics box is a fixed 300px, so its content
-  // arriving later never changes the measured height).
+  // Size the window immediately (analytics height is locked for this mode, so
+  // its content arriving later never changes the measured height).
   fitWindow();
 }
 
