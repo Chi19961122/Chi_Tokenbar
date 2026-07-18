@@ -1,6 +1,6 @@
 import "./fonts.css";
 import "./styles.css";
-import type { Analytics, Snapshot } from "./types";
+import type { Analytics, Limit, Snapshot } from "./types";
 import type { ReloginState } from "./panel";
 import { MANUAL_LOGIN_CMD } from "./panel";
 import type { AnalyticsOpts, Group, Metric, SubTab } from "./analytics";
@@ -144,12 +144,24 @@ function renderIslandNow() {
   });
 }
 
+/** Frontend mirror of the backend's provider display filter: the backend only
+ *  applies it on the next scheduler round, so the cached snapshot can carry
+ *  the deselected provider for minutes — filter at render so a settings
+ *  change shows immediately (使用者回饋 2026-07-18). */
+function visibleLimits(): Limit[] {
+  const p = settings?.providers ?? "both";
+  const limits = lastSnap?.limits ?? [];
+  if (p === "claude") return limits.filter((l) => l.provider === "anthropic");
+  if (p === "codex") return limits.filter((l) => l.provider === "codex");
+  return limits;
+}
+
 function renderCards() {
   // The Usage tab leads with a one-line quota digest (階段 C); the full list
   // shows only in Limits (compact). Settings is now a full page swap that hides
   // the list entirely (T-902), so it no longer forces the full variant.
   const variant: "full" | "summary" = ui.compact ? "full" : "summary";
-  renderPanel($("cards"), lastSnap, {
+  renderPanel($("cards"), lastSnap && { ...lastSnap, limits: visibleLimits() }, {
     relogin: ui.relogin,
     copied: ui.copied,
     resetDisplay: settings?.reset_display ?? "relative",
@@ -234,7 +246,7 @@ function paintReport(a: Analytics): void {
   const quotaNote = ui.shareQuotaNote ?? style === "island_card";
   renderSharePanel($("analytics"), {
     analytics: a,
-    limits: lastSnap?.limits ?? [],
+    limits: visibleLimits(),
     locale: getLocale(),
     style,
     range: ui.shareRange,
