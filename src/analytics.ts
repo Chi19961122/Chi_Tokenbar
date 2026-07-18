@@ -303,8 +303,14 @@ function hourly(a: Analytics): string {
       return `<rect x="${cx - bw / 2}" y="${H - padB - h}" width="${bw}" height="${h}" rx="1" fill="${seriesColor(3)}"/>`;
     })
     .join("");
+  // Mid-axis labels every 6h, centered under their bar — the two endpoints
+  // alone left 22 unlabeled slots to count by hand.
+  const mids = [6, 12, 18]
+    .map((h) => `<text x="${(h + 0.5) * (W / 24)}" y="${H - 4}" class="axis" text-anchor="middle">${h}h</text>`)
+    .join("");
   return `<svg viewBox="0 0 ${W} ${H}" class="chart">${bars}
     <text x="2" y="${H - 4}" class="axis">0h</text>
+    ${mids}
     <text x="${W - 2}" y="${H - 4}" class="axis" text-anchor="end">23h</text></svg>`;
 }
 
