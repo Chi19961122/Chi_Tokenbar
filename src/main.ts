@@ -23,6 +23,7 @@ import {
   startWindowDrag,
 } from "./datasource";
 import { islandIntent, renderIsland, windowShort } from "./island";
+import { islandAuxNeedsAnalytics } from "./island-aux";
 import { renderPanel } from "./panel";
 import { showIslandMenu } from "./contextmenu";
 import { renderAnalytics } from "./analytics";
@@ -1145,12 +1146,8 @@ async function boot() {
   // Today's burn rate + est. cost for the island aux readout (60s cache).
   // Stage 1A: only scan when the island aux actually needs analytics data.
   // `off` must not trigger a full today log scan every minute.
-  const islandAuxNeedsAnalytics = () => {
-    const aux = settings?.island_aux ?? "tok_per_min";
-    return aux === "tok_per_min" || aux === "cost_today";
-  };
   const refreshToday = async () => {
-    if (!islandAuxNeedsAnalytics()) {
+    if (!islandAuxNeedsAnalytics(settings?.island_aux)) {
       todayRate = null;
       todayCost = null;
       return;

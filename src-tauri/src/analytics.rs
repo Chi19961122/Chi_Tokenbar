@@ -13,14 +13,24 @@ use std::time::Instant;
 
 /// Per-scan counters for opt-in diagnostics (`TOKENBAR_DEBUG`).
 /// Does not change product behaviour — only logged when the env var is set.
+///
+/// Field semantics (kept identical across Claude / Codex / Grok):
+/// - `files_considered` — paths from glob (before mtime gate)
+/// - `files_read` — files opened for the main scan pass
+/// - `eligible_file_bytes` — sum of `metadata().len()` for those files
+///   (**not** bytes actually read; excludes Codex `first_cwd_basename` head-read)
+/// - `lines_read` — lines seen on the main pass
+/// - `candidate_lines` — lines that passed the cheap string prefilter
+/// - `json_parse_ok` — candidate lines where `serde_json::from_str` succeeded
+///   (before domain filters like "has usage" / "is token_count event")
 #[derive(Default, Debug, Clone)]
 struct ScanStats {
     files_considered: u64,
     files_read: u64,
-    bytes_read: u64,
+    eligible_file_bytes: u64,
     lines_read: u64,
     candidate_lines: u64,
-    json_lines_parsed: u64,
+    json_parse_ok: u64,
 }
 
 fn log_scan_stats(range: &str, sources: &[String], stats: &ScanStats, elapsed_ms: u128) {
@@ -28,15 +38,15 @@ fn log_scan_stats(range: &str, sources: &[String], stats: &ScanStats, elapsed_ms
         return;
     }
     eprintln!(
-        "[atoll:analytics] range={} sources={:?} files_considered={} files_read={} bytes_read={} lines_read={} candidate_lines={} json_lines_parsed={} elapsed_ms={}",
+        "[atoll:analytics] range={} sources={:?} files_considered={} files_read={} eligible_file_bytes={} lines_read={} candidate_lines={} json_parse_ok={} elapsed_ms={}",
         range,
         sources,
         stats.files_considered,
         stats.files_read,
-        stats.bytes_read,
+        stats.eligible_file_bytes,
         stats.lines_read,
         stats.candidate_lines,
-        stats.json_lines_parsed,
+        stats.json_parse_ok,
         elapsed_ms
     );
 }
@@ -706,7 +716,7 @@ fn scan_codex(acc: &mut Acc, start: i64) -> u32 {
             };
             if let Ok(file) = File::open(&p) {
                 acc.stats.files_read += 1;
-                acc.stats.bytes_read += meta.len();
+                acc.stats.eligible_file_bytes += meta.len();
                 let project = first_cwd_basename(&p);
                 scan_codex_lines(
                     acc,
@@ -801,11 +811,7 @@ fn codex_cost(model: &str, input: u64, cached: u64, output: u64, reasoning: u64)
 
 type CodexUsage = (u64, u64, u64, u64);
 
-fn codex_token_event(line: &str) -> Option<(i64, CodexUsage)> {
-    if !line.contains("token_count") {
-        return None;
-    }
-    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+fn codex_token_event_from_value(v: &serde_json::Value) -> Option<(i64, CodexUsage)> {
     let payload = v.get("payload")?;
     if payload.get("type").and_then(|x| x.as_str()) != Some("token_count") {
         return None;
@@ -824,6 +830,14 @@ fn codex_token_event(line: &str) -> Option<(i64, CodexUsage)> {
             get("reasoning_output_tokens"),
         ),
     ))
+}
+
+fn codex_token_event(line: &str) -> Option<(i64, CodexUsage)> {
+    if !line.contains("token_count") {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    codex_token_event_from_value(&v)
 }
 
 fn usage_total((input, cached, output, reasoning): CodexUsage) -> u64 {
@@ -845,13 +859,19 @@ fn scan_codex_lines<I>(
     let mut previous: Option<CodexUsage> = None;
     for line in lines {
         acc.stats.lines_read += 1;
-        if line.contains("token_count") {
-            acc.stats.candidate_lines += 1;
+        if !line.contains("token_count") {
+            continue;
         }
-        let Some((ts, current)) = codex_token_event(&line) else {
+        acc.stats.candidate_lines += 1;
+        // Count successful JSON parse of candidates (same point as Claude/Grok),
+        // not only rows that yield a token_count domain event.
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
             continue;
         };
-        acc.stats.json_lines_parsed += 1;
+        acc.stats.json_parse_ok += 1;
+        let Some((ts, current)) = codex_token_event_from_value(&v) else {
+            continue;
+        };
         let total = usage_total(current);
         let duplicate = !seen.insert((ts, total));
         let prior = previous.replace(current).unwrap_or((0, 0, 0, 0));
@@ -964,7 +984,7 @@ fn scan_claude(acc: &mut Acc, start: i64) {
             continue;
         };
         acc.stats.files_read += 1;
-        acc.stats.bytes_read += meta.len();
+        acc.stats.eligible_file_bytes += meta.len();
         scan_claude_lines(
             acc,
             start,
@@ -991,7 +1011,7 @@ fn scan_claude_lines(
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
             continue;
         };
-        acc.stats.json_lines_parsed += 1;
+        acc.stats.json_parse_ok += 1;
         let msg = v.get("message");
         let Some(usage) = msg.and_then(|m| m.get("usage")) else {
             continue;
@@ -1222,7 +1242,7 @@ fn scan_grok_lines<I>(
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
             continue;
         };
-        acc.stats.json_lines_parsed += 1;
+        acc.stats.json_parse_ok += 1;
         if let Some(model) = grok_model_id_from_value(&v) {
             current_model = model;
         }
@@ -1272,7 +1292,7 @@ fn scan_grok(acc: &mut Acc, start: i64) {
             continue;
         };
         acc.stats.files_read += 1;
-        acc.stats.bytes_read += meta.len();
+        acc.stats.eligible_file_bytes += meta.len();
         scan_grok_lines(
             acc,
             start,
