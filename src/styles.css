@@ -927,34 +927,11 @@ body.share-open #share-btn {
   color: var(--text);
 }
 
-/* ── Sub-tabs / toggles / analytics ───────────────────────────────── */
+/* ── Toggles / analytics ──────────────────────────────────────────── */
 
-.subtabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px 20px 4px;
-  flex-wrap: wrap;
-  border-top: 1px solid var(--hairline);
-  margin-top: 6px;
-}
-.subtabs button {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 12px;
-  padding: 4px 9px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-family: var(--sans);
-}
-.subtabs button:hover {
-  color: var(--text);
-}
-.subtabs button.on {
-  color: var(--seg-on-fg);
-  background: var(--seg-on-bg);
-}
-
+/* Top persistent range toggle (#toggles) + the shared segmented vocabulary used
+   by settings. The analytics lens toggles override these under .chart-wrap
+   (magazine pill), so these globals stay untouched for settings/range. */
 .toggles {
   display: flex;
   gap: 8px;
@@ -1024,7 +1001,7 @@ body.share-open #share-btn {
 }
 
 #analytics {
-  padding: 4px 20px 14px;
+  padding: 14px 26px 30px;
   /* The panel is a fixed-height flex column and this box fills whatever
      remains (T-908) — its bottom edge always lands inside the window, so the
      scroll can always reach the last row. The *desired* height only feeds
@@ -1052,49 +1029,6 @@ body.share-open #share-btn {
   border-radius: 6px;
   padding: 15px 14px;
   text-align: left;
-}
-.tile b {
-  display: block;
-  color: var(--text);
-  font-family: var(--sans);
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: -0.04em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.tile-accent {
-  background: var(--tile-accent-bg);
-  border-color: var(--tile-accent-bg);
-}
-.tile-accent b {
-  color: var(--tile-accent-fg);
-}
-.tile-accent span {
-  color: var(--tile-accent-sub);
-}
-
-.records { position: relative; }
-.records .tiles { grid-template-columns: repeat(3, 1fr); }
-.pr-now {
-  display: inline-block;
-  margin-bottom: 8px;
-  padding: 3px 6px;
-  border-radius: 2px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .12em;
-}
-.tile span {
-  order: -1;
-  color: var(--faint);
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: .12em;
-  text-transform: uppercase;
 }
 .chart-wrap {
   position: relative;
@@ -1128,6 +1062,271 @@ body.share-open #share-btn {
   font-size: 10px;
   color: var(--text-dim);
   margin: -10px 0 14px 2px;
+}
+
+/* ── C1 Magazine analytics (T-ui-302) ─────────────────────────────────
+   Two stacked lenses (Trends / Breakdown) in one scrolling column. All rules
+   are scoped under .chart-wrap — the sole root renderAnalytics emits — so the
+   editorial type/spacing never leaks onto the island `.cap`, the shared
+   settings/range `.seg`, or the share-card `.legend/.kv/.bars`. Values are
+   pulled from design/previews/analytics-C1-detail.html; the mockup's fictional
+   --g* tokens are mapped onto the real ink ramp per the ticket table. */
+
+/* Lens separation: first feature flush to the pane top, each following one gets
+   a hairline rule with generous air above/below. */
+.chart-wrap .feature + .feature {
+  margin-top: 52px;
+  padding-top: 42px;
+  border-top: 1px solid var(--hairline);
+}
+/* Lens caption ("LENS 1 · TRENDS"). */
+.chart-wrap .cap {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--faint);
+}
+/* Serif kicker under the caption. */
+.chart-wrap .kick {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin-top: 12px;
+  max-width: 300px;
+}
+
+/* In-lens segmented toggles (granularity/group + metric): magazine pill, distinct
+   from the top range #toggles bar and the settings segs (both keep the globals). */
+.chart-wrap .toggles {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+  padding: 0;
+  flex-wrap: wrap;
+}
+.chart-wrap .seg {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--ink-100);
+  border-radius: 999px;
+  padding: 3px;
+}
+.chart-wrap .seg button {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 5px 12px;
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+}
+/* Selected = the theme-aware inverse chip (light: dark chip/light text; dark:
+   light chip/dark text) — never a hand-written black/white. */
+.chart-wrap .seg button.on {
+  background: var(--seg-on-bg);
+  color: var(--seg-on-fg);
+}
+
+/* Hero: eyebrow + oversized figure + one-line sub. */
+.chart-wrap .hero {
+  margin-top: 26px;
+}
+.chart-wrap .hero .eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.chart-wrap .hero .fig {
+  font-family: var(--sans);
+  font-size: 70px;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 0.9;
+  margin-top: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* Unit tail ("M tokens") riding the big figure. */
+.chart-wrap .hero .fig .u {
+  font-size: 29px;
+  font-weight: 500;
+  color: var(--ink-500);
+  letter-spacing: -0.02em;
+  margin-left: 4px;
+}
+/* Breakdown leader is a name, not a numeral: smaller, and allowed to wrap so a
+   long model/agent id never pushes a horizontal scrollbar. */
+.chart-wrap .hero .fig.fig-name {
+  font-size: 56px;
+  line-height: 0.95;
+  overflow-wrap: anywhere;
+}
+.chart-wrap .hero .sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 14px;
+}
+.chart-wrap .hero .sub b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Titled sub-section (chart / donut / projects): the small uppercase label sits
+   above its content and carries the gap to it. */
+.chart-wrap .support {
+  margin-top: 34px;
+}
+.chart-wrap .lbl {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 14px;
+}
+
+/* Ranked rows (model/agent, projects). The rank rows sit directly in the lens
+   (spaced off the hero); project rows nest inside a .support and take the label
+   gap instead. */
+.chart-wrap .rows {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.chart-wrap .feature > .rows {
+  margin-top: 30px;
+}
+.chart-wrap .row .meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.chart-wrap .row .nm {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chart-wrap .row .vl {
+  flex: none;
+  color: var(--muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.chart-wrap .track {
+  height: 2px;
+  background: var(--ink-100);
+  overflow: hidden;
+}
+.chart-wrap .track i {
+  display: block;
+  height: 100%;
+  background: var(--ink-500);
+}
+/* The lone Breakdown magenta: the #1 row underline. */
+.chart-wrap .row.top .track i {
+  background: var(--accent);
+}
+
+/* Activity donut + right-hand legend. */
+.chart-wrap .donutsec {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+.chart-wrap .donutsec svg {
+  flex: none;
+}
+.chart-wrap .legend {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11.5px;
+}
+.chart-wrap .legend span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+}
+.chart-wrap .legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+.chart-wrap .legend b {
+  margin-left: auto;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Token-composition segmented bar + wrapping legend. */
+.chart-wrap .comp {
+  margin-top: 30px;
+}
+.chart-wrap .compbar {
+  display: flex;
+  height: 8px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.chart-wrap .compbar i {
+  display: block;
+  height: 100%;
+}
+.chart-wrap .complegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.chart-wrap .complegend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-wrap .complegend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+.chart-wrap .complegend b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Trends footnote (peak day / busiest hour / sessions / tok-min). */
+.chart-wrap .footnote {
+  margin-top: 30px;
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1.6;
+}
+.chart-wrap .footnote b {
+  color: var(--text-dim);
+  font-weight: 600;
 }
 
 /* Analytics loading skeleton (§ expand speed): reuses .tiles/.tile/.chart-wrap
@@ -1207,90 +1406,14 @@ body.share-open #share-btn {
 .daily-bar.is-today {
   fill: var(--accent);
 }
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-  font-size: 10px;
-  color: var(--text-dim);
-}
-.legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.legend i {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  display: inline-block;
-}
+/* .bars: the share-card hourly spark row (src/share.ts). The old analytics
+   ranking bars (.bar-row/.bar-fill/.bars-stack) and stacked-bar legend were
+   removed by T-ui-302 — the Breakdown lens now renders .rows/.row/.track and
+   .donutsec/.legend (scoped under .chart-wrap above). */
 .bars {
   display: flex;
   flex-direction: column;
   gap: 11px;
-}
-.bar-row {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-}
-.bar-label {
-  font-size: 10px;
-  color: var(--muted);
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.bar-track {
-  height: 5px;
-  background: var(--track);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--ink-900);
-}
-.bar-fill.is-top {
-  background: var(--accent);
-}
-.bar-val {
-  font-family: var(--sans);
-  font-size: 10px;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-}
-/* Stacked variant (model/agent share + projects): the name is load-bearing and
-   routinely outgrows any fixed label column ("claude-fable-5", long project
-   folders) — give it the whole row, value right, track full-width below. The
-   stats token-type breakdown keeps the compact 3-column form (fixed short
-   labels never truncate). */
-.bars-stack {
-  gap: 15px;
-}
-.bars-stack .bar-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "label val"
-    "track track";
-  row-gap: 6px;
-}
-.bars-stack .bar-label {
-  grid-area: label;
-  text-align: left;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.bars-stack .bar-val {
-  grid-area: val;
-}
-.bars-stack .bar-track {
-  grid-area: track;
 }
 .kv {
   display: flex;
@@ -1314,43 +1437,11 @@ body.share-open #share-btn {
   font-size: 9px;
   color: var(--text-dim);
 }
-.accounts {
-  margin-top: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.acct {
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.acct b {
-  color: var(--text);
-}
+/* ── Activity heatmap (Trends · month) ────────────────────────────────
+   The old stats-view account list (.accounts/.acct) moved to the settings page
+   (main.ts renderSettings, using .sgroup/.srow) and the .sub-sec section headers
+   were replaced by .support > .lbl — both removed by T-ui-302. */
 
-/* ── 階段 C+ advanced dimensions (heatmap / donut / project bars) ────── */
-
-/* A titled sub-section stacked below the primary chart on overview/Breakdown. */
-.sub-sec {
-  margin-top: 26px;
-}
-.sub-sec-h {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--faint);
-  margin-bottom: 10px;
-}
-.sub-sec-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-.sub-sec-head .sub-sec-h {
-  margin-bottom: 0;
-}
 /* GitHub-style activity heatmap. Two-column body: weekday axis + week grid,
    with month labels spanning the grid columns above it. */
 .hm {
@@ -1421,9 +1512,12 @@ body.share-open #share-btn {
 .hm-l4 {
   background: var(--ink-900);
 }
+/* Today marker (T-ui-302 double-magenta reconcile): the cell keeps its own
+   grayscale intensity (.hm-l* background) and is flagged with a neutral ink ring
+   instead of an accent fill — so the month+daily Trends view shows exactly one
+   magenta, the .daily-bar.is-today bar. */
 .hm-cell.hm-today {
-  background: var(--accent);
-  outline: 1.5px solid var(--accent-soft);
+  outline: 1.5px solid var(--ink-900);
   outline-offset: 1px;
 }
 .hm-legend {
@@ -1440,48 +1534,8 @@ body.share-open #share-btn {
   display: inline-block;
 }
 
-/* Activity-type donut: conic ring + punched center + legend with %. */
-.donut-sec {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 6px 0;
-}
-.donut {
-  display: block;
-  width: 68px;
-  height: 68px;
-  flex: 0 0 auto;
-}
-.donut-legend {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 16px;
-  row-gap: 9px;
-  flex: 1;
-  min-width: 0;
-  font-size: 10px;
-  color: var(--muted);
-}
-.donut-legend span {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.donut-legend i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.donut-legend b {
-  margin-left: auto;
-  color: var(--text);
-  font-family: var(--sans);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
+/* (The old conic-ring .donut-sec/.donut-legend were replaced by the SVG
+   .donutsec/.legend styled under .chart-wrap above — removed by T-ui-302.) */
 
 /* ── Settings ─────────────────────────────────────────────────────── */
 
