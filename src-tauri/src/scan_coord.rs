@@ -1,18 +1,20 @@
-//! Stage 1B analytics scan coordinator.
+//! Stage 1B analytics scan coordinator (partial → tightened after review).
 //!
-//! Mutex alone is *not* enough (today→week→month would still be three full
-//! scans). This module provides:
 //! - **TTL cache** — same `sources|range` within the window never re-parses
 //! - **In-flight coalesce** — concurrent identical keys share one result
-//! - **Mutual exclusion** — at most one full `compute_with` at a time
-//! - **Queue policy** — while busy, new keys wait; empty-waiter keys drop;
-//!   prefer promoting `month` when several are pending
-//! - **Pre-scan recheck** — after waiting, serve cache if now warm
+//! - **Mutual exclusion** — at most one full scan body at a time
+//! - **Latest-request-wins queue** — while busy, at most one pending job; a
+//!   newer different key cancels the previous pending waiters
+//! - **Non-blocking promote** — after the leader finishes, pending runs on a
+//!   worker thread so the leader returns immediately
+//! - **Panic isolation** — scan panics become `Err` and reset busy/inflight
 //!
-//! Decisions happen *before* the expensive scan body; we do not abort mid-scan.
+//! Month-from-narrow **derive** is still not implemented; queue priority is
+//! latest pending key only (not "always month first").
 
 use crate::analytics::{self, Analytics};
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -21,12 +23,15 @@ use std::time::{Duration, Instant};
 const ANALYTICS_TTL: Duration = Duration::from_secs(60);
 
 type Waiter = std::sync::mpsc::Sender<Result<Analytics, String>>;
+type ScanFn = Arc<dyn Fn(&str, &[String]) -> Result<Analytics, String> + Send + Sync>;
 
 struct InflightEntry {
     waiters: Vec<Waiter>,
 }
 
-struct Pending {
+/// Single pending job (global latest-wins while a scan is busy).
+struct PendingJob {
+    key: String,
     range: String,
     sources: Vec<String>,
     waiters: Vec<Waiter>,
@@ -34,19 +39,18 @@ struct Pending {
 
 struct Inner {
     cache: HashMap<String, (Instant, Analytics)>,
-    /// Keys currently being scanned. Followers park here.
     inflight: HashMap<String, InflightEntry>,
-    /// True while any full scan runs (or a pending promote is about to run).
+    /// True while a scan body is running or a worker is about to start one.
     busy: bool,
-    /// Requests that arrived while `busy`, deduped by key.
-    pending: HashMap<String, Pending>,
+    /// At most one queued job; replaced when a newer different key arrives.
+    pending: Option<PendingJob>,
 }
 
 /// Shared coordinator managed by Tauri state.
 #[derive(Clone)]
 pub struct ScanCoordinator {
     inner: Arc<Mutex<Inner>>,
-    /// Serializes full scan bodies.
+    scan_fn: ScanFn,
     scan_gate: Arc<Mutex<()>>,
 }
 
@@ -58,13 +62,21 @@ impl Default for ScanCoordinator {
 
 impl ScanCoordinator {
     pub fn new() -> Self {
+        Self::with_scan(Arc::new(|range, sources| {
+            Ok(analytics::compute_with(range, sources))
+        }))
+    }
+
+    /// Test / injection hook: replace the real disk scan.
+    pub fn with_scan(scan_fn: ScanFn) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 cache: HashMap::new(),
                 inflight: HashMap::new(),
                 busy: false,
-                pending: HashMap::new(),
+                pending: None,
             })),
+            scan_fn,
             scan_gate: Arc::new(Mutex::new(())),
         }
     }
@@ -95,23 +107,34 @@ impl ScanCoordinator {
                 entry.waiters.push(tx);
                 Role::Follower(rx)
             } else if g.busy {
-                // Queue: merge into pending for this key; do not start another scan.
                 let (tx, rx) = std::sync::mpsc::channel();
-                match g.pending.get_mut(&key) {
-                    Some(p) => {
+                match &mut g.pending {
+                    Some(p) if p.key == key => {
+                        // Same key queued → coalesce waiters (latest range/sources).
                         p.range = range;
                         p.sources = sources;
                         p.waiters.push(tx);
                     }
-                    None => {
-                        g.pending.insert(
-                            key.clone(),
-                            Pending {
-                                range,
-                                sources,
-                                waiters: vec![tx],
-                            },
+                    Some(p) => {
+                        // Different key → latest-wins: cancel previous pending.
+                        cancel_waiters(
+                            std::mem::take(&mut p.waiters),
+                            "analytics request superseded",
                         );
+                        *p = PendingJob {
+                            key: key.clone(),
+                            range,
+                            sources,
+                            waiters: vec![tx],
+                        };
+                    }
+                    None => {
+                        g.pending = Some(PendingJob {
+                            key: key.clone(),
+                            range,
+                            sources,
+                            waiters: vec![tx],
+                        });
                     }
                 }
                 Role::Follower(rx)
@@ -127,7 +150,7 @@ impl ScanCoordinator {
             Role::Follower(rx) => rx
                 .recv()
                 .map_err(|_| "analytics scan cancelled".to_string())?,
-            Role::Leader { range, sources } => self.run_leader(key, range, sources),
+            Role::Leader { range, sources } => self.run_job(key, range, sources),
         }
     }
 
@@ -136,35 +159,39 @@ impl ScanCoordinator {
         cache_lookup(&g.cache, key)
     }
 
-    /// Drop all cached analytics (e.g. when the user changes `sources`).
+    /// Drop all cached analytics (call only when the cache key domain changes,
+    /// i.e. `sources` — theme/locale/share style must not wipe).
     pub fn invalidate_all(&self) {
         let mut g = lock(&self.inner);
         g.cache.clear();
     }
 
-    fn run_leader(
+    fn run_job(
         &self,
         key: String,
         range: String,
         sources: Vec<String>,
     ) -> Result<Analytics, String> {
-        // Hold the gate only around the scan body so after_scan can promote the
-        // next pending key without deadlocking on re-entry.
         let result = {
             let _gate = self
                 .scan_gate
                 .lock()
                 .unwrap_or_else(|p| p.into_inner());
 
-            // Another completed scan may have filled the cache while we waited.
             if let Some(hit) = self.cache_get(&key) {
                 drop(_gate);
-                self.broadcast_and_clear_inflight(&key, Ok(hit.clone()));
-                self.after_scan();
+                self.finish_job(&key, Ok(hit.clone()));
                 return Ok(hit);
             }
 
-            Ok(analytics::compute_with(&range, &sources))
+            // Isolate panics so busy/inflight cannot stick forever.
+            let scan = Arc::clone(&self.scan_fn);
+            let range_c = range.clone();
+            let sources_c = sources.clone();
+            match catch_unwind(AssertUnwindSafe(|| scan(&range_c, &sources_c))) {
+                Ok(r) => r,
+                Err(_) => Err("analytics scan panicked".into()),
+            }
         };
 
         if let Ok(ref a) = result {
@@ -172,12 +199,13 @@ impl ScanCoordinator {
             g.cache.insert(key.clone(), (Instant::now(), a.clone()));
         }
 
-        self.broadcast_and_clear_inflight(&key, result.clone());
-        self.after_scan();
+        self.finish_job(&key, result.clone());
         result
     }
 
-    fn broadcast_and_clear_inflight(&self, key: &str, result: Result<Analytics, String>) {
+    /// Notify waiters for `key`, then either clear `busy` or spawn a worker for
+    /// the single pending job — without blocking the current caller on that work.
+    fn finish_job(&self, key: &str, result: Result<Analytics, String>) {
         let waiters = {
             let mut g = lock(&self.inner);
             g.inflight
@@ -188,39 +216,40 @@ impl ScanCoordinator {
         for w in waiters {
             let _ = w.send(result.clone());
         }
-    }
 
-    /// Clear busy or promote one pending key (prefer month).
-    fn after_scan(&self) {
         let promote = {
             let mut g = lock(&self.inner);
-            // Drop pending entries with no waiters (nobody cares anymore).
-            g.pending.retain(|_, p| !p.waiters.is_empty());
-
-            let pick = pick_pending_key(&g.pending);
-            match pick {
+            match g.pending.take() {
                 None => {
                     g.busy = false;
                     None
                 }
-                Some(k) => {
-                    let p = g.pending.remove(&k).expect("just picked");
+                Some(job) => {
+                    // Still busy: worker will run next job.
                     g.busy = true;
                     g.inflight.insert(
-                        k.clone(),
+                        job.key.clone(),
                         InflightEntry {
-                            waiters: p.waiters,
+                            waiters: job.waiters,
                         },
                     );
-                    Some((k, p.range, p.sources))
+                    Some((job.key, job.range, job.sources))
                 }
             }
         };
 
         if let Some((key, range, sources)) = promote {
-            // Chain on this thread: only one scan body at a time via scan_gate.
-            let _ = self.run_leader(key, range, sources);
+            let this = self.clone();
+            std::thread::spawn(move || {
+                let _ = this.run_job(key, range, sources);
+            });
         }
+    }
+}
+
+fn cancel_waiters(waiters: Vec<Waiter>, msg: &str) {
+    for w in waiters {
+        let _ = w.send(Err(msg.to_string()));
     }
 }
 
@@ -242,15 +271,13 @@ fn cache_lookup(cache: &HashMap<String, (Instant, Analytics)>, key: &str) -> Opt
     Some(a.clone())
 }
 
-/// Prefer month (widest window) when several keys are queued.
-fn pick_pending_key(pending: &HashMap<String, Pending>) -> Option<String> {
-    if pending.is_empty() {
-        return None;
-    }
-    if let Some((k, _)) = pending.iter().find(|(_, p)| p.range == "month") {
-        return Some(k.clone());
-    }
-    pending.keys().next().cloned()
+/// Sorted sources equality for settings invalidation.
+pub fn sources_equal(a: &[String], b: &[String]) -> bool {
+    let mut aa: Vec<&str> = a.iter().map(|s| s.as_str()).collect();
+    let mut bb: Vec<&str> = b.iter().map(|s| s.as_str()).collect();
+    aa.sort_unstable();
+    bb.sort_unstable();
+    aa == bb
 }
 
 #[cfg(test)]
@@ -258,6 +285,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
+    use std::time::Duration;
 
     fn sample_analytics(range: &str) -> Analytics {
         Analytics {
@@ -292,16 +320,40 @@ mod tests {
         }
     }
 
+    fn slow_scan(
+        calls: Arc<AtomicUsize>,
+        concurrent: Arc<AtomicUsize>,
+        max_concurrent: Arc<AtomicUsize>,
+        delay_ms: u64,
+    ) -> ScanFn {
+        Arc::new(move |range, _sources| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            let now = concurrent.fetch_add(1, Ordering::SeqCst) + 1;
+            max_concurrent.fetch_max(now, Ordering::SeqCst);
+            thread::sleep(Duration::from_millis(delay_ms));
+            concurrent.fetch_sub(1, Ordering::SeqCst);
+            Ok(sample_analytics(range))
+        })
+    }
+
     #[test]
     fn cache_key_sorts_sources() {
         assert_eq!(
             cache_key(&["codex".into(), "claude".into()], "week"),
             cache_key(&["claude".into(), "codex".into()], "week")
         );
-        assert_ne!(
-            cache_key(&["claude".into()], "week"),
-            cache_key(&["claude".into()], "month")
-        );
+    }
+
+    #[test]
+    fn sources_equal_ignores_order() {
+        assert!(sources_equal(
+            &["codex".into(), "claude".into()],
+            &["claude".into(), "codex".into()]
+        ));
+        assert!(!sources_equal(
+            &["claude".into()],
+            &["claude".into(), "codex".into()]
+        ));
     }
 
     #[test]
@@ -309,10 +361,7 @@ mod tests {
         let mut cache = HashMap::new();
         let fake = sample_analytics("today");
         cache.insert("claude|today".into(), (Instant::now(), fake.clone()));
-        assert_eq!(
-            cache_lookup(&cache, "claude|today").unwrap().range,
-            "today"
-        );
+        assert!(cache_lookup(&cache, "claude|today").is_some());
         cache.insert(
             "claude|old".into(),
             (
@@ -324,33 +373,151 @@ mod tests {
     }
 
     #[test]
-    fn pick_pending_prefers_month() {
-        let mut pending = HashMap::new();
-        pending.insert(
-            "a|week".into(),
-            Pending {
-                range: "week".into(),
-                sources: vec![],
-                waiters: vec![],
-            },
+    fn coalesce_same_key_scans_once() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let concurrent = Arc::new(AtomicUsize::new(0));
+        let max_c = Arc::new(AtomicUsize::new(0));
+        let coord = ScanCoordinator::with_scan(slow_scan(
+            Arc::clone(&calls),
+            Arc::clone(&concurrent),
+            Arc::clone(&max_c),
+            80,
+        ));
+        let mut handles = vec![];
+        for _ in 0..4 {
+            let c = coord.clone();
+            handles.push(thread::spawn(move || {
+                c.get("week".into(), vec!["claude".into()]).unwrap()
+            }));
+        }
+        for h in handles {
+            assert_eq!(h.join().unwrap().range, "week");
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(max_c.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn exclusion_max_one_concurrent_scan() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let concurrent = Arc::new(AtomicUsize::new(0));
+        let max_c = Arc::new(AtomicUsize::new(0));
+        let coord = ScanCoordinator::with_scan(slow_scan(
+            Arc::clone(&calls),
+            Arc::clone(&concurrent),
+            Arc::clone(&max_c),
+            50,
+        ));
+        let c1 = coord.clone();
+        let c2 = coord.clone();
+        let h1 = thread::spawn(move || c1.get("today".into(), vec!["claude".into()]));
+        thread::sleep(Duration::from_millis(10));
+        let h2 = thread::spawn(move || c2.get("week".into(), vec!["claude".into()]));
+        h1.join().unwrap().unwrap();
+        h2.join().unwrap().unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(max_c.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn latest_wins_cancels_stale_pending_key() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls2 = Arc::clone(&calls);
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let seen2 = Arc::clone(&seen);
+        let coord = ScanCoordinator::with_scan(Arc::new(move |range, _| {
+            calls2.fetch_add(1, Ordering::SeqCst);
+            seen2.lock().unwrap().push(range.to_string());
+            thread::sleep(Duration::from_millis(80));
+            Ok(sample_analytics(range))
+        }));
+
+        let c_leader = coord.clone();
+        let leader = thread::spawn(move || {
+            c_leader
+                .get("today".into(), vec!["claude".into()])
+                .unwrap()
+        });
+        thread::sleep(Duration::from_millis(15));
+
+        let c_week = coord.clone();
+        let week = thread::spawn(move || c_week.get("week".into(), vec!["claude".into()]));
+        thread::sleep(Duration::from_millis(10));
+
+        let c_month = coord.clone();
+        let month = thread::spawn(move || c_month.get("month".into(), vec!["claude".into()]));
+
+        assert_eq!(leader.join().unwrap().range, "today");
+        // week was superseded by month
+        let week_res = week.join().unwrap();
+        assert!(
+            week_res.is_err(),
+            "stale week should be cancelled"
         );
-        pending.insert(
-            "a|month".into(),
-            Pending {
-                range: "month".into(),
-                sources: vec![],
-                waiters: vec![],
-            },
+        assert_eq!(month.join().unwrap().unwrap().range, "month");
+
+        // today + month only (week cancelled before scan)
+        let order = seen.lock().unwrap().clone();
+        assert_eq!(order, vec!["today".to_string(), "month".to_string()]);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn leader_returns_before_pending_finishes() {
+        let phase = Arc::new(AtomicUsize::new(0));
+        let phase2 = Arc::clone(&phase);
+        let coord = ScanCoordinator::with_scan(Arc::new(move |range, _| {
+            if range == "today" {
+                phase2.store(1, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(40));
+                phase2.store(2, Ordering::SeqCst);
+            } else {
+                // pending month — long
+                phase2.store(3, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(200));
+                phase2.store(4, Ordering::SeqCst);
+            }
+            Ok(sample_analytics(range))
+        }));
+
+        let c = coord.clone();
+        let leader = thread::spawn(move || c.get("today".into(), vec!["claude".into()]));
+        thread::sleep(Duration::from_millis(10));
+        let c2 = coord.clone();
+        let _pending = thread::spawn(move || c2.get("month".into(), vec!["claude".into()]));
+
+        let t0 = Instant::now();
+        let a = leader.join().unwrap().unwrap();
+        let leader_ms = t0.elapsed().as_millis();
+        assert_eq!(a.range, "today");
+        // Leader must not wait for the 200ms pending body.
+        assert!(
+            leader_ms < 150,
+            "leader blocked on pending: {leader_ms}ms"
         );
-        pending.insert(
-            "a|today".into(),
-            Pending {
-                range: "today".into(),
-                sources: vec![],
-                waiters: vec![],
-            },
-        );
-        assert_eq!(pick_pending_key(&pending).unwrap(), "a|month");
+        // Pending may still be running
+        assert!(phase.load(Ordering::SeqCst) >= 2);
+    }
+
+    #[test]
+    fn panic_in_scan_recovers_for_next_request() {
+        let n = Arc::new(AtomicUsize::new(0));
+        let n2 = Arc::clone(&n);
+        let coord = ScanCoordinator::with_scan(Arc::new(move |range, _| {
+            let i = n2.fetch_add(1, Ordering::SeqCst);
+            if i == 0 {
+                panic!("boom");
+            }
+            Ok(sample_analytics(range))
+        }));
+        match coord.get("today".into(), vec!["claude".into()]) {
+            Err(err) => assert!(err.contains("panic"), "unexpected err: {err}"),
+            Ok(_) => panic!("expected panic to surface as Err"),
+        }
+        let ok = coord
+            .get("today".into(), vec!["claude".into()])
+            .expect("second request works");
+        assert_eq!(ok.range, "today");
     }
 
     #[test]

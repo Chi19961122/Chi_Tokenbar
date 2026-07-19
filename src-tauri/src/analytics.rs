@@ -832,6 +832,7 @@ fn codex_token_event_from_value(v: &serde_json::Value) -> Option<(i64, CodexUsag
     ))
 }
 
+#[cfg(test)]
 fn codex_token_event(line: &str) -> Option<(i64, CodexUsage)> {
     if !line.contains("token_count") {
         return None;

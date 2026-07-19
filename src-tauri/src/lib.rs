@@ -161,9 +161,17 @@ fn set_settings(app: AppHandle, data: State<'_, AppData>, settings: Settings) {
     config::save(&settings);
     apply_autostart(&app, settings.autostart);
     apply_always_on_top(&app, settings.always_on_top);
-    // Source selection is part of the analytics cache key; wipe so the next
-    // fetch cannot serve a slice from the previous selection.
-    data.scan.invalidate_all();
+    // Cache keys already include sources. Only wipe when the selection actually
+    // changes — theme/locale/share style must not force a full log rescan.
+    let sources_changed = data
+        .settings
+        .lock()
+        .ok()
+        .map(|g| !scan_coord::sources_equal(&g.sources, &settings.sources))
+        .unwrap_or(true);
+    if sources_changed {
+        data.scan.invalidate_all();
+    }
     if let Ok(mut g) = data.settings.lock() {
         *g = settings;
     }
