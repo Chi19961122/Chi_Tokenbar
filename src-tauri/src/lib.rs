@@ -21,6 +21,7 @@ use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
 };
 use tauri_plugin_notification::NotificationExt;
 
@@ -320,11 +321,28 @@ fn update_share_preview(
 
 
 #[tauri::command]
-fn close_share_preview(app: AppHandle) -> Result<(), String> {
+fn close_share_preview(
+    app: AppHandle,
+    preview: State<'_, SharePreviewState>,
+) -> Result<(), String> {
+    // Clear state first so a destroy path that races still leaves no base64 PNG
+    // retained in the host (Preview may also close via Esc / system chrome).
+    preview.clear();
     if let Some(window) = app.get_webview_window("share-preview") {
         window.destroy().map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+/// Stage 1A: any close path for the Preview window (command, Esc → window.close,
+/// system destroy) must drop the in-memory data URL. Registered once on the app.
+fn clear_share_preview_if_label(label: &str, app: &AppHandle) {
+    if label != "share-preview" {
+        return;
+    }
+    if let Some(state) = app.try_state::<SharePreviewState>() {
+        state.clear();
+    }
 }
 
 /// Clear any previous export and recreate the dedicated preview WebView so it
@@ -422,6 +440,14 @@ pub fn run() {
             update_share_preview,
             close_share_preview
         ])
+        // Preview may close without going through `close_share_preview` (Esc /
+        // getCurrentWindow().close()). Destroy is the universal path — clear
+        // SharePreviewState so base64 PNG never sticks in the host.
+        .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Destroyed) {
+                clear_share_preview_if_label(window.label(), window.app_handle());
+            }
+        })
         .setup(move |app| {
             build_tray(app.handle())?;
             position_island(app.handle());

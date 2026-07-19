@@ -303,25 +303,15 @@ async function fetchAnalytics(range: AnalyticsRange): Promise<Analytics | null> 
   }
 }
 
-/** Warm the ranges the user hasn't visited yet — one scan at a time so the
- *  disk isn't thrashed, once per run — so the first click on another range
- *  finds a payload instead of a seconds-long scan. */
-let warmedAnalytics = false;
-function warmAnalytics(): void {
-  if (warmedAnalytics) return;
-  warmedAnalytics = true;
-  void (async () => {
-    for (const r of ["today", "week", "month"] as const) {
-      if (!analyticsCache.has(analyticsSliceOf(analyticsKeyFor(r)))) await fetchAnalytics(r);
-    }
-  })();
-}
-
 /** Paint the analytics layer, fetching if needed — synchronously before its
  *  first await, so callers can fitWindow() right after without waiting on IPC:
  *    exact cache hit → paint (no fetch); stale slice hit → paint the dated
  *    payload now, revalidate behind it; cold miss → skeleton until the fetch
- *    lands (paintIfShowing then draws whichever pane is current). */
+ *    lands (paintIfShowing then draws whichever pane is current).
+ *
+ *  Stage 1A: does *not* background-warm other ranges. Warming today+week+month
+ *  forced three full log scans (~hundreds of MB cumulative I/O). Other ranges
+ *  load on first visit. */
 async function renderAnalyticsNow(): Promise<void> {
   const range = currentAnalyticsRange();
   const key = analyticsKeyFor(range);
@@ -331,7 +321,6 @@ async function renderAnalyticsNow(): Promise<void> {
   } else if (shareOpen()) paintShare(entry.data);
   else renderAnalyticsInto(entry.data);
   if (!entry || entry.key !== key) await fetchAnalytics(range);
-  warmAnalytics();
 }
 
 /** Non-blocking entry used on mode entry (expand / compact toggle). */
@@ -768,9 +757,8 @@ async function openSharePanel(): Promise<void> {
   }
   fitWindow();
   // Revalidate a stale slice behind the painted one (paintIfShowing → paintShare
-  // when it lands, since share-open is already set); warm the other ranges.
+  // when it lands, since share-open is already set). Stage 1A: no multi-range warm.
   if (entry && entry.key !== key) void fetchAnalytics(range);
-  warmAnalytics();
 }
 
 /** Leave the Share page back to whichever tab (Limits/Usage) is active — mirror
@@ -1154,9 +1142,19 @@ async function boot() {
     if (ui.expanded) renderCards();
   }, 1000);
 
-  // Today's burn rate + est. cost for the island aux readout (60s cache). On a
-  // fetch failure both go null so the aux shows nothing rather than a fake 0.
+  // Today's burn rate + est. cost for the island aux readout (60s cache).
+  // Stage 1A: only scan when the island aux actually needs analytics data.
+  // `off` must not trigger a full today log scan every minute.
+  const islandAuxNeedsAnalytics = () => {
+    const aux = settings?.island_aux ?? "tok_per_min";
+    return aux === "tok_per_min" || aux === "cost_today";
+  };
   const refreshToday = async () => {
+    if (!islandAuxNeedsAnalytics()) {
+      todayRate = null;
+      todayCost = null;
+      return;
+    }
     try {
       // Routed through the shared cache: keeps the "today" slice warm (and any
       // on-screen today charts fresh) as a side effect of the island readout.

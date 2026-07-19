@@ -9,6 +9,37 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+/// Per-scan counters for opt-in diagnostics (`TOKENBAR_DEBUG`).
+/// Does not change product behaviour — only logged when the env var is set.
+#[derive(Default, Debug, Clone)]
+struct ScanStats {
+    files_considered: u64,
+    files_read: u64,
+    bytes_read: u64,
+    lines_read: u64,
+    candidate_lines: u64,
+    json_lines_parsed: u64,
+}
+
+fn log_scan_stats(range: &str, sources: &[String], stats: &ScanStats, elapsed_ms: u128) {
+    if std::env::var_os("TOKENBAR_DEBUG").is_none() {
+        return;
+    }
+    eprintln!(
+        "[atoll:analytics] range={} sources={:?} files_considered={} files_read={} bytes_read={} lines_read={} candidate_lines={} json_lines_parsed={} elapsed_ms={}",
+        range,
+        sources,
+        stats.files_considered,
+        stats.files_read,
+        stats.bytes_read,
+        stats.lines_read,
+        stats.candidate_lines,
+        stats.json_lines_parsed,
+        elapsed_ms
+    );
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -223,6 +254,7 @@ struct Acc {
     by_project: HashMap<String, u64>,
     recent_tokens: u64,
     now: i64,
+    stats: ScanStats,
 }
 
 #[derive(Default)]
@@ -251,6 +283,7 @@ impl Acc {
             by_project: HashMap::new(),
             recent_tokens: 0,
             now,
+            stats: ScanStats::default(),
         }
     }
 
@@ -484,6 +517,7 @@ where
     L: FnOnce(&mut Acc, i64),
     K: FnOnce(&mut Acc, i64),
 {
+    let t0 = Instant::now();
     let now = chrono::Utc::now().timestamp();
     let days_back: i64 = match range {
         "today" => 0,
@@ -517,6 +551,7 @@ where
     if wants(sources, "grok") {
         scan_grok_fn(&mut acc, start);
     }
+    let scan_stats = std::mem::take(&mut acc.stats);
 
     let mut daily: Vec<DayPoint> = Vec::new();
     let mut by_model: HashMap<String, u64> = HashMap::new();
@@ -602,7 +637,7 @@ where
         });
     }
 
-    Analytics {
+    let out = Analytics {
         range: range.to_string(),
         range_start_day,
         total_tokens,
@@ -623,7 +658,14 @@ where
         sessions_this_week: sessions,
         tok_per_min: (acc.recent_tokens as f64 / 10.0) as u64,
         accounts: filter_accounts(sources, accounts),
-    }
+    };
+    log_scan_stats(
+        range,
+        sources,
+        &scan_stats,
+        t0.elapsed().as_millis(),
+    );
+    out
 }
 
 // ── Codex: cumulative token events converted to per-event deltas ─────────
@@ -653,12 +695,18 @@ fn scan_codex(acc: &mut Acc, start: i64) -> u32 {
     let mut seen = HashSet::new();
     if let Ok(paths) = glob::glob(&pattern) {
         for p in paths.filter_map(Result::ok) {
+            acc.stats.files_considered += 1;
             let ts = mtime_secs(&p);
             if ts < start {
                 continue;
             }
             sessions += 1;
+            let Ok(meta) = fs::metadata(&p) else {
+                continue;
+            };
             if let Ok(file) = File::open(&p) {
+                acc.stats.files_read += 1;
+                acc.stats.bytes_read += meta.len();
                 let project = first_cwd_basename(&p);
                 scan_codex_lines(
                     acc,
@@ -796,9 +844,14 @@ fn scan_codex_lines<I>(
 {
     let mut previous: Option<CodexUsage> = None;
     for line in lines {
+        acc.stats.lines_read += 1;
+        if line.contains("token_count") {
+            acc.stats.candidate_lines += 1;
+        }
         let Some((ts, current)) = codex_token_event(&line) else {
             continue;
         };
+        acc.stats.json_lines_parsed += 1;
         let total = usage_total(current);
         let duplicate = !seen.insert((ts, total));
         let prior = previous.replace(current).unwrap_or((0, 0, 0, 0));
@@ -894,6 +947,7 @@ fn scan_claude(acc: &mut Acc, start: i64) {
     };
     let mut seen = HashSet::new();
     for p in paths.filter_map(Result::ok) {
+        acc.stats.files_considered += 1;
         if mtime_secs(&p) < start {
             continue;
         }
@@ -903,9 +957,14 @@ fn scan_claude(acc: &mut Acc, start: i64) {
             .and_then(|d| d.file_name())
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
+        let Ok(meta) = fs::metadata(&p) else {
+            continue;
+        };
         let Ok(file) = File::open(&p) else {
             continue;
         };
+        acc.stats.files_read += 1;
+        acc.stats.bytes_read += meta.len();
         scan_claude_lines(
             acc,
             start,
@@ -924,12 +983,15 @@ fn scan_claude_lines(
     seen: &mut HashSet<String>,
 ) {
     for line in lines {
+        acc.stats.lines_read += 1;
         if !line.contains("\"usage\"") {
             continue;
         }
+        acc.stats.candidate_lines += 1;
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
             continue;
         };
+        acc.stats.json_lines_parsed += 1;
         let msg = v.get("message");
         let Some(usage) = msg.and_then(|m| m.get("usage")) else {
             continue;
@@ -1021,10 +1083,18 @@ fn scan_claude_lines(
 
 // ── Grok CLI: cumulative session totals (T-916) ───────────────────────────
 //
-// 資料源(勘察已定案,見 T-916 brief):
+// 資料源(勘察已定案,見 T-916 brief; 語意複核 2026-07-19):
 //   ~/.grok/sessions/<url-encoded-cwd>/<session-id>/updates.jsonl
-//   每行一個 JSON 物件:`timestamp` = unix epoch 秒;`_meta.totalTokens` = 從
-//   session 起算的「累計」u64;`_meta.modelId`(如 "grok-4.5")。
+//   每行一個 JSON 物件,`timestamp` = unix epoch 秒。
+//
+//   Token 累計(主路徑,實測 2026-07-19):
+//     `params._meta.totalTokens` — 從 session 起算的累計 u64。
+//     (舊/簡化形狀也可能在頂層 `_meta.totalTokens`。)
+//
+//   Model id **不在 token 同行**(真實檔 0 筆 co-locate):
+//     出現在先前的 `params.update._meta.modelId`(如 user_message_chunk)。
+//     每檔先出現 model update,再出現 token event。Scanner 必須保留 per-file
+//     `current_model`,token 行缺 model 時沿用;同檔中途換 model 則更新。
 //
 // 和 Codex 一樣把累計值逐筆差分成單筆增量(同 monotonic-diff);但重置(數值下降)
 // 的處理不同:視為新 baseline —— 把當前累計值當成增量,而非 saturating 到 0。
@@ -1075,16 +1145,29 @@ fn grok_project_from_path(path: &Path) -> String {
     basename(&percent_decode(&encoded))
 }
 
-/// Parse one Grok `updates.jsonl` line into `(ts_secs, cumulative_total, model)`.
-/// `None` for a line without a cumulative token total or timestamp.
-fn grok_event(line: &str) -> Option<(i64, u64, String)> {
-    if !line.contains("totalTokens") {
-        return None;
+/// Prefer real-file path first (`params.update._meta.modelId`), then co-located
+/// shapes used by older fixtures / brief examples.
+fn grok_model_id_from_value(v: &serde_json::Value) -> Option<String> {
+    const PATHS: [&str; 3] = [
+        "/params/update/_meta/modelId",
+        "/params/_meta/modelId",
+        "/_meta/modelId",
+    ];
+    for path in PATHS {
+        if let Some(s) = v.pointer(path).and_then(|m| m.as_str()) {
+            if !s.is_empty() {
+                return Some(s.to_string());
+            }
+        }
     }
-    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-    // 實測 2026-07-18:同一個 updates.jsonl 裡 totalTokens 有兩種位置——多數行
-    // 在頂層 `_meta`,少數行的頂層 `_meta` 是空物件、值藏在 `params._meta`。
-    // 先讀頂層,沒有就 fallback,兩種都沒有才跳過該行。
+    None
+}
+
+/// Cumulative token total + timestamp from one parsed line. Model is *not*
+/// required here — real Grok logs put `modelId` on earlier update rows.
+fn grok_token_from_value(v: &serde_json::Value) -> Option<(i64, u64)> {
+    // 實測 2026-07-18/19: totalTokens 主路徑在 `params._meta`;簡化形狀也可在
+    // 頂層 `_meta`。先讀頂層(且真有 totalTokens),沒有就 fallback。
     let meta = match v.get("_meta").filter(|m| m.get("totalTokens").is_some()) {
         Some(m) => m,
         None => v.pointer("/params/_meta")?,
@@ -1094,12 +1177,26 @@ fn grok_event(line: &str) -> Option<(i64, u64, String)> {
     // below the millis threshold untouched, so a realistic seconds value is kept
     // as-is (and a stray millis value is still handled gracefully).
     let ts = v.get("timestamp").and_then(parse_epoch)?;
-    let model = meta
-        .get("modelId")
-        .and_then(|m| m.as_str())
-        .unwrap_or("grok")
-        .to_string();
-    Some((ts, total, model))
+    Some((ts, total))
+}
+
+/// Parse one Grok line into `(ts, cumulative_total, model_on_this_line)`.
+///
+/// `model_on_this_line` is `Some` only when this same JSON carries a `modelId`
+/// (legacy co-located fixtures). Real files usually return `None` here — the
+/// scanner sticks the last model update instead. `None` overall when the line
+/// has no cumulative total / timestamp.
+///
+/// Test helper only: production scanning goes through `scan_grok_lines`, which
+/// keeps sticky `current_model` across split update/token rows.
+#[cfg(test)]
+fn grok_event(line: &str) -> Option<(i64, u64, Option<String>)> {
+    if !line.contains("totalTokens") {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let (ts, total) = grok_token_from_value(&v)?;
+    Some((ts, total, grok_model_id_from_value(&v)))
 }
 
 fn scan_grok_lines<I>(
@@ -1112,8 +1209,24 @@ fn scan_grok_lines<I>(
     I: Iterator<Item = String>,
 {
     let mut previous: u64 = 0;
+    // Sticky model for this file. Real Grok logs emit modelId on update rows
+    // that do *not* carry totalTokens; token rows then inherit this value.
+    let mut current_model = String::from("grok");
     for line in lines {
-        let Some((ts, cumulative, model)) = grok_event(&line) else {
+        acc.stats.lines_read += 1;
+        // Cheap prefilter: most stream chunks are huge content without either key.
+        if !line.contains("totalTokens") && !line.contains("modelId") {
+            continue;
+        }
+        acc.stats.candidate_lines += 1;
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        acc.stats.json_lines_parsed += 1;
+        if let Some(model) = grok_model_id_from_value(&v) {
+            current_model = model;
+        }
+        let Some((ts, cumulative)) = grok_token_from_value(&v) else {
             continue;
         };
         let duplicate = !seen.insert((ts, cumulative));
@@ -1130,7 +1243,7 @@ fn scan_grok_lines<I>(
             continue;
         }
         // total-only (no breakdown), cost 0.0 (no public pricing). See section note.
-        acc.add_total_only(ts, &model, "Grok CLI", project, delta, 0.0);
+        acc.add_total_only(ts, &current_model, "Grok CLI", project, delta, 0.0);
     }
 }
 
@@ -1147,13 +1260,19 @@ fn scan_grok(acc: &mut Acc, start: i64) {
     };
     let mut seen = HashSet::new();
     for p in paths.filter_map(Result::ok) {
+        acc.stats.files_considered += 1;
         if mtime_secs(&p) < start {
             continue;
         }
         let project = grok_project_from_path(&p);
+        let Ok(meta) = fs::metadata(&p) else {
+            continue;
+        };
         let Ok(file) = File::open(&p) else {
             continue;
         };
+        acc.stats.files_read += 1;
+        acc.stats.bytes_read += meta.len();
         scan_grok_lines(
             acc,
             start,
@@ -1790,7 +1909,8 @@ mod tests {
     #[test]
     fn grok_event_falls_back_to_params_meta_when_top_meta_is_empty() {
         // Real 2026-07-18 file shape: top-level `_meta` present but EMPTY, the
-        // usable payload nested under `params._meta`.
+        // usable payload nested under `params._meta`. Co-located modelId still
+        // surfaces as Some so scan can stick it without a prior update row.
         let line = serde_json::json!({
             "timestamp": 1_784_343_597,
             "method": "session/update",
@@ -1801,7 +1921,7 @@ mod tests {
         let (ts, total, model) = grok_event(&line).unwrap();
         assert_eq!(ts, 1_784_343_597);
         assert_eq!(total, 10_093);
-        assert_eq!(model, "grok-4.5");
+        assert_eq!(model.as_deref(), Some("grok-4.5"));
 
         // Neither location has totalTokens → skipped, not fatal.
         let empty = serde_json::json!({
@@ -1837,14 +1957,98 @@ mod tests {
         let (ts, total, model) = grok_event(&grok_line(secs, 500, "grok-4.5")).unwrap();
         assert_eq!(ts, secs);
         assert_eq!(total, 500);
-        assert_eq!(model, "grok-4.5");
+        assert_eq!(model.as_deref(), Some("grok-4.5"));
 
-        // modelId absent → "grok" fallback.
+        // modelId absent on the token line → None here; scan sticks "grok" (or
+        // a prior update row's model) instead of inventing one at parse time.
         let no_model = r#"{ "timestamp": 1784253600, "_meta": { "totalTokens": 10 } }"#;
-        assert_eq!(grok_event(no_model).unwrap().2, "grok");
+        assert_eq!(grok_event(no_model).unwrap().2, None);
 
         // No cumulative total → skipped (the `totalTokens` prefilter also guards this).
         assert!(grok_event(r#"{ "timestamp": 1, "_meta": { "modelId": "grok" } }"#).is_none());
+    }
+
+    /// Real 2026-07-19 Grok shape: `modelId` lives on an earlier
+    /// `params.update._meta` row; token rows only carry `params._meta.totalTokens`.
+    /// Without sticky per-file model every event fell back to the generic "grok".
+    fn grok_model_update_line(ts: i64, model: &str) -> String {
+        serde_json::json!({
+            "timestamp": ts,
+            "method": "session/update",
+            "params": {
+                "sessionId": "test-session",
+                "update": {
+                    "sessionUpdate": "user_message_chunk",
+                    "content": { "type": "text", "text": "hi" },
+                    "_meta": { "modelId": model, "promptIndex": 0 }
+                },
+                "_meta": { "eventId": "evt-model" }
+            }
+        })
+        .to_string()
+    }
+
+    fn grok_token_only_line(ts: i64, total: u64) -> String {
+        serde_json::json!({
+            "timestamp": ts,
+            "method": "session/update",
+            "params": {
+                "sessionId": "test-session",
+                "update": {
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": { "type": "text", "text": "thinking" }
+                },
+                "_meta": { "totalTokens": total, "eventId": "evt-tok" }
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn grok_split_model_update_then_token_books_real_model() {
+        let t0 = grok_ts(&local_ts(2026, 7, 17, 1, 0));
+        let t1 = grok_ts(&local_ts(2026, 7, 17, 2, 0));
+        let t2 = grok_ts(&local_ts(2026, 7, 17, 3, 0));
+        let acc = scan_fake_grok_files(vec![vec![
+            grok_model_update_line(t0, "grok-4.5"),
+            grok_token_only_line(t1, 100),
+            grok_token_only_line(t2, 400),
+        ]]);
+        assert_eq!(grok_agent_total(&acc), 400);
+        let day = acc.days.values().next().unwrap();
+        assert_eq!(day.by_model.get("grok-4.5").copied(), Some(400));
+        assert!(
+            !day.by_model.contains_key("grok"),
+            "must not collapse to the generic fallback when a prior model update exists"
+        );
+    }
+
+    #[test]
+    fn grok_token_without_prior_model_falls_back_to_generic() {
+        let t1 = grok_ts(&local_ts(2026, 7, 17, 2, 0));
+        let acc = scan_fake_grok_files(vec![vec![grok_token_only_line(t1, 250)]]);
+        assert_eq!(grok_agent_total(&acc), 250);
+        let day = acc.days.values().next().unwrap();
+        assert_eq!(day.by_model.get("grok").copied(), Some(250));
+    }
+
+    #[test]
+    fn grok_mid_file_model_switch_applies_to_later_tokens() {
+        let t0 = grok_ts(&local_ts(2026, 7, 17, 1, 0));
+        let t1 = grok_ts(&local_ts(2026, 7, 17, 2, 0));
+        let t2 = grok_ts(&local_ts(2026, 7, 17, 3, 0));
+        let t3 = grok_ts(&local_ts(2026, 7, 17, 4, 0));
+        let acc = scan_fake_grok_files(vec![vec![
+            grok_model_update_line(t0, "grok-4.5"),
+            grok_token_only_line(t1, 100),
+            grok_model_update_line(t2, "grok-4"),
+            grok_token_only_line(t3, 300),
+        ]]);
+        // deltas: 100 on 4.5, then 200 on 4
+        let day = acc.days.values().next().unwrap();
+        assert_eq!(day.by_model.get("grok-4.5").copied(), Some(100));
+        assert_eq!(day.by_model.get("grok-4").copied(), Some(200));
+        assert_eq!(grok_agent_total(&acc), 300);
     }
 
     #[test]
