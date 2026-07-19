@@ -1,8 +1,9 @@
 {
   "run_id": "2026-07-19-completion",
-  "commit": "pending",
-  "note": "Full interactive cold week/month IPC p95 and process-tree scenarios were not fully automated in this pass. Stage 2 code delivered streaming line buffers + Codex single-pass; Stage 3 SQLite not activated (default waiver without failing gate evidence).",
-  "stage_3": "waived_default_no_failing_gate",
+  "status": "incomplete_measurement",
+  "stage_3": "undecided",
+  "note": "Stage 3 is UNDECIDED — no failing gate evidence and no passing cold week/month p95 or 60s recovery data. Missing: summary.csv with three full release runs, warm backend p95, cold week/month p95, Private Bytes recovery. Default is NOT a waiver.",
   "harness_selftest": "measure-memory.ps1 and summarize-memory.ps1 SelfTest OK",
-  "dataset": "machine-local Claude/Codex/Grok session logs (see MEMORY-OPTIMIZATION.md §1.2)"
+  "code_stage_2": "streaming line buffers + Codex single-pass + minimal typed envelopes (Claude/Codex/Grok); full Value still unused on some edges",
+  "next": "Capture three release runs of idle/cold ranges/rapid switch/share/recovery; then apply Stage 3 gates before any SQLite work"
 }

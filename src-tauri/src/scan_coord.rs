@@ -70,7 +70,9 @@ fn code_str(c: &AnalyticsErrorCode) -> &'static str {
     }
 }
 
-/// Parse a Tauri-surfaced error string back into a structured code (tests + FE).
+/// Parse a Tauri-surfaced error string back into a structured code (tests only;
+/// production frontend uses its own decoder in `analytics-error.ts`).
+#[cfg(test)]
 pub fn parse_analytics_error_display(s: &str) -> Option<AnalyticsErrorCode> {
     let rest = s.strip_prefix("analytics_error:")?;
     let code = rest.split(':').next()?;

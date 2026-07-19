@@ -78,14 +78,20 @@ struct AppData {
 
 /// File-backed share preview: one app-owned PNG under a dedicated temp dir.
 /// The data URL is never retained after `replace` — only the absolute path.
+///
+/// `session` is bumped on every open and clear; updates with a stale session
+/// are rejected so a late raster after the user closed Preview cannot orphan a PNG.
 struct SharePreviewState {
     path: Mutex<Option<PathBuf>>,
+    /// Monotonic session id for the currently open preview window (0 = closed).
+    session: Mutex<u64>,
 }
 
 impl Default for SharePreviewState {
     fn default() -> Self {
         Self {
             path: Mutex::new(None),
+            session: Mutex::new(0),
         }
     }
 }
@@ -95,21 +101,50 @@ impl SharePreviewState {
         std::env::temp_dir().join("atoll-share-preview")
     }
 
-    /// Decode a transient data URL into a new PNG file; delete any previous file.
-    fn replace_from_data_url(&self, data_url: &str) -> Result<PathBuf, String> {
+    /// Open a new preview session; returns the session id the FE must pass to update.
+    fn begin_session(&self) -> u64 {
+        let mut s = self.session.lock().unwrap_or_else(|p| p.into_inner());
+        *s = s.wrapping_add(1).max(1);
+        *s
+    }
+
+    fn current_session(&self) -> u64 {
+        *self.session.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Decode a transient data URL into a new PNG; reject if `session` is stale.
+    fn replace_from_data_url(&self, data_url: &str, session: u64) -> Result<PathBuf, String> {
+        if session == 0 || session != self.current_session() {
+            return Err("preview session stale".into());
+        }
         let bytes = decode_data_url_png(data_url)?;
         let dir = Self::preview_dir();
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let name = format!("preview-{}.png", chrono::Utc::now().timestamp_millis());
-        let dest = dir.join(&name);
-        let tmp = dir.join(format!("{name}.tmp"));
-        std::fs::write(&tmp, &bytes).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
+        // Unpredictable name + exclusive create avoids ms collisions.
+        let id = format!("{:016x}{:016x}", random_u64(), random_u64());
+        let dest = dir.join(format!("preview-{id}.png"));
+        let tmp = dir.join(format!("preview-{id}.tmp"));
+        // Exclusive create of the final name first (reserves the id).
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&tmp)
+                .map_err(|e| e.to_string())?;
+            f.write_all(&bytes).map_err(|e| e.to_string())?;
+        }
+        if let Err(e) = std::fs::rename(&tmp, &dest) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.to_string());
+        }
+        // Re-check session after IO — user may have closed mid-write.
+        if session != self.current_session() {
+            let _ = std::fs::remove_file(&dest);
+            return Err("preview session stale".into());
+        }
         let prev = {
-            let mut g = self
-                .path
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
+            let mut g = self.path.lock().unwrap_or_else(|p| p.into_inner());
             std::mem::replace(&mut *g, Some(dest.clone()))
         };
         if let Some(old) = prev {
@@ -119,11 +154,13 @@ impl SharePreviewState {
     }
 
     fn clear(&self) {
+        // Invalidate any in-flight update first.
+        {
+            let mut s = self.session.lock().unwrap_or_else(|p| p.into_inner());
+            *s = s.wrapping_add(1);
+        }
         let prev = {
-            let mut g = self
-                .path
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
+            let mut g = self.path.lock().unwrap_or_else(|p| p.into_inner());
             g.take()
         };
         if let Some(p) = prev {
@@ -138,7 +175,7 @@ impl SharePreviewState {
             .clone()
     }
 
-    /// Remove PNG files older than `max_age` in the preview dir (startup hygiene).
+    /// Remove PNG and leftover .tmp files older than `max_age`.
     fn cleanup_stale(max_age: Duration) {
         let dir = Self::preview_dir();
         let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -147,7 +184,8 @@ impl SharePreviewState {
         let now = std::time::SystemTime::now();
         for e in entries.flatten() {
             let path = e.path();
-            if path.extension().and_then(|x| x.to_str()) != Some("png") {
+            let ext = path.extension().and_then(|x| x.to_str()).unwrap_or("");
+            if ext != "png" && ext != "tmp" {
                 continue;
             }
             if let Ok(meta) = e.metadata() {
@@ -159,6 +197,14 @@ impl SharePreviewState {
             }
         }
     }
+}
+
+fn random_u64() -> u64 {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = RandomState::new().build_hasher();
+    h.write_u64(chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64);
+    h.finish()
 }
 
 fn decode_data_url_png(data_url: &str) -> Result<Vec<u8>, String> {
@@ -404,10 +450,11 @@ fn update_share_preview(
     app: AppHandle,
     preview: State<'_, SharePreviewState>,
     data_url: String,
+    session: u64,
 ) -> Result<(), String> {
     // Transient data URL is decoded and written to an app-owned temp PNG;
-    // the base64 string is not retained in state.
-    preview.replace_from_data_url(&data_url)?;
+    // the base64 string is not retained. Stale session (window closed) → reject.
+    preview.replace_from_data_url(&data_url, session)?;
     app.emit_to("share-preview", SHARE_PREVIEW_UPDATED_EVENT, ())
         .map_err(|error| error.to_string())
 }
@@ -440,12 +487,15 @@ fn clear_share_preview_if_label(label: &str, app: &AppHandle) {
 
 /// Clear any previous export and recreate the dedicated preview WebView so it
 /// can appear while the next PNG is still rendering.
+/// Returns a session id that `update_share_preview` must pass; updates after
+/// close/destroy are rejected so late rasters cannot orphan PNGs.
 #[tauri::command]
 async fn open_share_preview(
     app: AppHandle,
     preview: State<'_, SharePreviewState>,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     preview.clear();
+    let session = preview.begin_session();
 
     if let Some(existing) = app.get_webview_window("share-preview") {
         existing.destroy().map_err(|error| error.to_string())?;
@@ -491,7 +541,7 @@ async fn open_share_preview(
         .map_err(|error| error.to_string())?;
     window.show().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())?;
-    Ok(())
+    Ok(session)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1049,13 +1099,17 @@ mod tests {
     #[test]
     fn share_preview_state_keeps_only_the_latest_file() {
         let state = SharePreviewState::default();
-        let p1 = state.replace_from_data_url(&tiny_png_data_url()).unwrap();
+        let s = state.begin_session();
+        let p1 = state
+            .replace_from_data_url(&tiny_png_data_url(), s)
+            .unwrap();
         assert!(p1.is_file());
-        let p2 = state.replace_from_data_url(&tiny_png_data_url()).unwrap();
+        let p2 = state
+            .replace_from_data_url(&tiny_png_data_url(), s)
+            .unwrap();
         assert!(p2.is_file());
         assert_ne!(p1, p2);
-        // Previous file removed on replace
-        assert!(!p1.exists() || p1 == p2);
+        assert!(!p1.exists());
         assert_eq!(state.get_path().as_deref(), Some(p2.as_path()));
         state.clear();
         assert_eq!(state.get_path(), None);
@@ -1063,10 +1117,22 @@ mod tests {
     }
 
     #[test]
+    fn share_preview_rejects_stale_session_after_clear() {
+        let state = SharePreviewState::default();
+        let s = state.begin_session();
+        state.clear(); // bumps session
+        assert!(state
+            .replace_from_data_url(&tiny_png_data_url(), s)
+            .is_err());
+        assert_eq!(state.get_path(), None);
+    }
+
+    #[test]
     fn share_preview_rejects_non_png_data_url() {
         let state = SharePreviewState::default();
+        let s = state.begin_session();
         assert!(state
-            .replace_from_data_url("data:text/plain;base64,YQ==")
+            .replace_from_data_url("data:text/plain;base64,YQ==", s)
             .is_err());
     }
 

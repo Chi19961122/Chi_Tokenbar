@@ -296,21 +296,25 @@ function paintIfShowing(slice: string): void {
  *  Operational errors preserve the last valid view (do not write mock data). */
 async function fetchAnalytics(range: AnalyticsRange): Promise<Analytics | null> {
   const key = analyticsKeyFor(range);
-  if (analyticsInflight.has(key)) return null;
-  analyticsInflight.add(key);
-  const gen = analyticsGate.begin(key);
+  // Gate + inflight use the *stable slice* (range|sources), not key-with-
+  // updated_at — otherwise every snapshot tick opens a new generation and an
+  // older IPC response can overwrite a newer one.
+  const slice = analyticsSliceOf(key);
+  if (analyticsInflight.has(slice)) return null;
+  analyticsInflight.add(slice);
+  const gen = analyticsGate.begin(slice);
   try {
     const a = await getAnalytics(range);
     if (a == null) return null; // superseded / cancelled
-    if (analyticsGate.decide(key, gen) !== "commit") return null;
-    analyticsCache.set(analyticsSliceOf(key), { key, data: a });
-    paintIfShowing(analyticsSliceOf(key));
+    if (analyticsGate.decide(slice, gen) !== "commit") return null;
+    analyticsCache.set(slice, { key, data: a });
+    paintIfShowing(slice);
     return a;
   } catch {
     // Operational failure: leave cache and UI as-is.
     return null;
   } finally {
-    analyticsInflight.delete(key);
+    analyticsInflight.delete(slice);
   }
 }
 

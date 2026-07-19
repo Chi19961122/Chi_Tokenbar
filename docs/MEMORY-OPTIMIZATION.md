@@ -1,10 +1,10 @@
 # Atoll 記憶體占用分析與優化建議
 
-> 狀態：**規劃檔 v2.4（completion 執行中/收斂）**  
-> **已交付：** 0 instrumentation、1A、1B（typed cancel + latest-wins）、cancellation FE contract、streaming buffers + Codex 單 pass、file-backed Share Preview、measurement harness  
-> **Stage 3 SQLite：** **預設 waiver**（無失敗 gate 證據；見 `docs/measurements/stage-2/2026-07-19-completion/`）  
-> **Stage 5：** 候選全 defer（`docs/measurements/stage-5/decisions.md`）  
-> **Baseline：** pre-1A 數字仍 **缺失**（§3.0）
+> 狀態：**規劃檔 v2.5（final-review 修正）** — **未全部完成**  
+> **已交付（partial→修訂）：** cancel contract、1B queue、slice generation gate、streaming + **minimal typed** envelopes、file-backed preview + **assetProtocol** + session guard  
+> **Stage 3 SQLite：** **未決（undecided）** — 無完整 release 三輪 p95／回落數據，**禁止**當 waiver  
+> **Stage 5：** 候選 defer（`stage-5/decisions.md`）  
+> **pre-1A baseline：** **缺失**
 
 ### 證據分級（全文沿用）
 
@@ -172,8 +172,8 @@ GPT 複核 + 本機再驗（2026-07-19）：
 |---|---|
 | 主窗 rasterize → data URL → Rust 保存 → Preview 再 clone 給 `<img>` | **已確認** |
 | base64 比 binary 大約 33%；story `@3×` 可到數 MB 級字串 | **已確認** 機制；大小 **待量測** |
-| `close_share_preview` 只 destroy window，**未** `preview.clear()` | **已確認** |
-| Preview 點擊／Esc 走 `getCurrentWindow().close()`，**不經** `close_share_preview` | **已確認**（`share-preview.ts`） |
+| `close_share_preview` + window `Destroyed` 皆 `preview.clear()`（session bump + 刪檔） | **已修** |
+| Preview Esc 走 `close()`，靠 Rust `on_window_event(Destroyed)` 清 state | **已修** |
 | `save_share_png` 用 `Array.from(Uint8Array)` 展開 number array | **已確認** |
 | 第二 WebView 再 +80–150 MB | **待量測**（v1 估太死；WebView2 可能共享 environment） |
 
@@ -240,16 +240,12 @@ GPT 複核 + 本機再驗（2026-07-19）：
 
 1A 做完 → **同一情境重測** → 再進 1B。
 
-#### Share 清理：Rust lifecycle 兜底（**首選**）— **已確認**
+#### Share 清理 + file-backed preview — **已修（v2.5）**
 
-現況：`share-preview.ts` 裸 `getCurrentWindow().close()`；`close_share_preview`（`lib.rs`）不 `preview.clear()`。
-
-**最佳做法不是只改前端 command：**
-
-1. **Rust 在 Preview window `destroyed`／`close` 事件統一 `preview.clear()`**（系統關窗、Esc、錯誤路徑也不漏）  
-2. 前端正常路徑可走「clear + close」command，只是便利，**不是唯一防線**  
-3. TTL 或下次 `replace` 前 clear 作第二道  
-4. 中期 file-backed preview（§3.4）
+1. `Destroyed` + `close_share_preview` 皆 `clear()`（session bump + 刪檔）  
+2. File-backed PNG；`open` 回傳 **session**；stale update 拒絕  
+3. `assetProtocol` + `protocol-asset` + scope `$TEMP/atoll-share-preview/**`  
+4. Exclusive-create 隨機檔名；cleanup 含 `.tmp`
 
 ### 3.1.1 階段 1B：scan coordinator（mutex ≠ 完成）— **已修正 v2 用語**
 

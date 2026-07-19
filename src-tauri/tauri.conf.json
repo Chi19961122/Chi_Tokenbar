@@ -27,7 +27,17 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:",
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": [
+            "$TEMP/atoll-share-preview/**",
+            "$TMP/atoll-share-preview/**",
+            "$TMPDIR/atoll-share-preview/**"
+          ]
+        }
+      }
     }
   },
   "bundle": {

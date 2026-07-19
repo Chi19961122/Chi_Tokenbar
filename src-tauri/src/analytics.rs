@@ -4,7 +4,7 @@
 //! local timezone so the charts read on the same clock as their labels (F-15).
 
 use chrono::{Datelike, TimeZone, Timelike};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
@@ -742,13 +742,9 @@ fn scan_codex_file(acc: &mut Acc, start: i64, file: File, seen: &mut HashSet<(i6
         }
         let line = buf.trim_end_matches(['\r', '\n']).to_string();
         if project.is_empty() {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) {
-                if let Some(cwd) = v
-                    .get("payload")
-                    .and_then(|p| p.get("cwd"))
-                    .and_then(|c| c.as_str())
-                {
-                    project = basename(cwd);
+            if let Ok(env) = serde_json::from_str::<CodexEnvelope>(line.trim()) {
+                if let Some(p) = codex_cwd_from_envelope(&env) {
+                    project = p;
                 }
             }
         }
@@ -783,11 +779,12 @@ fn process_codex_line(
         return;
     }
     acc.stats.candidate_lines += 1;
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+    // Typed envelope — unknown large fields ignored by serde.
+    let Ok(env) = serde_json::from_str::<CodexEnvelope>(line.trim()) else {
         return;
     };
     acc.stats.json_parse_ok += 1;
-    let Some((ts, current)) = codex_token_event_from_value(&v) else {
+    let Some((ts, current)) = codex_token_from_envelope(&env) else {
         return;
     };
     let total = usage_total(current);
@@ -896,25 +893,62 @@ fn codex_cost(model: &str, input: u64, cached: u64, output: u64, reasoning: u64)
 
 type CodexUsage = (u64, u64, u64, u64);
 
-fn codex_token_event_from_value(v: &serde_json::Value) -> Option<(i64, CodexUsage)> {
-    let payload = v.get("payload")?;
-    if payload.get("type").and_then(|x| x.as_str()) != Some("token_count") {
+/// Minimal Codex JSONL envelope — ignores large unknown content fields.
+#[derive(Deserialize)]
+struct CodexEnvelope {
+    timestamp: Option<serde_json::Value>,
+    payload: Option<CodexPayload>,
+}
+
+#[derive(Deserialize)]
+struct CodexPayload {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    cwd: Option<String>,
+    info: Option<CodexInfo>,
+    total_token_usage: Option<CodexUsageFields>,
+}
+
+#[derive(Deserialize)]
+struct CodexInfo {
+    total_token_usage: Option<CodexUsageFields>,
+}
+
+#[derive(Deserialize)]
+struct CodexUsageFields {
+    input_tokens: Option<u64>,
+    cached_input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    reasoning_output_tokens: Option<u64>,
+}
+
+fn codex_token_from_envelope(env: &CodexEnvelope) -> Option<(i64, CodexUsage)> {
+    let payload = env.payload.as_ref()?;
+    if payload.kind.as_deref() != Some("token_count") {
         return None;
     }
     let usage = payload
-        .get("info")
-        .and_then(|x| x.get("total_token_usage"))
-        .or_else(|| payload.get("total_token_usage"))?;
-    let get = |key: &str| usage.get(key).and_then(|x| x.as_u64()).unwrap_or(0);
+        .info
+        .as_ref()
+        .and_then(|i| i.total_token_usage.as_ref())
+        .or(payload.total_token_usage.as_ref())?;
+    let ts = env.timestamp.as_ref().and_then(parse_epoch)?;
     Some((
-        v.get("timestamp").and_then(parse_epoch)?,
+        ts,
         (
-            get("input_tokens"),
-            get("cached_input_tokens"),
-            get("output_tokens"),
-            get("reasoning_output_tokens"),
+            usage.input_tokens.unwrap_or(0),
+            usage.cached_input_tokens.unwrap_or(0),
+            usage.output_tokens.unwrap_or(0),
+            usage.reasoning_output_tokens.unwrap_or(0),
         ),
     ))
+}
+
+fn codex_cwd_from_envelope(env: &CodexEnvelope) -> Option<String> {
+    env.payload
+        .as_ref()
+        .and_then(|p| p.cwd.as_ref())
+        .map(|c| basename(c))
 }
 
 fn usage_total((input, cached, output, reasoning): CodexUsage) -> u64 {
@@ -1025,6 +1059,47 @@ fn scan_claude_lines(
     }
 }
 
+/// Minimal Claude JSONL fields — large message content text is not retained
+/// as owned strings beyond tool names we need for kind classification.
+#[derive(Deserialize)]
+struct ClaudeEnvelope {
+    timestamp: Option<String>,
+    #[serde(rename = "requestId")]
+    request_id: Option<String>,
+    uuid: Option<String>,
+    message: Option<ClaudeMessage>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeMessage {
+    id: Option<String>,
+    model: Option<String>,
+    usage: Option<ClaudeUsage>,
+    content: Option<Vec<ClaudeContentPart>>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeUsage {
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    cache_read_input_tokens: Option<u64>,
+    cache_creation_input_tokens: Option<u64>,
+    cache_creation: Option<ClaudeCacheCreation>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeCacheCreation {
+    ephemeral_1h_input_tokens: Option<u64>,
+    ephemeral_5m_input_tokens: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeContentPart {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    name: Option<String>,
+}
+
 fn scan_claude_line(
     acc: &mut Acc,
     start: i64,
@@ -1037,74 +1112,58 @@ fn scan_claude_line(
         return;
     }
     acc.stats.candidate_lines += 1;
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+    let Ok(env) = serde_json::from_str::<ClaudeEnvelope>(line) else {
         return;
     };
     acc.stats.json_parse_ok += 1;
-    let msg = v.get("message");
-    let Some(usage) = msg.and_then(|m| m.get("usage")) else {
+    let msg = env.message.as_ref();
+    let Some(usage) = msg.and_then(|m| m.usage.as_ref()) else {
         return;
     };
-    let ts = v
-        .get("timestamp")
-        .and_then(|t| t.as_str())
+    let ts = env
+        .timestamp
+        .as_deref()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|d| d.timestamp())
         .unwrap_or(0);
     if ts < start {
         return;
     }
-    let dedup_key = v
-        .get("requestId")
-        .and_then(|x| x.as_str())
-        .or_else(|| msg.and_then(|m| m.get("id")).and_then(|x| x.as_str()))
-        .or_else(|| v.get("uuid").and_then(|x| x.as_str()));
+    let dedup_key = env
+        .request_id
+        .as_deref()
+        .or_else(|| msg.and_then(|m| m.id.as_deref()))
+        .or(env.uuid.as_deref());
     if dedup_key.is_some_and(|key| !seen.insert(key.to_string())) {
         return;
     }
     let model = msg
-        .and_then(|m| m.get("model"))
-        .and_then(|m| m.as_str())
+        .and_then(|m| m.model.as_deref())
         .unwrap_or("claude");
-    // Activity kind from this message's tool_use names.
     let mut tools: Vec<String> = Vec::new();
-    if let Some(content) = msg
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_array())
-    {
+    if let Some(content) = msg.and_then(|m| m.content.as_ref()) {
         for it in content {
-            if it.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                if let Some(name) = it.get("name").and_then(|n| n.as_str()) {
-                    tools.push(name.to_string());
+            if it.kind.as_deref() == Some("tool_use") {
+                if let Some(name) = it.name.as_ref() {
+                    tools.push(name.clone());
                 }
             }
         }
     }
     let kind = message_kind(&tools);
-    let input = usage
-        .get("input_tokens")
-        .and_then(|x| x.as_u64())
+    let input = usage.input_tokens.unwrap_or(0);
+    let output = usage.output_tokens.unwrap_or(0);
+    let cache_read = usage.cache_read_input_tokens.unwrap_or(0);
+    let cache_creation = usage.cache_creation_input_tokens.unwrap_or(0);
+    let cache_write_1h = usage
+        .cache_creation
+        .as_ref()
+        .and_then(|c| c.ephemeral_1h_input_tokens)
         .unwrap_or(0);
-    let output = usage
-        .get("output_tokens")
-        .and_then(|x| x.as_u64())
-        .unwrap_or(0);
-    let cache_read = usage
-        .get("cache_read_input_tokens")
-        .and_then(|x| x.as_u64())
-        .unwrap_or(0);
-    let cache_creation = usage
-        .get("cache_creation_input_tokens")
-        .and_then(|x| x.as_u64())
-        .unwrap_or(0);
-    let cache_creation_detail = usage.get("cache_creation");
-    let cache_write_1h = cache_creation_detail
-        .and_then(|x| x.get("ephemeral_1h_input_tokens"))
-        .and_then(|x| x.as_u64())
-        .unwrap_or(0);
-    let cache_write_5m = cache_creation_detail
-        .and_then(|x| x.get("ephemeral_5m_input_tokens"))
-        .and_then(|x| x.as_u64())
+    let cache_write_5m = usage
+        .cache_creation
+        .as_ref()
+        .and_then(|c| c.ephemeral_5m_input_tokens)
         .unwrap_or_else(|| cache_creation.saturating_sub(cache_write_1h));
     let cached = cache_read + cache_creation;
     let cost = claude_cost(
@@ -1193,58 +1252,75 @@ fn grok_project_from_path(path: &Path) -> String {
     basename(&percent_decode(&encoded))
 }
 
-/// Prefer real-file path first (`params.update._meta.modelId`), then co-located
-/// shapes used by older fixtures / brief examples.
-fn grok_model_id_from_value(v: &serde_json::Value) -> Option<String> {
-    const PATHS: [&str; 3] = [
-        "/params/update/_meta/modelId",
-        "/params/_meta/modelId",
-        "/_meta/modelId",
-    ];
-    for path in PATHS {
-        if let Some(s) = v.pointer(path).and_then(|m| m.as_str()) {
-            if !s.is_empty() {
-                return Some(s.to_string());
-            }
-        }
-    }
-    None
+/// Minimal Grok updates.jsonl fields (content bodies ignored by serde).
+#[derive(Deserialize)]
+struct GrokEnvelope {
+    timestamp: Option<serde_json::Value>,
+    #[serde(rename = "_meta")]
+    meta: Option<GrokMeta>,
+    params: Option<GrokParams>,
 }
 
-/// Cumulative token total + timestamp from one parsed line. Model is *not*
-/// required here — real Grok logs put `modelId` on earlier update rows.
-fn grok_token_from_value(v: &serde_json::Value) -> Option<(i64, u64)> {
-    // 實測 2026-07-18/19: totalTokens 主路徑在 `params._meta`;簡化形狀也可在
-    // 頂層 `_meta`。先讀頂層(且真有 totalTokens),沒有就 fallback。
-    let meta = match v.get("_meta").filter(|m| m.get("totalTokens").is_some()) {
-        Some(m) => m,
-        None => v.pointer("/params/_meta")?,
-    };
-    let total = meta.get("totalTokens").and_then(|x| x.as_u64())?;
-    // `timestamp` is documented as epoch *seconds*; parse_epoch leaves any value
-    // below the millis threshold untouched, so a realistic seconds value is kept
-    // as-is (and a stray millis value is still handled gracefully).
-    let ts = v.get("timestamp").and_then(parse_epoch)?;
+#[derive(Deserialize)]
+struct GrokParams {
+    #[serde(rename = "_meta")]
+    meta: Option<GrokMeta>,
+    update: Option<GrokUpdate>,
+}
+
+#[derive(Deserialize)]
+struct GrokUpdate {
+    #[serde(rename = "_meta")]
+    meta: Option<GrokMeta>,
+}
+
+#[derive(Deserialize, Default)]
+struct GrokMeta {
+    #[serde(rename = "totalTokens")]
+    total_tokens: Option<u64>,
+    #[serde(rename = "modelId")]
+    model_id: Option<String>,
+}
+
+fn grok_model_id_from_env(env: &GrokEnvelope) -> Option<String> {
+    env.params
+        .as_ref()
+        .and_then(|p| p.update.as_ref())
+        .and_then(|u| u.meta.as_ref())
+        .and_then(|m| m.model_id.clone())
+        .or_else(|| {
+            env.params
+                .as_ref()
+                .and_then(|p| p.meta.as_ref())
+                .and_then(|m| m.model_id.clone())
+        })
+        .or_else(|| env.meta.as_ref().and_then(|m| m.model_id.clone()))
+        .filter(|s| !s.is_empty())
+}
+
+fn grok_token_from_env(env: &GrokEnvelope) -> Option<(i64, u64)> {
+    let total = env
+        .meta
+        .as_ref()
+        .and_then(|m| m.total_tokens)
+        .or_else(|| {
+            env.params
+                .as_ref()
+                .and_then(|p| p.meta.as_ref())
+                .and_then(|m| m.total_tokens)
+        })?;
+    let ts = env.timestamp.as_ref().and_then(parse_epoch)?;
     Some((ts, total))
 }
 
-/// Parse one Grok line into `(ts, cumulative_total, model_on_this_line)`.
-///
-/// `model_on_this_line` is `Some` only when this same JSON carries a `modelId`
-/// (legacy co-located fixtures). Real files usually return `None` here — the
-/// scanner sticks the last model update instead. `None` overall when the line
-/// has no cumulative total / timestamp.
-///
-/// Test helper only: production scanning goes through `scan_grok_lines`, which
-/// keeps sticky `current_model` across split update/token rows.
 #[cfg(test)]
 fn grok_event(line: &str) -> Option<(i64, u64, Option<String>)> {
     if !line.contains("totalTokens") {
         return None;
     }
-    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-    let (ts, total) = grok_token_from_value(&v)?;
-    Some((ts, total, grok_model_id_from_value(&v)))
+    let env: GrokEnvelope = serde_json::from_str(line.trim()).ok()?;
+    let (ts, total) = grok_token_from_env(&env)?;
+    Some((ts, total, grok_model_id_from_env(&env)))
 }
 
 #[cfg(test)]
@@ -1286,14 +1362,14 @@ fn process_grok_line(
         return;
     }
     acc.stats.candidate_lines += 1;
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+    let Ok(env) = serde_json::from_str::<GrokEnvelope>(line.trim()) else {
         return;
     };
     acc.stats.json_parse_ok += 1;
-    if let Some(model) = grok_model_id_from_value(&v) {
+    if let Some(model) = grok_model_id_from_env(&env) {
         *current_model = model;
     }
-    let Some((ts, cumulative)) = grok_token_from_value(&v) else {
+    let Some((ts, cumulative)) = grok_token_from_env(&env) else {
         return;
     };
     let duplicate = !seen.insert((ts, cumulative));

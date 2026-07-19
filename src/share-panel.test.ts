@@ -86,9 +86,12 @@ describe("share card click preview", () => {
     });
     let finishOpen!: () => void;
     let finishPng!: (value: string) => void;
+    // finishOpen closes the open_share_preview promise with a session id
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "open_share_preview") {
-        return new Promise<void>((resolve) => (finishOpen = resolve));
+        return new Promise<number>((resolve) => {
+          finishOpen = () => resolve(42);
+        });
       }
       return Promise.resolve(undefined);
     });
@@ -115,6 +118,7 @@ describe("share card click preview", () => {
     await vi.waitFor(() => {
       expect(mocks.invoke).toHaveBeenCalledWith("update_share_preview", {
         dataUrl: "data:image/png;base64,cHJldmlldw==",
+        session: 42,
       });
     });
     expect(mocks.toPng).toHaveBeenCalledWith(expect.any(HTMLElement), {

@@ -241,13 +241,13 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
     previewMat.setAttribute("aria-busy", "true");
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const openPromise = invoke("open_share_preview");
+      const openPromise = invoke<number>("open_share_preview");
       // Preview modal: always 1× — high-res export alone uses CARD_DIM ratio.
       const pngPromise = rasterizePng(1);
       try {
-        const [, dataUrl] = await Promise.all([openPromise, pngPromise]);
-        // Transient data URL is written to a temp PNG server-side; not retained.
-        await invoke("update_share_preview", { dataUrl });
+        const [session, dataUrl] = await Promise.all([openPromise, pngPromise]);
+        // Transient data URL → temp PNG; session rejects stale updates after close.
+        await invoke("update_share_preview", { dataUrl, session });
       } catch (error) {
         // If rasterization fails first, wait for the parallel window creation
         // before closing it so a late-created generating window cannot survive.
