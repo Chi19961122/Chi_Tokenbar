@@ -7,11 +7,13 @@ mod engine;
 mod model;
 mod providers;
 mod ranking;
+mod scan_coord;
 
 use config::Settings;
 use engine::Engine;
 use model::{Limit, LimitStatus, Snapshot};
 use providers::anthropic::AnthropicProvider;
+use scan_coord::ScanCoordinator;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -70,6 +72,8 @@ struct AppData {
     settings: Mutex<Settings>,
     /// Wakes the scheduler for an immediate forced poll (manual refresh).
     refresh_tx: Sender<()>,
+    /// Stage 1B: TTL cache + coalesce + single full-scan exclusion for analytics.
+    scan: ScanCoordinator,
 }
 
 #[derive(Default)]
@@ -138,13 +142,13 @@ async fn get_analytics(
         .ok()
         .map(|s| s.sources.clone())
         .unwrap_or_else(all_sources);
-    // The scan re-parses every session log in range (hundreds of MB on a heavy
-    // machine). As a sync command that ran on the main thread and froze the
-    // whole app — window drag, island, every IPC — for the scan's duration, so
-    // it must stay on a blocking worker, never the UI or async-runtime threads.
-    tauri::async_runtime::spawn_blocking(move || analytics::compute_with(&range, &sources))
+    let scan = data.scan.clone();
+    // Stage 1B: coordinator owns TTL cache, same-key coalesce, and global
+    // exclusion. The scan re-parses every session log in range (hundreds of MB
+    // on a heavy machine) — must stay off the UI / async-runtime threads.
+    tauri::async_runtime::spawn_blocking(move || scan.get(range, sources))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -157,6 +161,9 @@ fn set_settings(app: AppHandle, data: State<'_, AppData>, settings: Settings) {
     config::save(&settings);
     apply_autostart(&app, settings.autostart);
     apply_always_on_top(&app, settings.always_on_top);
+    // Source selection is part of the analytics cache key; wipe so the next
+    // fetch cannot serve a slice from the previous selection.
+    data.scan.invalidate_all();
     if let Ok(mut g) = data.settings.lock() {
         *g = settings;
     }
@@ -425,6 +432,7 @@ pub fn run() {
             last: Mutex::new(None),
             settings: Mutex::new(settings.clone()),
             refresh_tx,
+            scan: ScanCoordinator::new(),
         })
         .manage(SharePreviewState::default())
         .invoke_handler(tauri::generate_handler![

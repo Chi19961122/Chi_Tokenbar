@@ -41,7 +41,7 @@ fn log_scan_stats(range: &str, sources: &[String], stats: &ScanStats, elapsed_ms
     );
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DayPoint {
     pub date: String,
@@ -50,21 +50,21 @@ pub struct DayPoint {
     pub cost_usd: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BestDay {
     pub date: String,
     pub cost_usd: f64,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MaxDayRecord {
     pub date: String,
     pub tokens: u64,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MaxHourRecord {
     pub date: String,
@@ -72,7 +72,7 @@ pub struct MaxHourRecord {
     pub tokens: u64,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Records {
     pub max_day: MaxDayRecord,
@@ -81,7 +81,7 @@ pub struct Records {
     pub pr_now: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct Breakdown {
     pub input: u64,
     pub cached: u64,
@@ -92,7 +92,7 @@ pub struct Breakdown {
 /// One activity-type slice (階段 C+). `kind` is a stable id the frontend maps to
 /// a localized label: "edit" | "read" | "run" | "other". Claude-only — see the
 /// scan-source recon note below `scan_codex`.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct KindCount {
     pub kind: String,
     pub tokens: u64,
@@ -101,13 +101,13 @@ pub struct KindCount {
 /// Per-project token total (階段 C+). Usage-only.
 /// 隱私硬限制:不得進戰報(§0)——`buildShareData` 禁止引用 `by_project`。
 /// The remainder beyond the top 8 is merged under the id "__other__".
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct ProjectCount {
     pub name: String,
     pub tokens: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
     pub client: String,
@@ -116,7 +116,7 @@ pub struct Account {
     pub plan: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Analytics {
     pub range: String,
