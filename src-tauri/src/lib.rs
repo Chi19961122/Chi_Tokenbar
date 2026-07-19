@@ -528,6 +528,9 @@ async fn open_share_preview(
         WebviewUrl::App("index.html#share-preview".into()),
     )
     .title("Atoll Share Preview")
+    .additional_browser_args(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,IsolateOrigins,site-per-process --disable-gpu --disable-gpu-compositing --renderer-process-limit=1",
+    )
     .inner_size(logical_width, logical_height)
     .decorations(false)
     .always_on_top(true)
