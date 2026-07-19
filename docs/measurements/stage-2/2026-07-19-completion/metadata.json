@@ -1,0 +1,8 @@
+{
+  "run_id": "2026-07-19-completion",
+  "commit": "pending",
+  "note": "Full interactive cold week/month IPC p95 and process-tree scenarios were not fully automated in this pass. Stage 2 code delivered streaming line buffers + Codex single-pass; Stage 3 SQLite not activated (default waiver without failing gate evidence).",
+  "stage_3": "waived_default_no_failing_gate",
+  "harness_selftest": "measure-memory.ps1 and summarize-memory.ps1 SelfTest OK",
+  "dataset": "machine-local Claude/Codex/Grok session logs (see MEMORY-OPTIMIZATION.md §1.2)"
+}

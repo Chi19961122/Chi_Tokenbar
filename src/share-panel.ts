@@ -224,10 +224,10 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
 
   let previewOpening = false;
 
-  const rasterizePng = () =>
+  const rasterizePng = (pixelRatio?: number) =>
     rasterize(async (card, opts) => {
       const { toPng } = await import("html-to-image");
-      return toPng(card, opts);
+      return toPng(card, pixelRatio != null ? { ...opts, pixelRatio } : opts);
     });
   const rasterizeBlob = () =>
     rasterize(async (card, opts) => {
@@ -242,9 +242,11 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const openPromise = invoke("open_share_preview");
-      const pngPromise = rasterizePng();
+      // Preview modal: always 1× — high-res export alone uses CARD_DIM ratio.
+      const pngPromise = rasterizePng(1);
       try {
         const [, dataUrl] = await Promise.all([openPromise, pngPromise]);
+        // Transient data URL is written to a temp PNG server-side; not retained.
         await invoke("update_share_preview", { dataUrl });
       } catch (error) {
         // If rasterization fails first, wait for the parallel window creation
@@ -266,6 +268,7 @@ export function renderSharePanel(container: HTMLElement, o: SharePanelOpts): voi
     const sizeTag = o.size === "story" ? "-9x16" : "";
     const filename = `atoll-${o.range}${sizeTag}-${todayStamp()}.png`;
     try {
+      // Export keeps full CARD_DIM pixelRatio (story @3×).
       const dataUrl = await rasterizePng();
       if (isTauri()) {
         const bytes = Array.from(new Uint8Array(await (await fetch(dataUrl)).arrayBuffer()));

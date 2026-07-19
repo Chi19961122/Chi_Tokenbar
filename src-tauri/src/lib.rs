@@ -76,37 +76,108 @@ struct AppData {
     scan: ScanCoordinator,
 }
 
-#[derive(Default)]
+/// File-backed share preview: one app-owned PNG under a dedicated temp dir.
+/// The data URL is never retained after `replace` — only the absolute path.
 struct SharePreviewState {
-    data_url: Mutex<Option<String>>,
+    path: Mutex<Option<PathBuf>>,
+}
+
+impl Default for SharePreviewState {
+    fn default() -> Self {
+        Self {
+            path: Mutex::new(None),
+        }
+    }
 }
 
 impl SharePreviewState {
-    fn replace(&self, data_url: String) {
-        *self
-            .data_url
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(data_url);
+    fn preview_dir() -> PathBuf {
+        std::env::temp_dir().join("atoll-share-preview")
+    }
+
+    /// Decode a transient data URL into a new PNG file; delete any previous file.
+    fn replace_from_data_url(&self, data_url: &str) -> Result<PathBuf, String> {
+        let bytes = decode_data_url_png(data_url)?;
+        let dir = Self::preview_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let name = format!("preview-{}.png", chrono::Utc::now().timestamp_millis());
+        let dest = dir.join(&name);
+        let tmp = dir.join(format!("{name}.tmp"));
+        std::fs::write(&tmp, &bytes).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
+        let prev = {
+            let mut g = self
+                .path
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            std::mem::replace(&mut *g, Some(dest.clone()))
+        };
+        if let Some(old) = prev {
+            let _ = std::fs::remove_file(old);
+        }
+        Ok(dest)
     }
 
     fn clear(&self) {
-        *self
-            .data_url
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        let prev = {
+            let mut g = self
+                .path
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            g.take()
+        };
+        if let Some(p) = prev {
+            let _ = std::fs::remove_file(p);
+        }
     }
 
-    fn get(&self) -> Option<String> {
-        self.data_url
+    fn get_path(&self) -> Option<PathBuf> {
+        self.path
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(|p| p.into_inner())
             .clone()
     }
+
+    /// Remove PNG files older than `max_age` in the preview dir (startup hygiene).
+    fn cleanup_stale(max_age: Duration) {
+        let dir = Self::preview_dir();
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return;
+        };
+        let now = std::time::SystemTime::now();
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.extension().and_then(|x| x.to_str()) != Some("png") {
+                continue;
+            }
+            if let Ok(meta) = e.metadata() {
+                if let Ok(modified) = meta.modified() {
+                    if now.duration_since(modified).unwrap_or_default() > max_age {
+                        let _ = std::fs::remove_file(path);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn decode_data_url_png(data_url: &str) -> Result<Vec<u8>, String> {
+    const PREFIX: &str = "data:image/png;base64,";
+    let b64 = data_url
+        .strip_prefix(PREFIX)
+        .ok_or_else(|| "expected data:image/png;base64, …".to_string())?;
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .map_err(|e| e.to_string())
 }
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SharePreviewPayload {
+    /// Absolute path to the backend-owned PNG (frontend uses convertFileSrc).
+    file_path: Option<String>,
+    /// Legacy: always null when file-backed (kept so older FE still deserializes).
     data_url: Option<String>,
     locale: String,
 }
@@ -312,14 +383,20 @@ fn get_share_preview(
     preview: State<'_, SharePreviewState>,
     data: State<'_, AppData>,
 ) -> SharePreviewPayload {
-    let data_url = preview.get();
+    let file_path = preview
+        .get_path()
+        .map(|p| p.to_string_lossy().into_owned());
     let locale = data
         .settings
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .locale
         .clone();
-    SharePreviewPayload { data_url, locale }
+    SharePreviewPayload {
+        file_path,
+        data_url: None,
+        locale,
+    }
 }
 
 #[tauri::command]
@@ -328,9 +405,9 @@ fn update_share_preview(
     preview: State<'_, SharePreviewState>,
     data_url: String,
 ) -> Result<(), String> {
-    // State is the source of truth: store first, then use the event only as a
-    // wake-up signal. A missed signal is recovered by the window's second pull.
-    preview.replace(data_url);
+    // Transient data URL is decoded and written to an app-owned temp PNG;
+    // the base64 string is not retained in state.
+    preview.replace_from_data_url(&data_url)?;
     app.emit_to("share-preview", SHARE_PREVIEW_UPDATED_EVENT, ())
         .map_err(|error| error.to_string())
 }
@@ -466,6 +543,8 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // Drop stale share-preview PNGs from previous runs (>24h).
+            SharePreviewState::cleanup_stale(Duration::from_secs(24 * 3600));
             build_tray(app.handle())?;
             position_island(app.handle());
             apply_autostart(app.handle(), settings.autostart);
@@ -961,15 +1040,34 @@ mod tests {
 
     // ── 階段 D share PNG filename sanitization ─────────────────────────
 
-    #[test]
-    fn share_preview_state_keeps_only_the_latest_png() {
-        let state = SharePreviewState::default();
-        state.replace("data:image/png;base64,first".into());
-        state.replace("data:image/png;base64,second".into());
-        assert_eq!(state.get().as_deref(), Some("data:image/png;base64,second"));
+    /// Minimal 1×1 PNG (valid base64) for lifecycle tests.
+    fn tiny_png_data_url() -> String {
+        // 1x1 transparent PNG
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==".into()
+    }
 
+    #[test]
+    fn share_preview_state_keeps_only_the_latest_file() {
+        let state = SharePreviewState::default();
+        let p1 = state.replace_from_data_url(&tiny_png_data_url()).unwrap();
+        assert!(p1.is_file());
+        let p2 = state.replace_from_data_url(&tiny_png_data_url()).unwrap();
+        assert!(p2.is_file());
+        assert_ne!(p1, p2);
+        // Previous file removed on replace
+        assert!(!p1.exists() || p1 == p2);
+        assert_eq!(state.get_path().as_deref(), Some(p2.as_path()));
         state.clear();
-        assert_eq!(state.get(), None);
+        assert_eq!(state.get_path(), None);
+        assert!(!p2.exists());
+    }
+
+    #[test]
+    fn share_preview_rejects_non_png_data_url() {
+        let state = SharePreviewState::default();
+        assert!(state
+            .replace_from_data_url("data:text/plain;base64,YQ==")
+            .is_err());
     }
 
     #[test]

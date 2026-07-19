@@ -1,6 +1,9 @@
 import { resolveLocale, setLocale, t } from "./i18n";
 
 export interface SharePreviewPayload {
+  /** Absolute path to backend-owned PNG; preferred over dataUrl. */
+  filePath?: string | null;
+  /** Legacy / browser: may still carry a data URL (Tauri file-backed leaves null). */
   dataUrl: string | null;
   locale: string;
 }
@@ -84,10 +87,19 @@ export async function bootSharePreview(
   window.addEventListener("click", onClick);
   window.addEventListener("keydown", onKeydown);
 
-  const applyPayload = (payload: SharePreviewPayload) => {
+  const applyPayload = async (payload: SharePreviewPayload) => {
     setLocale(resolveLocale(payload.locale));
-    if (payload.dataUrl) {
-      renderPreview(payload.dataUrl);
+    let src = payload.dataUrl;
+    if (payload.filePath) {
+      try {
+        const { convertFileSrc } = await import("@tauri-apps/api/core");
+        src = convertFileSrc(payload.filePath);
+      } catch {
+        src = payload.filePath;
+      }
+    }
+    if (src) {
+      renderPreview(src);
     } else {
       renderGenerating();
     }
@@ -97,7 +109,7 @@ export async function bootSharePreview(
     const pull = ++latestPull;
     const payload = await deps.getPreview();
     if (pull === latestPull) {
-      applyPayload(payload);
+      await applyPayload(payload);
     }
   };
 

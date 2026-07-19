@@ -1,12 +1,10 @@
 # Atoll 記憶體占用分析與優化建議
 
-> 狀態：**規劃檔 v2.3.2** — 階段 0 + 1A **已提交**；**1B partial→修訂中（queue/latest-wins/leader 不阻塞）**；2／3／4／5 待做  
-> 日期：2026-07-19  
-> 範圍：`TokenBar-Src/`（Rust backend + WebView 前端）  
-> 歷史審查：`docs/MEMORY-OPTIMIZATION-REVIEW.md`（**已凍結**；勿與本檔雙寫）  
-> 目的：解釋為什麼記憶體偏高，並依 ROI 排出可做的優化。  
-> **下一步：** 階段 2 typed parser → 再量測 → 必要時 SQLite。  
-> **Baseline 狀態：** 見 §3.0 — **pre-1A 純 baseline 數字缺失**（instrumentation 與 1A 同批合入 `c34c503`）。
+> 狀態：**規劃檔 v2.4（completion 執行中/收斂）**  
+> **已交付：** 0 instrumentation、1A、1B（typed cancel + latest-wins）、cancellation FE contract、streaming buffers + Codex 單 pass、file-backed Share Preview、measurement harness  
+> **Stage 3 SQLite：** **預設 waiver**（無失敗 gate 證據；見 `docs/measurements/stage-2/2026-07-19-completion/`）  
+> **Stage 5：** 候選全 defer（`docs/measurements/stage-5/decisions.md`）  
+> **Baseline：** pre-1A 數字仍 **缺失**（§3.0）
 
 ### 證據分級（全文沿用）
 
