@@ -17,10 +17,6 @@ pub struct WorstTracker {
 }
 
 impl WorstTracker {
-    pub fn current(&self) -> Option<&str> {
-        self.current.as_deref()
-    }
-
     /// Pick the most-dangerous limit id, applying the ±HYSTERESIS_PCT margin and
     /// MIN_DWELL_SECS dwell. Returns the id that should be shown.
     pub fn select(&mut self, limits: &[Limit], now: i64) -> Option<String> {
