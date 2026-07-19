@@ -149,6 +149,7 @@ async fn get_analytics(
     tauri::async_runtime::spawn_blocking(move || scan.get(range, sources))
         .await
         .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

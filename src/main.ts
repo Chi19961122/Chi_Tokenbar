@@ -24,6 +24,7 @@ import {
 } from "./datasource";
 import { islandIntent, renderIsland, windowShort } from "./island";
 import { islandAuxNeedsAnalytics } from "./island-aux";
+import { createAnalyticsRequestGate } from "./analytics-request";
 import { renderPanel } from "./panel";
 import { showIslandMenu } from "./contextmenu";
 import { renderAnalytics } from "./analytics";
@@ -93,6 +94,8 @@ let todayCost: number | null = null; // today's est. cost for the island aux (60
 const analyticsCache = new Map<string, { key: string; data: Analytics }>();
 /** Fetch keys in flight — a duplicate request for the same key is folded. */
 const analyticsInflight = new Set<string>();
+/** Generation gate: only the newest request may commit cache / paint. */
+const analyticsGate = createAnalyticsRequestGate();
 
 // ── rendering ────────────────────────────────────────────────────────
 
@@ -288,17 +291,24 @@ function paintIfShowing(slice: string): void {
 }
 
 /** Fetch one range into the cache and repaint whatever pane shows its slice.
- *  Folded (→ null) when that exact key is already in flight. Never rejects:
- *  getAnalytics falls back internally. */
+ *  Folded (→ null) when that exact key is already in flight.
+ *  Superseded/cancelled backend outcomes return null without cache/paint.
+ *  Operational errors preserve the last valid view (do not write mock data). */
 async function fetchAnalytics(range: AnalyticsRange): Promise<Analytics | null> {
   const key = analyticsKeyFor(range);
   if (analyticsInflight.has(key)) return null;
   analyticsInflight.add(key);
+  const gen = analyticsGate.begin(key);
   try {
     const a = await getAnalytics(range);
+    if (a == null) return null; // superseded / cancelled
+    if (analyticsGate.decide(key, gen) !== "commit") return null;
     analyticsCache.set(analyticsSliceOf(key), { key, data: a });
     paintIfShowing(analyticsSliceOf(key));
     return a;
+  } catch {
+    // Operational failure: leave cache and UI as-is.
+    return null;
   } finally {
     analyticsInflight.delete(key);
   }

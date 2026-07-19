@@ -115,16 +115,36 @@ export async function onSnapshot(cb: Cb): Promise<void> {
   mockSubs.push(cb);
 }
 
-export async function getAnalytics(range: "today" | "week" | "month"): Promise<Analytics> {
-  if (isTauri()) {
-    const { invoke } = await import("@tauri-apps/api/core");
-    try {
-      return await invoke<Analytics>("get_analytics", { range });
-    } catch {
-      return mockAnalytics(range); // backend command not present yet
-    }
+/**
+ * Fetch analytics for a range.
+ *
+ * - Browser (no Tauri): mock data (dev preview only).
+ * - Tauri success: real payload.
+ * - Tauri `superseded` / `cancelled`: `null` (normal control flow — do not paint
+ *   or cache; never substitute mock data).
+ * - Tauri `scan_failed` / unknown: throws (preserve last valid view in UI).
+ */
+export async function getAnalytics(
+  range: "today" | "week" | "month",
+): Promise<Analytics | null> {
+  if (!isTauri()) {
+    return mockAnalytics(range);
   }
-  return mockAnalytics(range);
+  const { invoke } = await import("@tauri-apps/api/core");
+  try {
+    return await invoke<Analytics>("get_analytics", { range });
+  } catch (err) {
+    const { parseAnalyticsError, isNoResultCode } = await import("./analytics-error");
+    const info = parseAnalyticsError(err);
+    if (info && isNoResultCode(info.code)) {
+      return null;
+    }
+    // Operational failure — never mock in Tauri mode.
+    if (info) {
+      throw new Error(`analytics_error:${info.code}:${info.message}`);
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
 }
 
 export async function getSettings(): Promise<Settings> {
