@@ -1,0 +1,125 @@
+<!-- DESIGN READ: the airy magazine end of the editorial axis — each lens opens on one giant tabular-nums hero figure with a serif-italic kicker, then a quiet supporting chart and a few rows below. Maximum whitespace, big type contrast, fewest elements per screen. Variant: C1 — Magazine. -->
+<meta charset="utf-8">
+<title>Atoll · Analytics — Magazine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAFAFA; --card:#FFFFFF; --line:#E4E4E7;
+  --text:#09090B; --dim:#52525B; --muted:#5D5D65; --faint:#6C6C75;
+  --accent:#EC4899;
+  --safe:#16A34A; --near:#D97706; --locked:#DC2626;
+  --g1:#F4F4F5; --g2:#D4D4D8; --g3:#A1A1AA; --g4:#52525B; --g5:#18181B;
+  --r-sm:6px; --r-lg:10px;
+  --sans:'Geist',system-ui,sans-serif; --mono:'Geist Mono',ui-monospace,monospace;
+  --serif:'Playfair Display',Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e8e8ea;font-family:var(--sans);color:var(--text);
+  -webkit-font-smoothing:antialiased;padding:28px 0;display:flex;justify-content:center}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.widget{width:380px;background:var(--bg);border-radius:var(--r-lg);
+  border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.06);overflow:hidden}
+.pane{padding:26px 26px 34px}
+
+/* caption label above each lens */
+.cap{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:var(--faint)}
+
+/* the feature section */
+.feature{margin-top:14px}
+.feature + .feature{margin-top:56px;padding-top:44px;border-top:1px solid var(--line)}
+
+/* serif kicker */
+.kick{font-family:var(--serif);font-style:italic;font-size:15px;color:var(--muted);
+  line-height:1.55;margin-top:14px;max-width:300px}
+
+/* the hero figure */
+.hero{margin-top:30px}
+.hero .eyebrow{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.hero .fig{font-size:72px;font-weight:600;letter-spacing:-.045em;line-height:.9;margin-top:12px}
+.hero .fig .u{font-size:30px;font-weight:500;color:var(--g3);letter-spacing:-.02em;margin-left:4px}
+.hero .sub{font-size:13px;color:var(--muted);margin-top:14px}
+.hero .sub b{color:var(--text);font-weight:600}
+
+/* supporting chart, quiet */
+.support{margin-top:38px}
+.support .lbl{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.chart{display:flex;align-items:flex-end;gap:2px;height:70px;margin-top:16px}
+.chart .bar{flex:1;background:var(--g1);border-radius:1px}
+.chart .bar.today{background:var(--accent)}
+.xaxis{display:flex;justify-content:space-between;font-size:9px;color:var(--faint);margin-top:8px}
+
+/* a few supporting rows */
+.rows{margin-top:34px;display:flex;flex-direction:column;gap:20px}
+.row{}
+.row .meta{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:8px}
+.row .nm{font-weight:500}
+.row .vl{color:var(--muted);font-weight:600}
+.track{height:2px;background:var(--g1);overflow:hidden}
+.track i{display:block;height:100%;background:var(--g3)}
+.row.top .track i{background:var(--accent)}
+
+.footnote{margin-top:34px;font-size:11px;color:var(--faint);line-height:1.6}
+.footnote b{color:var(--dim);font-weight:600}
+</style>
+
+<div class="widget">
+<div class="pane">
+
+  <!-- ===================== LENS 1 ===================== -->
+  <div class="feature">
+    <span class="cap">Lens 1 · Trends</span>
+    <p class="kick">Twelve days unbroken, and today already halfway to the month's peak.</p>
+
+    <div class="hero">
+      <div class="eyebrow">This period, total</div>
+      <div class="fig num">5.6<span class="u">M tokens</span></div>
+      <div class="sub num">Est. <b>$47.20</b> spent, across a <b>12 day</b> streak.</div>
+    </div>
+
+    <div class="support">
+      <span class="lbl">Usage over time, last 30 days</span>
+      <div class="chart">
+        <i class="bar" style="height:34px"></i><i class="bar" style="height:23px"></i><i class="bar" style="height:43px"></i><i class="bar" style="height:60px"></i><i class="bar" style="height:54px"></i><i class="bar" style="height:17px"></i><i class="bar" style="height:11px"></i><i class="bar" style="height:32px"></i><i class="bar" style="height:48px"></i><i class="bar" style="height:65px"></i><i class="bar" style="height:80px"></i><i class="bar" style="height:40px"></i><i class="bar" style="height:26px"></i><i class="bar" style="height:88px"></i><i class="bar" style="height:74px"></i><i class="bar" style="height:52px"></i><i class="bar" style="height:37px"></i><i class="bar" style="height:20px"></i><i class="bar" style="height:45px"></i><i class="bar" style="height:57px"></i><i class="bar" style="height:68px"></i><i class="bar" style="height:32px"></i><i class="bar" style="height:15px"></i><i class="bar" style="height:54px"></i><i class="bar" style="height:77px"></i><i class="bar" style="height:62px"></i><i class="bar" style="height:43px"></i><i class="bar" style="height:23px"></i><i class="bar" style="height:37px"></i><i class="bar today" style="height:62px"></i>
+      </div>
+      <div class="xaxis"><span>Jun 20</span><span>Jul 04</span><span>Jul 12</span><span class="num" style="color:var(--accent);font-weight:600">today</span></div>
+    </div>
+
+    <div class="footnote num">Peak day <b>07/14</b>. Busiest hours <b>14:00 to 16:00</b>. <b>23</b> sessions this week at <b>4.1K</b> tokens per minute.</div>
+  </div>
+
+  <!-- ===================== LENS 2 ===================== -->
+  <div class="feature">
+    <span class="cap">Lens 2 · Breakdown</span>
+    <p class="kick">Most of it is Opus reasoning through Claude Code, and mostly edits.</p>
+
+    <div class="hero">
+      <div class="eyebrow">Leading model</div>
+      <div class="fig">Opus 4.8</div>
+      <div class="sub num"><b>1.9M</b> tokens, <b>34%</b> of everything this period.</div>
+    </div>
+
+    <div class="rows">
+      <div class="row top"><div class="meta"><span class="nm">Opus 4.8</span><span class="vl num">1.9M · 34%</span></div><div class="track"><i style="width:34%"></i></div></div>
+      <div class="row"><div class="meta"><span class="nm">Sonnet 5</span><span class="vl num">1.4M · 25%</span></div><div class="track"><i style="width:25%"></i></div></div>
+      <div class="row"><div class="meta"><span class="nm">Haiku 4.5</span><span class="vl num">0.9M · 16%</span></div><div class="track"><i style="width:16%"></i></div></div>
+      <div class="row"><div class="meta"><span class="nm">others</span><span class="vl num">1.4M · 25%</span></div><div class="track"><i style="width:25%"></i></div></div>
+    </div>
+
+    <div class="support">
+      <span class="lbl">By agent</span>
+      <div class="rows" style="margin-top:16px">
+        <div class="row"><div class="meta"><span class="nm">Claude Code</span><span class="vl num">3.8M · 68%</span></div><div class="track"><i style="width:68%"></i></div></div>
+        <div class="row"><div class="meta"><span class="nm">Codex</span><span class="vl num">1.6M · 29%</span></div><div class="track"><i style="width:29%"></i></div></div>
+        <div class="row"><div class="meta"><span class="nm">Grok</span><span class="vl num">0.2M · 3%</span></div><div class="track"><i style="width:3%"></i></div></div>
+      </div>
+    </div>
+
+    <div class="footnote num">By kind, <b>edit 34%</b>, read 22%, run 18%, search 12%, web 8%, other 6%. Top project <b>TokenBar</b> at 1.4M, 31%.</div>
+  </div>
+
+</div>
+</div>

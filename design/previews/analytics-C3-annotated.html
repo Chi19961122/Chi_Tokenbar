@@ -1,0 +1,164 @@
+<!-- DESIGN READ: the narrative middle of the editorial axis — running-head section labels over a thin rule, each chart and list carries a small serif-italic annotation that reads the data for you. Between the magazine's air and the ledger's density; the story leads the eye. Variant: C3 — Annotated. -->
+<meta charset="utf-8">
+<title>Atoll · Analytics — Annotated</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAFAFA; --card:#FFFFFF; --line:#E4E4E7;
+  --text:#09090B; --dim:#52525B; --muted:#5D5D65; --faint:#6C6C75;
+  --accent:#EC4899;
+  --safe:#16A34A; --near:#D97706; --locked:#DC2626;
+  --g1:#F4F4F5; --g2:#D4D4D8; --g3:#A1A1AA; --g4:#52525B; --g5:#18181B;
+  --r-sm:6px; --r-lg:10px;
+  --sans:'Geist',system-ui,sans-serif; --mono:'Geist Mono',ui-monospace,monospace;
+  --serif:'Playfair Display',Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e8e8ea;font-family:var(--sans);color:var(--text);
+  -webkit-font-smoothing:antialiased;padding:28px 0;display:flex;justify-content:center}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.widget{width:380px;background:var(--bg);border-radius:var(--r-lg);
+  border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.06);overflow:hidden}
+.pane{padding:22px 24px 28px}
+
+/* running head */
+.rhead{display:flex;align-items:baseline;gap:9px;padding-bottom:7px;border-bottom:1px solid var(--g5)}
+.rhead .ti{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.rhead .lens{margin-left:auto;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.11em;color:var(--faint)}
+.sec{margin-top:34px}
+.sec:first-of-type{margin-top:10px}
+
+/* annotation, serif italic caption */
+.note{font-family:var(--serif);font-style:italic;font-size:13px;color:var(--muted);line-height:1.5;margin-top:12px}
+.note b{font-style:normal;font-weight:600;color:var(--dim)}
+
+.block{margin-top:24px}
+.lbl{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+
+/* three small figures */
+.trio{display:flex;margin-top:16px}
+.trio .t{flex:1;padding-right:12px}
+.trio .t + .t{border-left:1px solid var(--line);padding-left:14px}
+.trio .k{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+.trio .v{font-size:20px;font-weight:600;letter-spacing:-.02em;margin-top:5px}
+
+/* chart */
+.chart{display:flex;align-items:flex-end;gap:2px;height:84px;margin-top:14px}
+.chart .bar{flex:1;background:var(--g2);border-radius:1px}
+.chart .bar.today{background:var(--accent)}
+.xaxis{display:flex;justify-content:space-between;font-size:9px;color:var(--faint);margin-top:7px}
+
+/* annotated split: chart/list left, note right */
+.split{display:grid;grid-template-columns:1fr;gap:2px}
+
+/* ranked list */
+.rank{display:flex;flex-direction:column;gap:12px;margin-top:14px}
+.rk .meta{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:5px}
+.rk .nm{font-weight:500}
+.rk .rankno{font-family:var(--mono);font-size:10px;color:var(--g3);margin-right:8px}
+.rk .vl{color:var(--muted)}.rk .vl b{color:var(--text);font-weight:600}
+.track{height:3px;background:var(--g1);overflow:hidden}
+.track i{display:block;height:100%;background:var(--g4)}
+.rk.top .track i{background:var(--accent)}
+
+/* composition bar */
+.comp{display:flex;height:9px;overflow:hidden;margin-top:14px;border-radius:2px}
+.comp i{height:100%}
+.complg{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:11px}
+.complg .r{display:flex;align-items:center;gap:7px;font-size:11px}
+.complg .r .nm{color:var(--muted)}
+.complg .r .pc{font-weight:600}
+.sw{width:8px;height:8px;border-radius:2px;display:inline-block;flex:none}
+</style>
+
+<div class="widget">
+<div class="pane">
+
+  <!-- ===================== LENS 1 ===================== -->
+  <div class="sec">
+    <div class="rhead"><span class="ti">Trends</span><span class="lens">Lens 1 · when</span></div>
+
+    <div class="trio num">
+      <div class="t"><div class="k">Est. cost</div><div class="v">$47.20</div></div>
+      <div class="t"><div class="k">Peak day</div><div class="v">07/14</div></div>
+      <div class="t"><div class="k">Streak</div><div class="v">12d</div></div>
+    </div>
+    <p class="note">Twelve days unbroken, and today is already halfway to the month's <b>2.2M</b> peak.</p>
+
+    <div class="block">
+      <span class="lbl">Usage over time, last 30 days</span>
+      <div class="chart">
+        <i class="bar" style="height:34px"></i><i class="bar" style="height:23px"></i><i class="bar" style="height:43px"></i><i class="bar" style="height:60px"></i><i class="bar" style="height:54px"></i><i class="bar" style="height:17px"></i><i class="bar" style="height:11px"></i><i class="bar" style="height:32px"></i><i class="bar" style="height:48px"></i><i class="bar" style="height:65px"></i><i class="bar" style="height:80px"></i><i class="bar" style="height:40px"></i><i class="bar" style="height:26px"></i><i class="bar" style="height:88px"></i><i class="bar" style="height:74px"></i><i class="bar" style="height:52px"></i><i class="bar" style="height:37px"></i><i class="bar" style="height:20px"></i><i class="bar" style="height:45px"></i><i class="bar" style="height:57px"></i><i class="bar" style="height:68px"></i><i class="bar" style="height:32px"></i><i class="bar" style="height:15px"></i><i class="bar" style="height:54px"></i><i class="bar" style="height:77px"></i><i class="bar" style="height:62px"></i><i class="bar" style="height:43px"></i><i class="bar" style="height:23px"></i><i class="bar" style="height:37px"></i><i class="bar today" style="height:62px"></i>
+      </div>
+      <div class="xaxis"><span>Jun 20</span><span>Jul 04</span><span>Jul 12</span><span class="num" style="color:var(--accent);font-weight:600">today</span></div>
+      <p class="note">Two clear crests around <b>07/04</b> and <b>07/14</b>, then a steady climb back. Days run <b>0.4M to 3.1M</b>.</p>
+    </div>
+
+    <div class="block">
+      <span class="lbl">Within the day</span>
+      <p class="note">Work clusters in the afternoon. Peak sits at <b>14:00 to 16:00</b>, mostly Opus edits, across <b>23</b> sessions this week at <b>4.1K</b> tokens a minute.</p>
+    </div>
+  </div>
+
+  <!-- ===================== LENS 2 ===================== -->
+  <div class="sec">
+    <div class="rhead"><span class="ti">Breakdown</span><span class="lens">Lens 2 · where</span></div>
+
+    <div class="block">
+      <span class="lbl">By model</span>
+      <div class="rank">
+        <div class="rk top"><div class="meta"><span class="nm"><span class="rankno">1</span>Opus 4.8</span><span class="vl"><b class="num">1.9M</b> · 34%</span></div><div class="track"><i style="width:34%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">2</span>Sonnet 5</span><span class="vl"><b class="num">1.4M</b> · 25%</span></div><div class="track"><i style="width:25%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">3</span>Haiku 4.5</span><span class="vl"><b class="num">0.9M</b> · 16%</span></div><div class="track"><i style="width:16%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">4</span>others</span><span class="vl"><b class="num">1.4M</b> · 25%</span></div><div class="track"><i style="width:25%"></i></div></div>
+      </div>
+      <p class="note">Opus carries a third of the load on its own, more than Sonnet and Haiku combined.</p>
+    </div>
+
+    <div class="block">
+      <span class="lbl">By agent</span>
+      <div class="rank">
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">1</span>Claude Code</span><span class="vl"><b class="num">3.8M</b> · 68%</span></div><div class="track"><i style="width:68%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">2</span>Codex</span><span class="vl"><b class="num">1.6M</b> · 29%</span></div><div class="track"><i style="width:29%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">3</span>Grok</span><span class="vl"><b class="num">0.2M</b> · 3%</span></div><div class="track"><i style="width:3%"></i></div></div>
+      </div>
+      <p class="note">Claude Code carries two-thirds of the work, with Codex a steady second and Grok barely present.</p>
+    </div>
+
+    <div class="block">
+      <span class="lbl">By activity type</span>
+      <p class="note">Editing dominates. <b>edit 34%</b>, read 22%, run 18%, then search 12%, web 8%, other 6%. Reading and running fill most of the rest.</p>
+    </div>
+
+    <div class="block">
+      <span class="lbl">Top projects</span>
+      <div class="rank">
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">1</span>TokenBar</span><span class="vl"><b class="num">1.4M</b> · 31%</span></div><div class="track"><i style="width:31%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">2</span>atoll-web</span><span class="vl"><b class="num">0.89M</b> · 20%</span></div><div class="track"><i style="width:20%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">3</span>dotfiles</span><span class="vl"><b class="num">0.62M</b> · 14%</span></div><div class="track"><i style="width:14%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">4</span>other</span><span class="vl"><b class="num">1.6M</b> · 35%</span></div><div class="track"><i style="width:35%"></i></div></div>
+      </div>
+      <p class="note">TokenBar itself takes the largest single share, with atoll-web and dotfiles trailing.</p>
+    </div>
+
+    <div class="block">
+      <span class="lbl">Token composition</span>
+      <div class="comp">
+        <i style="width:42%;background:#18181B"></i><i style="width:31%;background:#52525B"></i><i style="width:19%;background:#A1A1AA"></i><i style="width:8%;background:#D4D4D8"></i>
+      </div>
+      <div class="complg num">
+        <div class="r"><span class="sw" style="background:#18181B"></span><span class="nm">input</span><span class="pc">42%</span></div>
+        <div class="r"><span class="sw" style="background:#52525B"></span><span class="nm">cached</span><span class="pc">31%</span></div>
+        <div class="r"><span class="sw" style="background:#A1A1AA"></span><span class="nm">output</span><span class="pc">19%</span></div>
+        <div class="r"><span class="sw" style="background:#D4D4D8"></span><span class="nm">reasoning</span><span class="pc">8%</span></div>
+      </div>
+      <p class="note">Cached reads reclaim nearly a third of the spend, softening the raw input cost.</p>
+    </div>
+  </div>
+
+</div>
+</div>

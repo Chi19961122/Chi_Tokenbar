@@ -1,0 +1,201 @@
+<!-- DESIGN READ: a print-style data page — numbered section headers (01/02), a tiny serif-italic kicker per section, hairline rules and generous air; the calm, minimal baseline that reads top-to-bottom like an editorial spread. Layout family: C — Editorial-vertical. -->
+<meta charset="utf-8">
+<title>Atoll · Analytics — Editorial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAFAFA; --card:#FFFFFF; --line:#E4E4E7;
+  --text:#09090B; --dim:#52525B; --muted:#5D5D65; --faint:#6C6C75;
+  --accent:#EC4899;
+  --safe:#16A34A; --near:#D97706; --locked:#DC2626;
+  --g1:#F4F4F5; --g2:#D4D4D8; --g3:#A1A1AA; --g4:#52525B; --g5:#18181B;
+  --r-sm:6px; --r-lg:10px;
+  --sans:'Geist',system-ui,sans-serif; --mono:'Geist Mono',ui-monospace,monospace;
+  --serif:'Playfair Display',Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e8e8ea;font-family:var(--sans);color:var(--text);
+  -webkit-font-smoothing:antialiased;padding:28px 0;display:flex;justify-content:center}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.widget{width:380px;background:var(--bg);border-radius:var(--r-lg);
+  border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.06);overflow:hidden}
+.pane{padding:22px 22px 26px}
+
+.seg{display:flex;background:var(--g1);border:1px solid var(--line);
+  border-radius:999px;padding:3px;gap:2px;margin-bottom:8px}
+.seg button{flex:1;border:0;background:transparent;font-family:var(--sans);
+  font-size:12px;font-weight:600;color:var(--muted);padding:6px 0;border-radius:999px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+
+/* section header */
+.sec{margin-top:30px}
+.sec:first-of-type{margin-top:14px}
+.sechead{display:flex;align-items:baseline;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.sechead .no{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--g3);letter-spacing:.05em}
+.sechead .ti{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.sechead .lens{margin-left:auto;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.10em;color:var(--faint)}
+.kicker{font-family:var(--serif);font-style:italic;font-size:13px;color:var(--muted);margin-top:10px;line-height:1.5}
+
+.lbl{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.block{margin-top:22px}
+
+/* headline trio, editorial */
+.trio{display:flex;margin-top:20px}
+.trio .t{flex:1}
+.trio .t + .t{border-left:1px solid var(--line);padding-left:14px}
+.trio .t{padding-right:12px}
+.trio .tv{font-size:22px;font-weight:600;letter-spacing:-.02em;margin-top:4px}
+
+/* toggles */
+.rowtop{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.mini{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.mini button{border:0;background:var(--card);font-family:var(--sans);font-size:10.5px;font-weight:600;color:var(--muted);padding:3px 9px;cursor:pointer}
+.mini button.on{background:var(--g5);color:#fff}
+.minirow{display:flex;gap:6px}
+
+/* chart */
+.chart{display:flex;align-items:flex-end;gap:2px;height:96px;margin-top:16px}
+.chart .bar{flex:1;background:var(--g2);border-radius:1px}
+.chart .bar.today{background:var(--accent)}
+.xaxis{display:flex;justify-content:space-between;font-size:9px;color:var(--faint);margin-top:7px}
+
+/* ranked */
+.rank{display:flex;flex-direction:column;gap:13px;margin-top:18px}
+.rk .meta{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:5px}
+.rk .nm{font-weight:500}
+.rk .rankno{font-family:var(--mono);font-size:10px;color:var(--g3);margin-right:8px}
+.rk .vl{color:var(--muted)}.rk .vl b{color:var(--text);font-weight:600}
+.track{height:3px;background:var(--g1);overflow:hidden}
+.track i{display:block;height:100%;background:var(--g4)}
+.rk.top .track i{background:var(--accent)}
+
+/* donut */
+.donutrow{display:flex;gap:16px;align-items:center;margin-top:16px}
+.legend{display:flex;flex-direction:column;gap:7px;flex:1}
+.lg{display:flex;align-items:center;gap:8px;font-size:11.5px}
+.lg .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.lg .pc{margin-left:auto;color:var(--muted);font-weight:600}
+
+/* composition */
+.comp{display:flex;height:10px;overflow:hidden;margin-top:16px;border-radius:2px}
+.comp i{height:100%}
+.complg{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.complg .row{display:flex;align-items:center;gap:8px;font-size:11.5px}
+.complg .row .nm{color:var(--muted)}
+.complg .row .pc{margin-left:auto;font-weight:600}
+.sw{width:8px;height:8px;border-radius:2px;display:inline-block;flex:none}
+</style>
+
+<div class="widget">
+<div class="pane">
+
+  <div class="seg">
+    <button class="on">Trends</button>
+    <button>Breakdown</button>
+  </div>
+
+  <!-- ===================== 01 ===================== -->
+  <div class="sec">
+    <div class="sechead">
+      <span class="no">01</span>
+      <span class="ti">Trends</span>
+      <span class="lens">Lens 1 · when</span>
+    </div>
+    <p class="kicker">Twelve days unbroken, and today already halfway to the month's peak.</p>
+
+    <div class="trio">
+      <div class="t"><span class="lbl">Est. cost</span><div class="tv num">$47.20</div></div>
+      <div class="t"><span class="lbl">Peak day</span><div class="tv num">07/14</div></div>
+      <div class="t"><span class="lbl">Streak</span><div class="tv num">12d</div></div>
+    </div>
+
+    <div class="block">
+      <div class="rowtop">
+        <span class="lbl">Usage over time</span>
+        <div class="minirow">
+          <span class="mini"><button class="on">Daily</button><button>Hourly</button></span>
+          <span class="mini"><button class="on">Tokens</button><button>Cost</button></span>
+        </div>
+      </div>
+      <div class="chart">
+        <i class="bar" style="height:34px"></i><i class="bar" style="height:23px"></i><i class="bar" style="height:43px"></i><i class="bar" style="height:60px"></i><i class="bar" style="height:54px"></i><i class="bar" style="height:17px"></i><i class="bar" style="height:11px"></i><i class="bar" style="height:32px"></i><i class="bar" style="height:48px"></i><i class="bar" style="height:65px"></i><i class="bar" style="height:80px"></i><i class="bar" style="height:40px"></i><i class="bar" style="height:26px"></i><i class="bar" style="height:88px"></i><i class="bar" style="height:74px"></i><i class="bar" style="height:52px"></i><i class="bar" style="height:37px"></i><i class="bar" style="height:20px"></i><i class="bar" style="height:45px"></i><i class="bar" style="height:57px"></i><i class="bar" style="height:68px"></i><i class="bar" style="height:32px"></i><i class="bar" style="height:15px"></i><i class="bar" style="height:54px"></i><i class="bar" style="height:77px"></i><i class="bar" style="height:62px"></i><i class="bar" style="height:43px"></i><i class="bar" style="height:23px"></i><i class="bar" style="height:37px"></i><i class="bar today" style="height:62px"></i>
+      </div>
+      <div class="xaxis"><span>Jun 20</span><span>Jul 04</span><span>Jul 12</span><span class="num" style="color:var(--accent);font-weight:600">today</span></div>
+    </div>
+  </div>
+
+  <!-- ===================== 02 ===================== -->
+  <div class="sec">
+    <div class="sechead">
+      <span class="no">02</span>
+      <span class="ti">Breakdown</span>
+      <span class="lens">Lens 2 · where</span>
+    </div>
+    <p class="kicker">Most of it is Opus reasoning through Claude Code — and mostly edits.</p>
+
+    <div class="block">
+      <div class="rowtop">
+        <span class="lbl">Where tokens went</span>
+        <span class="mini"><button class="on">By model</button><button>By agent</button></span>
+      </div>
+      <div class="rank">
+        <div class="rk top"><div class="meta"><span class="nm"><span class="rankno">1</span>Opus 4.8</span><span class="vl"><b class="num">1.9M</b> · 34%</span></div><div class="track"><i style="width:34%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">2</span>Sonnet 5</span><span class="vl"><b class="num">1.4M</b> · 25%</span></div><div class="track"><i style="width:25%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">3</span>Haiku 4.5</span><span class="vl"><b class="num">0.9M</b> · 16%</span></div><div class="track"><i style="width:16%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">4</span>others</span><span class="vl"><b class="num">1.4M</b> · 25%</span></div><div class="track"><i style="width:25%"></i></div></div>
+      </div>
+    </div>
+
+    <div class="block">
+      <span class="lbl">Activity type</span>
+      <div class="donutrow">
+        <svg width="96" height="96" viewBox="0 0 42 42" style="flex:none">
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="var(--g1)" stroke-width="6"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#18181B" stroke-width="6" stroke-dasharray="34 66" stroke-dashoffset="25"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#52525B" stroke-width="6" stroke-dasharray="22 78" stroke-dashoffset="-9"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#A1A1AA" stroke-width="6" stroke-dasharray="18 82" stroke-dashoffset="-31"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#C4C4CB" stroke-width="6" stroke-dasharray="12 88" stroke-dashoffset="-49"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#D4D4D8" stroke-width="6" stroke-dasharray="8 92" stroke-dashoffset="-61"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E4E4E7" stroke-width="6" stroke-dasharray="6 94" stroke-dashoffset="-69"></circle>
+        </svg>
+        <div class="legend">
+          <div class="lg"><span class="dot" style="background:#18181B"></span>edit<span class="pc num">34%</span></div>
+          <div class="lg"><span class="dot" style="background:#52525B"></span>read<span class="pc num">22%</span></div>
+          <div class="lg"><span class="dot" style="background:#A1A1AA"></span>run<span class="pc num">18%</span></div>
+          <div class="lg"><span class="dot" style="background:#C4C4CB"></span>search<span class="pc num">12%</span></div>
+          <div class="lg"><span class="dot" style="background:#D4D4D8"></span>web<span class="pc num">8%</span></div>
+          <div class="lg"><span class="dot" style="background:#E4E4E7"></span>other<span class="pc num">6%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="block">
+      <span class="lbl">Top projects</span>
+      <div class="rank">
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">1</span>TokenBar</span><span class="vl"><b class="num">1.4M</b> · 31%</span></div><div class="track"><i style="width:31%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">2</span>atoll-web</span><span class="vl"><b class="num">0.89M</b> · 20%</span></div><div class="track"><i style="width:20%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">3</span>dotfiles</span><span class="vl"><b class="num">0.62M</b> · 14%</span></div><div class="track"><i style="width:14%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm"><span class="rankno">4</span>other</span><span class="vl"><b class="num">1.6M</b> · 35%</span></div><div class="track"><i style="width:35%"></i></div></div>
+      </div>
+    </div>
+
+    <div class="block">
+      <span class="lbl">Token composition</span>
+      <div class="comp">
+        <i style="width:42%;background:#18181B"></i><i style="width:31%;background:#52525B"></i><i style="width:19%;background:#A1A1AA"></i><i style="width:8%;background:#D4D4D8"></i>
+      </div>
+      <div class="complg">
+        <div class="row"><span class="sw" style="background:#18181B"></span><span class="nm">input</span><span class="pc num">42%</span></div>
+        <div class="row"><span class="sw" style="background:#52525B"></span><span class="nm">cached</span><span class="pc num">31%</span></div>
+        <div class="row"><span class="sw" style="background:#A1A1AA"></span><span class="nm">output</span><span class="pc num">19%</span></div>
+        <div class="row"><span class="sw" style="background:#D4D4D8"></span><span class="nm">reasoning</span><span class="pc num">8%</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>

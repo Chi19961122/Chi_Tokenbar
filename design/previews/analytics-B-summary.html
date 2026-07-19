@@ -1,0 +1,207 @@
+<!-- DESIGN READ: a pinned "at-a-glance" summary strip (headline this-week number + sparkline + 3 micro-stats) sits above BOTH lenses, so you read the vitals without switching tabs; the lens below is a focused drill-down. Layout family: B — Summary-first. -->
+<meta charset="utf-8">
+<title>Atoll · Analytics — Summary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAFAFA; --card:#FFFFFF; --line:#E4E4E7;
+  --text:#09090B; --dim:#52525B; --muted:#5D5D65; --faint:#6C6C75;
+  --accent:#EC4899;
+  --safe:#16A34A; --near:#D97706; --locked:#DC2626;
+  --g1:#F4F4F5; --g2:#D4D4D8; --g3:#A1A1AA; --g4:#52525B; --g5:#18181B;
+  --r-sm:6px; --r-lg:10px;
+  --sans:'Geist',system-ui,sans-serif; --mono:'Geist Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e8e8ea;font-family:var(--sans);color:var(--text);
+  -webkit-font-smoothing:antialiased;padding:28px 0;display:flex;justify-content:center}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.widget{width:380px;background:var(--bg);border-radius:var(--r-lg);
+  border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.06);overflow:hidden}
+
+/* ---- pinned summary strip ---- */
+.summary{padding:16px 16px 14px;background:var(--card);border-bottom:1px solid var(--line)}
+.eyebrow{font-size:10px;font-weight:600;letter-spacing:.10em;text-transform:uppercase;color:var(--faint)}
+.hl{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:6px}
+.hl .big{font-size:38px;font-weight:600;letter-spacing:-.03em;line-height:1}
+.hl .big small{font-size:15px;font-weight:500;color:var(--muted);letter-spacing:0}
+.spark{flex:none}
+.delta{font-size:11px;font-weight:600;color:var(--safe);margin-top:4px}
+.micro{display:flex;margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.micro .m{flex:1;padding-right:10px}
+.micro .m + .m{border-left:1px solid var(--line);padding-left:12px}
+.micro .mv{font-size:16px;font-weight:600;letter-spacing:-.01em}
+.micro .ml{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+
+/* ---- lens control ---- */
+.pane{padding:14px 16px 18px}
+.seg{display:flex;background:var(--g1);border:1px solid var(--line);
+  border-radius:999px;padding:3px;gap:2px;margin-bottom:6px}
+.seg button{flex:1;border:0;background:transparent;font-family:var(--sans);
+  font-size:12px;font-weight:600;color:var(--muted);padding:6px 0;border-radius:999px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+
+.cap{font-size:10px;font-weight:600;letter-spacing:.10em;text-transform:uppercase;color:var(--faint);margin:16px 0 10px}
+.cap .k{color:var(--accent)}
+.drill{border:1px solid var(--line);border-radius:var(--r-sm);background:var(--card);padding:13px}
+.drill + .drill{margin-top:10px}
+
+.rowtop{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
+.lbl{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.mini{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.mini button{border:0;background:var(--card);font-family:var(--sans);font-size:10.5px;font-weight:600;color:var(--muted);padding:3px 9px;cursor:pointer}
+.mini button.on{background:var(--g5);color:#fff}
+.minirow{display:flex;gap:6px}
+
+/* daily chart */
+.chart{display:flex;align-items:flex-end;gap:2px;height:92px;margin-top:14px}
+.chart .bar{flex:1;background:var(--g3);border-radius:2px 2px 0 0}
+.chart .bar.today{background:var(--accent)}
+.xaxis{display:flex;justify-content:space-between;font-size:9px;color:var(--faint);margin-top:6px}
+
+/* tiles */
+.tiles{display:flex;gap:8px;margin-top:12px}
+.tile{flex:1;border:1px solid var(--line);border-radius:var(--r-sm);padding:9px 10px}
+.tile .tv{font-size:17px;font-weight:600;letter-spacing:-.01em;margin-top:3px}
+
+/* ranked */
+.rank{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.rk .meta{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px}
+.rk .nm{font-weight:500}.rk .vl{color:var(--muted)}.rk .vl b{color:var(--text);font-weight:600}
+.track{height:6px;background:var(--g1);border-radius:999px;overflow:hidden}
+.track i{display:block;height:100%;background:var(--g4);border-radius:999px}
+.rk.top .track i{background:var(--accent)}
+
+/* donut */
+.donutrow{display:flex;gap:14px;align-items:center;margin-top:8px}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px;flex:1}
+.lg{display:flex;align-items:center;gap:7px;font-size:11px}
+.lg .dot{width:9px;height:9px;border-radius:2px;flex:none}
+.lg .pc{margin-left:auto;color:var(--muted);font-weight:600}
+
+/* composition */
+.comp{display:flex;height:12px;border-radius:999px;overflow:hidden;margin-top:12px}
+.comp i{height:100%}
+.complg{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:10.5px;color:var(--muted)}
+.complg span{display:inline-flex;align-items:center;gap:5px}
+.complg b{color:var(--text);font-weight:600}
+.sw{width:8px;height:8px;border-radius:2px;display:inline-block}
+</style>
+
+<div class="widget">
+
+  <!-- ===== pinned summary strip (above both lenses) ===== -->
+  <div class="summary">
+    <div class="eyebrow">This week · tokens</div>
+    <div class="hl">
+      <div class="big num">5.6<small>M</small></div>
+      <svg class="spark" width="120" height="40" viewBox="0 0 120 40" fill="none">
+        <polyline points="0,30 12,26 24,31 36,18 48,22 60,12 72,20 84,9 96,16 108,7 120,14"
+          stroke="#A1A1AA" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="120" cy="14" r="3" fill="#EC4899"/>
+      </svg>
+    </div>
+    <div class="delta">▲ 18% vs last week</div>
+    <div class="micro">
+      <div class="m"><div class="mv num">$47.20</div><div class="ml">est. cost</div></div>
+      <div class="m"><div class="mv num">23</div><div class="ml">sessions</div></div>
+      <div class="m"><div class="mv num">4.1K</div><div class="ml">tok / min</div></div>
+    </div>
+  </div>
+
+  <div class="pane">
+    <div class="seg">
+      <button class="on">Trends</button>
+      <button>Breakdown</button>
+    </div>
+    <div style="font-size:10.5px;color:var(--faint);text-align:center">summary above stays put while you switch lens</div>
+
+    <!-- ===== LENS 1 ===== -->
+    <div class="cap"><span class="k">Lens 1</span> · Trends</div>
+
+    <div class="drill">
+      <div class="rowtop">
+        <span class="lbl">Usage over time</span>
+        <div class="minirow">
+          <span class="mini"><button class="on">Daily</button><button>Hourly</button></span>
+          <span class="mini"><button class="on">Tokens</button><button>Cost</button></span>
+        </div>
+      </div>
+      <div class="chart">
+        <i class="bar" style="height:33px"></i><i class="bar" style="height:22px"></i><i class="bar" style="height:41px"></i><i class="bar" style="height:58px"></i><i class="bar" style="height:52px"></i><i class="bar" style="height:16px"></i><i class="bar" style="height:11px"></i><i class="bar" style="height:31px"></i><i class="bar" style="height:46px"></i><i class="bar" style="height:63px"></i><i class="bar" style="height:77px"></i><i class="bar" style="height:39px"></i><i class="bar" style="height:25px"></i><i class="bar" style="height:85px"></i><i class="bar" style="height:71px"></i><i class="bar" style="height:50px"></i><i class="bar" style="height:36px"></i><i class="bar" style="height:19px"></i><i class="bar" style="height:44px"></i><i class="bar" style="height:55px"></i><i class="bar" style="height:66px"></i><i class="bar" style="height:31px"></i><i class="bar" style="height:14px"></i><i class="bar" style="height:52px"></i><i class="bar" style="height:74px"></i><i class="bar" style="height:60px"></i><i class="bar" style="height:41px"></i><i class="bar" style="height:22px"></i><i class="bar" style="height:36px"></i><i class="bar today" style="height:60px"></i>
+      </div>
+      <div class="xaxis"><span>Jun 20</span><span>Jul 04</span><span class="num" style="color:var(--accent);font-weight:600">today</span></div>
+      <div class="tiles">
+        <div class="tile"><span class="lbl">Peak day</span><div class="tv num">07/14</div></div>
+        <div class="tile"><span class="lbl">Streak</span><div class="tv num">12d</div></div>
+        <div class="tile"><span class="lbl">Today</span><div class="tv num">2.2M</div></div>
+      </div>
+    </div>
+
+    <!-- ===== LENS 2 ===== -->
+    <div class="cap"><span class="k">Lens 2</span> · Breakdown</div>
+
+    <div class="drill">
+      <div class="rowtop">
+        <span class="lbl">Where tokens went</span>
+        <span class="mini"><button class="on">By model</button><button>By agent</button></span>
+      </div>
+      <div class="rank">
+        <div class="rk top"><div class="meta"><span class="nm">Opus 4.8</span><span class="vl"><b class="num">1.9M</b> · 34%</span></div><div class="track"><i style="width:34%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm">Sonnet 5</span><span class="vl"><b class="num">1.4M</b> · 25%</span></div><div class="track"><i style="width:25%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm">Haiku 4.5</span><span class="vl"><b class="num">0.9M</b> · 16%</span></div><div class="track"><i style="width:16%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm">others</span><span class="vl"><b class="num">1.4M</b> · 25%</span></div><div class="track"><i style="width:25%"></i></div></div>
+      </div>
+    </div>
+
+    <div class="drill">
+      <span class="lbl">Activity type</span>
+      <div class="donutrow">
+        <svg width="86" height="86" viewBox="0 0 42 42" style="flex:none">
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="var(--g1)" stroke-width="7"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#18181B" stroke-width="7" stroke-dasharray="34 66" stroke-dashoffset="25"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#52525B" stroke-width="7" stroke-dasharray="22 78" stroke-dashoffset="-9"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#A1A1AA" stroke-width="7" stroke-dasharray="18 82" stroke-dashoffset="-31"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#C4C4CB" stroke-width="7" stroke-dasharray="12 88" stroke-dashoffset="-49"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#D4D4D8" stroke-width="7" stroke-dasharray="8 92" stroke-dashoffset="-61"></circle>
+          <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E4E4E7" stroke-width="7" stroke-dasharray="6 94" stroke-dashoffset="-69"></circle>
+        </svg>
+        <div class="legend">
+          <div class="lg"><span class="dot" style="background:#18181B"></span>edit<span class="pc num">34%</span></div>
+          <div class="lg"><span class="dot" style="background:#52525B"></span>read<span class="pc num">22%</span></div>
+          <div class="lg"><span class="dot" style="background:#A1A1AA"></span>run<span class="pc num">18%</span></div>
+          <div class="lg"><span class="dot" style="background:#C4C4CB"></span>search<span class="pc num">12%</span></div>
+          <div class="lg"><span class="dot" style="background:#D4D4D8"></span>web<span class="pc num">8%</span></div>
+          <div class="lg"><span class="dot" style="background:#E4E4E7"></span>other<span class="pc num">6%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="drill">
+      <span class="lbl">Top projects</span>
+      <div class="rank">
+        <div class="rk"><div class="meta"><span class="nm">TokenBar</span><span class="vl"><b class="num">1.4M</b> · 31%</span></div><div class="track"><i style="width:31%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm">atoll-web</span><span class="vl"><b class="num">0.89M</b> · 20%</span></div><div class="track"><i style="width:20%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm">dotfiles</span><span class="vl"><b class="num">0.62M</b> · 14%</span></div><div class="track"><i style="width:14%"></i></div></div>
+        <div class="rk"><div class="meta"><span class="nm">other</span><span class="vl"><b class="num">1.6M</b> · 35%</span></div><div class="track"><i style="width:35%"></i></div></div>
+      </div>
+    </div>
+
+    <div class="drill">
+      <span class="lbl">Token composition</span>
+      <div class="comp">
+        <i style="width:42%;background:#18181B"></i><i style="width:31%;background:#52525B"></i><i style="width:19%;background:#A1A1AA"></i><i style="width:8%;background:#D4D4D8"></i>
+      </div>
+      <div class="complg">
+        <span><i class="sw" style="background:#18181B"></i>input <b class="num">42%</b></span>
+        <span><i class="sw" style="background:#52525B"></i>cached <b class="num">31%</b></span>
+        <span><i class="sw" style="background:#A1A1AA"></i>output <b class="num">19%</b></span>
+        <span><i class="sw" style="background:#D4D4D8"></i>reasoning <b class="num">8%</b></span>
+      </div>
+    </div>
+  </div>
+</div>

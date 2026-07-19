@@ -1,0 +1,136 @@
+<!-- DESIGN READ: the dense annual-report end of the editorial axis — every line is a statement row with a hairline rule beneath it, figures right-aligned in a mono tabular column, charts shrunk to thin inline bars and a sparkline. Scans top to bottom like a data page. Variant: C2 — Ledger. -->
+<meta charset="utf-8">
+<title>Atoll · Analytics — Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAFAFA; --card:#FFFFFF; --line:#E4E4E7;
+  --text:#09090B; --dim:#52525B; --muted:#5D5D65; --faint:#6C6C75;
+  --accent:#EC4899;
+  --safe:#16A34A; --near:#D97706; --locked:#DC2626;
+  --g1:#F4F4F5; --g2:#D4D4D8; --g3:#A1A1AA; --g4:#52525B; --g5:#18181B;
+  --r-sm:6px; --r-lg:10px;
+  --sans:'Geist',system-ui,sans-serif; --mono:'Geist Mono',ui-monospace,monospace;
+  --serif:'Playfair Display',Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e8e8ea;font-family:var(--sans);color:var(--text);
+  -webkit-font-smoothing:antialiased;padding:28px 0;display:flex;justify-content:center}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.widget{width:380px;background:var(--bg);border-radius:var(--r-lg);
+  border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.06);overflow:hidden}
+.pane{padding:20px 22px 24px}
+
+/* statement header */
+.stmt{margin-top:22px}
+.stmt:first-of-type{margin-top:6px}
+.caption{display:flex;align-items:baseline;gap:8px;padding-bottom:6px;border-bottom:2px solid var(--g5)}
+.caption .ti{font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
+.caption .lens{margin-left:auto;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
+
+/* group subhead within a statement */
+.grp{margin-top:16px;padding-bottom:5px;font-size:9.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+
+/* the ledger line */
+.line{display:grid;grid-template-columns:1fr auto;align-items:center;
+  column-gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+.line .lab{font-size:12.5px;font-weight:500;color:var(--text)}
+.line .lab .rk{font-family:var(--mono);font-size:10px;color:var(--g3);margin-right:9px}
+.line .fig{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;
+  text-align:right;white-space:nowrap;letter-spacing:-.01em}
+.line .fig .pct{color:var(--muted);margin-left:10px;display:inline-block;min-width:34px}
+.line.tot{border-bottom:2px solid var(--g5);border-top:1px solid var(--line)}
+.line.tot .lab{font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
+.line.tot .fig{font-weight:600;color:var(--text)}
+.line.lead .fig .pct{color:var(--accent)}
+
+/* thin inline bar under label, second grid row spanning */
+.linebar{grid-column:1 / -1;height:2px;background:var(--g1);margin-top:6px;overflow:hidden}
+.linebar i{display:block;height:100%;background:var(--g4)}
+.line.lead .linebar i{background:var(--accent)}
+
+/* sparkline row (hourly / daily) */
+.spark{display:flex;align-items:flex-end;gap:1px;height:34px;margin:10px 0 4px}
+.spark i{flex:1;background:var(--g2);border-radius:.5px}
+.spark i.today{background:var(--accent)}
+.sparkx{display:flex;justify-content:space-between;font-size:8.5px;color:var(--faint);padding-bottom:6px;border-bottom:1px solid var(--line)}
+
+/* top figure strip */
+.strip{display:grid;grid-template-columns:repeat(3,1fr);margin-top:14px;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+.strip .c{padding:9px 11px}
+.strip .c + .c{border-left:1px solid var(--line)}
+.strip .c .k{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--faint)}
+.strip .c .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;margin-top:3px}
+</style>
+
+<div class="widget">
+<div class="pane">
+
+  <!-- ===================== LENS 1 ===================== -->
+  <div class="stmt">
+    <div class="caption"><span class="ti">Trends</span><span class="lens">Lens 1 · when</span></div>
+
+    <div class="strip num">
+      <div class="c"><div class="k">Est. cost</div><div class="v">$47.20</div></div>
+      <div class="c"><div class="k">Peak day</div><div class="v">07/14</div></div>
+      <div class="c"><div class="k">Streak</div><div class="v">12d</div></div>
+    </div>
+
+    <div class="grp">Usage over time · last 30 days</div>
+    <div class="spark">
+      <i style="height:34%"></i><i style="height:23%"></i><i style="height:43%"></i><i style="height:60%"></i><i style="height:54%"></i><i style="height:17%"></i><i style="height:11%"></i><i style="height:32%"></i><i style="height:48%"></i><i style="height:65%"></i><i style="height:80%"></i><i style="height:40%"></i><i style="height:26%"></i><i style="height:88%"></i><i style="height:74%"></i><i style="height:52%"></i><i style="height:37%"></i><i style="height:20%"></i><i style="height:45%"></i><i style="height:57%"></i><i style="height:68%"></i><i style="height:32%"></i><i style="height:15%"></i><i style="height:54%"></i><i style="height:77%"></i><i style="height:62%"></i><i style="height:43%"></i><i style="height:23%"></i><i style="height:37%"></i><i class="today" style="height:62%"></i>
+    </div>
+    <div class="sparkx"><span>Jun 20</span><span>Jul 04</span><span>Jul 12</span><span style="color:var(--accent);font-weight:600">today</span></div>
+
+    <div class="grp">Period figures</div>
+    <div class="line"><span class="lab">This period, total tokens</span><span class="fig">5.6M</span></div>
+    <div class="line"><span class="lab">Today</span><span class="fig">2.2M<span class="pct">39%</span></span></div>
+    <div class="line"><span class="lab">Daily low to high</span><span class="fig">0.4 to 3.1M</span></div>
+    <div class="line"><span class="lab">Busiest hours</span><span class="fig">14 to 16h</span></div>
+    <div class="line"><span class="lab">Sessions this week</span><span class="fig">23</span></div>
+    <div class="line tot"><span class="lab">Throughput</span><span class="fig">4.1K tok/min</span></div>
+  </div>
+
+  <!-- ===================== LENS 2 ===================== -->
+  <div class="stmt">
+    <div class="caption"><span class="ti">Breakdown</span><span class="lens">Lens 2 · where</span></div>
+
+    <div class="grp">By model</div>
+    <div class="line lead"><span class="lab"><span class="rk">1</span>Opus 4.8</span><span class="fig">1.9M<span class="pct">34%</span></span><span class="linebar"><i style="width:34%"></i></span></div>
+    <div class="line"><span class="lab"><span class="rk">2</span>Sonnet 5</span><span class="fig">1.4M<span class="pct">25%</span></span><span class="linebar"><i style="width:25%"></i></span></div>
+    <div class="line"><span class="lab"><span class="rk">3</span>Haiku 4.5</span><span class="fig">0.9M<span class="pct">16%</span></span><span class="linebar"><i style="width:16%"></i></span></div>
+    <div class="line"><span class="lab"><span class="rk">4</span>others</span><span class="fig">1.4M<span class="pct">25%</span></span><span class="linebar"><i style="width:25%"></i></span></div>
+    <div class="line tot"><span class="lab">Total</span><span class="fig">5.6M<span class="pct">100%</span></span></div>
+
+    <div class="grp">By agent</div>
+    <div class="line"><span class="lab"><span class="rk">1</span>Claude Code</span><span class="fig">3.8M<span class="pct">68%</span></span><span class="linebar"><i style="width:68%"></i></span></div>
+    <div class="line"><span class="lab"><span class="rk">2</span>Codex</span><span class="fig">1.6M<span class="pct">29%</span></span><span class="linebar"><i style="width:29%"></i></span></div>
+    <div class="line"><span class="lab"><span class="rk">3</span>Grok</span><span class="fig">0.2M<span class="pct">3%</span></span><span class="linebar"><i style="width:3%"></i></span></div>
+
+    <div class="grp">By activity type</div>
+    <div class="line"><span class="lab">edit</span><span class="fig"><span class="pct">34%</span></span><span class="linebar"><i style="width:34%"></i></span></div>
+    <div class="line"><span class="lab">read</span><span class="fig"><span class="pct">22%</span></span><span class="linebar"><i style="width:22%"></i></span></div>
+    <div class="line"><span class="lab">run</span><span class="fig"><span class="pct">18%</span></span><span class="linebar"><i style="width:18%"></i></span></div>
+    <div class="line"><span class="lab">search</span><span class="fig"><span class="pct">12%</span></span><span class="linebar"><i style="width:12%"></i></span></div>
+    <div class="line"><span class="lab">web</span><span class="fig"><span class="pct">8%</span></span><span class="linebar"><i style="width:8%"></i></span></div>
+    <div class="line"><span class="lab">other</span><span class="fig"><span class="pct">6%</span></span><span class="linebar"><i style="width:6%"></i></span></div>
+
+    <div class="grp">Top projects</div>
+    <div class="line"><span class="lab"><span class="rk">1</span>TokenBar</span><span class="fig">1.4M<span class="pct">31%</span></span><span class="linebar"><i style="width:31%"></i></span></div>
+    <div class="line"><span class="lab"><span class="rk">2</span>atoll-web</span><span class="fig">0.89M<span class="pct">20%</span></span><span class="linebar"><i style="width:20%"></i></span></div>
+    <div class="line"><span class="lab"><span class="rk">3</span>dotfiles</span><span class="fig">0.62M<span class="pct">14%</span></span><span class="linebar"><i style="width:14%"></i></span></div>
+    <div class="line"><span class="lab"><span class="rk">4</span>other</span><span class="fig">1.6M<span class="pct">35%</span></span><span class="linebar"><i style="width:35%"></i></span></div>
+
+    <div class="grp">Token composition</div>
+    <div class="line"><span class="lab">input</span><span class="fig"><span class="pct">42%</span></span><span class="linebar"><i style="width:42%"></i></span></div>
+    <div class="line"><span class="lab">cached</span><span class="fig"><span class="pct">31%</span></span><span class="linebar"><i style="width:31%"></i></span></div>
+    <div class="line"><span class="lab">output</span><span class="fig"><span class="pct">19%</span></span><span class="linebar"><i style="width:19%"></i></span></div>
+    <div class="line tot"><span class="lab">reasoning</span><span class="fig"><span class="pct">8%</span></span></div>
+  </div>
+
+</div>
+</div>

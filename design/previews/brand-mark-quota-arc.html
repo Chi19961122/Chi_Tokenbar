@@ -1,0 +1,95 @@
+<!-- Brand mark reconcile: current simple-ring ◎ vs proposed quota-arc ◎ (match installer icon-source.png). Monochrome currentColor marks at real header size + on dark, plus an installer-style rounded-square echo. -->
+<meta charset="utf-8">
+<title>Atoll · brand mark — quota arc reconcile</title>
+<style>
+  :root{
+    --bg:#FAFAFA; --card:#FFFFFF; --border:#E4E4E7;
+    --text:#09090B; --muted:#5D5D65; --faint:#6C6C75;
+    --accent:#EC4899;
+    --dark-bg:#131316; --dark-accent:#F472B6;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#e8e8ea;font-family:var(--sans);color:var(--text);padding:28px;display:flex;flex-direction:column;gap:22px;align-items:center}
+  .frame{width:380px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:20px}
+  h1{font-size:13px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin:0 0 4px}
+  .sub{font-size:12px;color:var(--muted);margin:0 0 18px;line-height:1.5}
+  .row{display:flex;gap:14px}
+  .cell{flex:1;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:16px 12px;text-align:center}
+  .cell.dark{background:var(--dark-bg);border-color:#26262b}
+  .cap{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-top:12px}
+  .cell.dark .cap{color:#86868f}
+  .sizes{display:flex;align-items:baseline;justify-content:center;gap:16px;min-height:44px}
+  .light-mark{color:var(--accent)}
+  .dark .light-mark{color:var(--dark-accent)}
+  /* header real size = 17px */
+  .s17{width:17px;height:17px}
+  .s28{width:28px;height:28px}
+  .s40{width:40px;height:40px}
+  /* installer echo */
+  .installer{display:flex;gap:18px;align-items:center;justify-content:center}
+  .tile{width:96px;height:96px;border-radius:22px;background:radial-gradient(120% 120% at 30% 20%,#2a2130,#0c0c0f);display:flex;align-items:center;justify-content:center}
+  .tile svg{width:66px;height:66px;color:var(--accent)}
+  .label{font-size:11px;color:var(--muted);text-align:center;max-width:120px;line-height:1.4}
+</style>
+
+<div class="frame">
+  <h1>current · simple ring</h1>
+  <p class="sub">Today's in-app mark (index.html:18 / share.ts RING_MARK): a single full ring + centre dot. Does not read as the installer's quota gauge.</p>
+  <div class="row">
+    <div class="cell">
+      <div class="sizes light-mark">
+        <svg class="s17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+        <svg class="s28" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+        <svg class="s40" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+      </div>
+      <div class="cap">light · 17 / 28 / 40px</div>
+    </div>
+    <div class="cell dark">
+      <div class="sizes light-mark">
+        <svg class="s17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+        <svg class="s28" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+        <svg class="s40" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+      </div>
+      <div class="cap">dark</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame">
+  <h1>proposed · quota arc</h1>
+  <p class="sub">Faint full track + ~240° bright arc (gap upper-left, round caps) + centre dot — the installer's gauge motif translated to a monochrome currentColor glyph.</p>
+  <div class="row">
+    <div class="cell">
+      <div class="sizes light-mark">
+        <svg class="s17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" opacity=".22"/><path d="M9.67 3.31 A9 9 0 1 1 5.64 18.36" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+        <svg class="s28" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" opacity=".22"/><path d="M9.67 3.31 A9 9 0 1 1 5.64 18.36" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+        <svg class="s40" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" opacity=".22"/><path d="M9.67 3.31 A9 9 0 1 1 5.64 18.36" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+      </div>
+      <div class="cap">light · 17 / 28 / 40px</div>
+    </div>
+    <div class="cell dark">
+      <div class="sizes light-mark">
+        <svg class="s17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" opacity=".22"/><path d="M9.67 3.31 A9 9 0 1 1 5.64 18.36" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+        <svg class="s28" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" opacity=".22"/><path d="M9.67 3.31 A9 9 0 1 1 5.64 18.36" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+        <svg class="s40" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" opacity=".22"/><path d="M9.67 3.31 A9 9 0 1 1 5.64 18.36" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+      </div>
+      <div class="cap">dark</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame">
+  <h1>installer echo</h1>
+  <p class="sub">Rough echo of the real icon-source.png (dark rounded square + magenta gauge) beside the proposed monochrome glyph, to check they read as the same mark.</p>
+  <div class="installer">
+    <div class="tile">
+      <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" opacity=".28"/><path d="M9.67 3.31 A9 9 0 1 1 5.64 18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+    </div>
+    <div class="label">installer / tray (raster)</div>
+    <div class="light-mark" style="display:flex;align-items:center">
+      <svg class="s40" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" opacity=".22"/><path d="M9.67 3.31 A9 9 0 1 1 5.64 18.36" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+    </div>
+    <div class="label">in-app glyph (proposed)</div>
+  </div>
+</div>
