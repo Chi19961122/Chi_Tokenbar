@@ -54,6 +54,10 @@
   4. **六款方向**：statement / diagnostics / minimal / fuel / island_card / wa **全過**，照比稿實作（16:9 + 9:16）。
 - **T-918** Grok 退回 usage-only（使用者定案）：context 填充率卡「單一 session、新對話歸零」的語意與訂閱額度差太多，移除限額卡、分析頁用量保留。**未來路徑**：前端 Provider::Grok 渲染鏈（PROVIDER_META、prov-grok 色、i18n、filter arm）全部保留沉睡，xAI 若開放額度查詢 API，只需新增一個回傳 grok 5h/週 Limit 的資料來源即可點亮；context 讀數的舊 provider 在 git 歷史（`ed72347` 的 providers/grok.rs）。
 
+## 2026-07-19 v0.9 出貨後回饋（Atoll IA/打磨輪）
+
+- F-14 [visual] 品牌 logo 圖示：安裝檔/系統匣/工作列顯示「額度弧 ◎」，但 app 內 header 品牌記號與分享卡署名記號是「單純細全環 + 點」，兩者不一致；使用者要求**以安裝檔額度弧為準**。**根因**：T-923 從 `icon-source.png` 生成的是光柵**額度計量環**（暗底 + 洋紅 240° 開口弧 + 中心點 + 暗淡全環軌）；T-921 的 header ◎（`index.html:18`）與 T-922 的分享卡 `RING_MARK`（`share.ts:270`）是另外手繪的全環 SVG，從沒同步到額度弧設計 —— 兩條圖記血脈各畫各的。**修**：把兩處單色 SVG 記號改成同款開口弧（`currentColor` 承接洋紅：暗淡全環軌 opacity .22 + ~240° 亮弧 gap 左上 round caps + 中心點），對上安裝檔。`SEAL_MARK`（環印卡雙環徽記）為卡片專屬印章母題，非 app 標誌，不動。弧厚度不變故 `styles.css` 尺寸不動。tsc 綠 + 139 前端測試綠；幾何在比稿 `design/previews/brand-mark-quota-arc.html` 經使用者核可。→ (本 commit)
+
 ## 2026-07-18 四次驗收回饋（v0.6 輪）
 
 **本輪已修（2 commit，verifier 全數 CONFIRMED）**

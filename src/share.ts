@@ -264,11 +264,14 @@ function fmtHour(hour: number): string {
 
 const TOP_N = 5;
 
-/** The ◎ ring mark (concentric circle + centre dot), `currentColor`. Replaces the
- *  old battery mark as the unified brand signature glyph. Sized by CSS per slot. */
+/** The ◎ quota-arc mark: faint full track + ~240° bright arc (gap upper-left,
+ *  round caps) + centre dot, `currentColor`. Matches the installer / tray app
+ *  icon (the magenta quota gauge), the canonical brand glyph. Sized by CSS per
+ *  slot. */
 const RING_MARK =
   `<svg class="rm" viewBox="0 0 24 24" fill="none">` +
-  `<circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7"/>` +
+  `<circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.7" opacity="0.22"/>` +
+  `<path d="M9.54 2.82 A9.5 9.5 0 1 1 5.28 18.72" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>` +
   `<circle cx="12" cy="12" r="3.6" fill="currentColor"/></svg>`;
 
 /** The larger ◎ seal glyph (two concentric rings + centre dot) for the Seal card's
