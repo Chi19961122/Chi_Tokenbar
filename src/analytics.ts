@@ -99,11 +99,11 @@ export interface HeatGrid {
   weeks: number; // number of week columns
 }
 
-/** Weekday of a YYYY-MM-DD bucket, Mon=0 … Sun=6. Parsed as UTC so it matches
- *  the backend's UTC day bucketing and never drifts with the local timezone. */
+/** Weekday of a YYYY-MM-DD bucket, Mon=0 … Sun=6. Parsed in local time so it
+ *  matches the backend's local-timezone day bucketing (F-15). */
 function weekdayMon(date: string): number {
-  const d = new Date(date + "T00:00:00Z");
-  return (d.getUTCDay() + 6) % 7; // JS Sun=0..Sat=6 → Mon=0..Sun=6
+  const d = new Date(date + "T00:00:00"); // local (no trailing Z)
+  return (d.getDay() + 6) % 7; // JS Sun=0..Sat=6 → Mon=0..Sun=6
 }
 
 /**

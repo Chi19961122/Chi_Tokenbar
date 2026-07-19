@@ -1,8 +1,9 @@
 //! Layer ③ analytics (UX Spec v3 §11): aggregate local JSONL into daily /
 //! model / agent breakdowns, cost estimate, and stats. All from local files —
-//! no undocumented API, no risk. Dates are bucketed in UTC for consistency.
+//! no undocumented API, no risk. Days and hours are bucketed in the user's
+//! local timezone so the charts read on the same clock as their labels (F-15).
 
-use chrono::{Datelike, Timelike};
+use chrono::{Datelike, TimeZone, Timelike};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
@@ -201,7 +202,7 @@ fn rate_per_mtok(model: &str) -> f64 {
 
 fn date_str(ts: i64) -> String {
     chrono::DateTime::from_timestamp(ts, 0)
-        .map(|d| d.format("%Y-%m-%d").to_string())
+        .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string())
         .unwrap_or_default()
 }
 
@@ -329,9 +330,12 @@ impl Acc {
         if total == 0 {
             return false;
         }
-        let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) else {
+        let Some(dt_utc) = chrono::DateTime::from_timestamp(ts, 0) else {
             return false;
         };
+        // Attribute the row to the user's local day/hour (F-15): the daily and
+        // hourly charts, and the busiest-hour record, must all read on one clock.
+        let dt = dt_utc.with_timezone(&chrono::Local);
         let day = self
             .days
             .entry(dt.format("%Y-%m-%d").to_string())
@@ -346,10 +350,9 @@ impl Acc {
 
         self.hourly[dt.hour() as usize] += total;
         self.hourly_cost[dt.hour() as usize] += cost;
-        let local = dt.with_timezone(&chrono::Local);
         *self
             .hourly_by_day
-            .entry((local.format("%Y-%m-%d").to_string(), local.hour() as u8))
+            .entry((dt.format("%Y-%m-%d").to_string(), dt.hour() as u8))
             .or_default() += total;
 
         if !project.is_empty() {
@@ -487,8 +490,17 @@ where
         "month" => 29, // last 30 days including today
         _ => 6,        // "week"
     };
-    let utc_midnight = now - now.rem_euclid(86400);
-    let start = utc_midnight - days_back * 86400;
+    // Window boundaries align to the user's LOCAL midnight (F-15), matching the
+    // local day/hour bucketing in `book`. Falls back to UTC midnight only if the
+    // local wall-clock midnight is ambiguous/nonexistent (a DST edge; none in
+    // Asia/Taipei, but kept correct everywhere).
+    let local_midnight = chrono::Local::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|naive| chrono::Local.from_local_datetime(&naive).single())
+        .map(|dt| dt.timestamp())
+        .unwrap_or_else(|| now - now.rem_euclid(86400));
+    let start = local_midnight - days_back * 86400;
 
     let mut acc = Acc::new(now);
     // Each source scans iff selected. A source with no local data simply
@@ -1517,6 +1529,15 @@ mod tests {
         .to_string()
     }
 
+    /// An RFC3339 timestamp at a given LOCAL wall-clock time, so hour/day bucket
+    /// assertions hold on any machine timezone (F-15: buckets are local now).
+    fn local_ts(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> String {
+        chrono::Local
+            .with_ymd_and_hms(y, mo, d, h, mi, 0)
+            .unwrap()
+            .to_rfc3339()
+    }
+
     fn codex_detailed_line(ts: &str, input: u64, cached: u64, output: u64) -> String {
         serde_json::json!({
             "timestamp": ts,
@@ -1544,10 +1565,10 @@ mod tests {
     #[test]
     fn codex_cumulative_events_become_timestamped_deltas() {
         let acc = scan_fake_codex_files(vec![vec![
-            codex_line("2026-07-17T01:00:00Z", 100),
-            codex_line("2026-07-17T02:00:00Z", 250),
-            codex_line("2026-07-17T03:00:00Z", 250),
-            codex_line("2026-07-17T04:00:00Z", 400),
+            codex_line(&local_ts(2026, 7, 17, 1, 0), 100),
+            codex_line(&local_ts(2026, 7, 17, 2, 0), 250),
+            codex_line(&local_ts(2026, 7, 17, 3, 0), 250),
+            codex_line(&local_ts(2026, 7, 17, 4, 0), 400),
         ]]);
         assert_eq!(acc.breakdown.input, 400);
         assert_eq!(acc.hourly[1], 100);
@@ -1577,8 +1598,8 @@ mod tests {
     #[test]
     fn codex_events_across_midnight_are_booked_to_separate_days() {
         let acc = scan_fake_codex_files(vec![vec![
-            codex_line("2026-07-16T23:59:00Z", 100),
-            codex_line("2026-07-17T00:01:00Z", 250),
+            codex_line(&local_ts(2026, 7, 16, 23, 59), 100),
+            codex_line(&local_ts(2026, 7, 17, 0, 1), 250),
         ]]);
         assert_eq!(acc.days["2026-07-16"].by_agent[CODEX_AGENT], 100);
         assert_eq!(acc.days["2026-07-17"].by_agent[CODEX_AGENT], 150);
@@ -1602,8 +1623,8 @@ mod tests {
     #[test]
     fn codex_decreasing_total_saturates_to_zero() {
         let acc = scan_fake_codex_files(vec![vec![
-            codex_line("2026-07-17T01:00:00Z", 250),
-            codex_line("2026-07-17T02:00:00Z", 100),
+            codex_line(&local_ts(2026, 7, 17, 1, 0), 250),
+            codex_line(&local_ts(2026, 7, 17, 2, 0), 100),
         ]]);
         assert_eq!(acc.breakdown.input, 250);
         assert_eq!(acc.hourly[2], 0);
@@ -1829,10 +1850,10 @@ mod tests {
     #[test]
     fn grok_cumulative_events_become_timestamped_deltas() {
         let acc = scan_fake_grok_files(vec![vec![
-            grok_line(grok_ts("2026-07-17T01:00:00Z"), 100, "grok-4.5"),
-            grok_line(grok_ts("2026-07-17T02:00:00Z"), 250, "grok-4.5"),
-            grok_line(grok_ts("2026-07-17T03:00:00Z"), 250, "grok-4.5"),
-            grok_line(grok_ts("2026-07-17T04:00:00Z"), 400, "grok-4.5"),
+            grok_line(grok_ts(&local_ts(2026, 7, 17, 1, 0)), 100, "grok-4.5"),
+            grok_line(grok_ts(&local_ts(2026, 7, 17, 2, 0)), 250, "grok-4.5"),
+            grok_line(grok_ts(&local_ts(2026, 7, 17, 3, 0)), 250, "grok-4.5"),
+            grok_line(grok_ts(&local_ts(2026, 7, 17, 4, 0)), 400, "grok-4.5"),
         ]]);
         assert_eq!(acc.hourly[1], 100);
         assert_eq!(acc.hourly[2], 150);
@@ -1879,8 +1900,8 @@ mod tests {
     #[test]
     fn grok_reset_is_treated_as_a_new_baseline() {
         let acc = scan_fake_grok_files(vec![vec![
-            grok_line(grok_ts("2026-07-17T01:00:00Z"), 300, "grok-4.5"),
-            grok_line(grok_ts("2026-07-17T02:00:00Z"), 120, "grok-4.5"),
+            grok_line(grok_ts(&local_ts(2026, 7, 17, 1, 0)), 300, "grok-4.5"),
+            grok_line(grok_ts(&local_ts(2026, 7, 17, 2, 0)), 120, "grok-4.5"),
         ]]);
         assert_eq!(acc.hourly[1], 300);
         assert_eq!(acc.hourly[2], 120); // the drop counts as a fresh 120, not 0

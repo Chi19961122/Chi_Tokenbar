@@ -56,6 +56,9 @@
 
 ## 2026-07-19 v0.9 出貨後回饋（Atoll IA/打磨輪）
 
+- F-15 [func] 分析頁長條圖的時間是 UTC 不是本地，且與「busiest hour」標籤時區不一致。**根因**：`src-tauri/src/analytics.rs` 的分桶分兩套時鐘——(1) 主圖走 UTC：窗界 `utc_midnight = now - now.rem_euclid(86400)`（L490，UTC 午夜對齊）、`date_str()` 用 `from_timestamp(ts,0).format`（L202，UTC 日）、`book()` 的 `dt = from_timestamp(ts,0)` 取 `dt.format` 日桶 + `dt.hour()` 時桶全 UTC（L332/337/347）；(2) 但 `hourly_by_day` 與 records（busiest hour）走 **local**（`dt.with_timezone(&Local)`，L349-352 + `records_for` 吃 `local_now` L548-553）。→ UTC+8 使用者：每時圖長條按 UTC 小時、footnote busiest hour 按本地小時，差 8 小時對不上；每日圖凌晨~08:00 前的用量算進「昨天(UTC)」。**修**（使用者定案：全改本地）：`book()` 的 `dt` 先 `.with_timezone(&Local)` 再取日/時桶；`date_str` 改 local；窗界 `utc_midnight` 改本地午夜；前端 `weekdayMon`（analytics.ts）改 local parse 對齊。詳見 `docs/tickets/T-932-brief.md`。→ (T-932)
+
+
 - F-14 [visual] 品牌 logo 圖示：安裝檔/系統匣/工作列顯示「額度弧 ◎」，但 app 內 header 品牌記號與分享卡署名記號是「單純細全環 + 點」，兩者不一致；使用者要求**以安裝檔額度弧為準**。**根因**：T-923 從 `icon-source.png` 生成的是光柵**額度計量環**（暗底 + 洋紅 240° 開口弧 + 中心點 + 暗淡全環軌）；T-921 的 header ◎（`index.html:18`）與 T-922 的分享卡 `RING_MARK`（`share.ts:270`）是另外手繪的全環 SVG，從沒同步到額度弧設計 —— 兩條圖記血脈各畫各的。**修**：把兩處單色 SVG 記號改成同款開口弧（`currentColor` 承接洋紅：暗淡全環軌 opacity .22 + ~240° 亮弧 gap 左上 round caps + 中心點），對上安裝檔。`SEAL_MARK`（環印卡雙環徽記）為卡片專屬印章母題，非 app 標誌，不動。弧厚度不變故 `styles.css` 尺寸不動。tsc 綠 + 139 前端測試綠；幾何在比稿 `design/previews/brand-mark-quota-arc.html` 經使用者核可。→ (本 commit)
 
 ## 2026-07-18 四次驗收回饋（v0.6 輪）
