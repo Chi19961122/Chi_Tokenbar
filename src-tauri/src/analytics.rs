@@ -714,21 +714,106 @@ fn scan_codex(acc: &mut Acc, start: i64) -> u32 {
             let Ok(meta) = fs::metadata(&p) else {
                 continue;
             };
-            if let Ok(file) = File::open(&p) {
-                acc.stats.files_read += 1;
-                acc.stats.eligible_file_bytes += meta.len();
-                let project = first_cwd_basename(&p);
-                scan_codex_lines(
-                    acc,
-                    start,
-                    &project,
-                    BufReader::new(file).lines().map_while(Result::ok),
-                    &mut seen,
-                );
-            }
+            let Ok(file) = File::open(&p) else {
+                continue;
+            };
+            acc.stats.files_read += 1;
+            acc.stats.eligible_file_bytes += meta.len();
+            // Single open: discover cwd from the first 8 lines, then process the
+            // whole file (including those lines) with one reusable buffer.
+            scan_codex_file(acc, start, file, &mut seen);
         }
     }
     sessions
+}
+
+/// One Codex rollout file: single `File` / `BufReader`, reusable line buffer.
+fn scan_codex_file(acc: &mut Acc, start: i64, file: File, seen: &mut HashSet<(i64, u64)>) {
+    let mut reader = BufReader::new(file);
+    let mut buf = String::new();
+    let mut prefix: Vec<String> = Vec::with_capacity(8);
+    let mut project = String::new();
+    for _ in 0..8 {
+        buf.clear();
+        match reader.read_line(&mut buf) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+        let line = buf.trim_end_matches(['\r', '\n']).to_string();
+        if project.is_empty() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) {
+                if let Some(cwd) = v
+                    .get("payload")
+                    .and_then(|p| p.get("cwd"))
+                    .and_then(|c| c.as_str())
+                {
+                    project = basename(cwd);
+                }
+            }
+        }
+        prefix.push(line);
+    }
+    let mut previous: Option<CodexUsage> = None;
+    for line in &prefix {
+        process_codex_line(acc, start, &project, line, &mut previous, seen);
+    }
+    loop {
+        buf.clear();
+        match reader.read_line(&mut buf) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+        let line = buf.trim_end_matches(['\r', '\n']);
+        process_codex_line(acc, start, &project, line, &mut previous, seen);
+    }
+}
+
+fn process_codex_line(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    line: &str,
+    previous: &mut Option<CodexUsage>,
+    seen: &mut HashSet<(i64, u64)>,
+) {
+    acc.stats.lines_read += 1;
+    if !line.contains("token_count") {
+        return;
+    }
+    acc.stats.candidate_lines += 1;
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+        return;
+    };
+    acc.stats.json_parse_ok += 1;
+    let Some((ts, current)) = codex_token_event_from_value(&v) else {
+        return;
+    };
+    let total = usage_total(current);
+    let duplicate = !seen.insert((ts, total));
+    let prior = previous.replace(current).unwrap_or((0, 0, 0, 0));
+    if duplicate || ts < start || total.saturating_sub(usage_total(prior)) == 0 {
+        return;
+    }
+    let (i, ca, o, r) = current;
+    let (pi, pca, po, pr) = prior;
+    let di = i.saturating_sub(pi);
+    let dca = ca.saturating_sub(pca);
+    let do_ = o.saturating_sub(po);
+    let dr = r.saturating_sub(pr);
+    acc.add_with_cost(
+        ts,
+        "gpt-5-codex",
+        "Codex CLI",
+        project,
+        None,
+        di,
+        dca,
+        do_,
+        dr,
+        codex_cost("gpt-5-codex", di, dca, do_, dr),
+    );
 }
 
 #[derive(Clone, Copy)]
@@ -839,6 +924,9 @@ fn usage_total((input, cached, output, reasoning): CodexUsage) -> u64 {
         .saturating_add(reasoning)
 }
 
+/// Test helper: feed pre-split lines (no filesystem) through the same
+/// `process_codex_line` path production uses.
+#[cfg(test)]
 fn scan_codex_lines<I>(
     acc: &mut Acc,
     start: i64,
@@ -850,76 +938,8 @@ fn scan_codex_lines<I>(
 {
     let mut previous: Option<CodexUsage> = None;
     for line in lines {
-        acc.stats.lines_read += 1;
-        if !line.contains("token_count") {
-            continue;
-        }
-        acc.stats.candidate_lines += 1;
-        // Count successful JSON parse of candidates (same point as Claude/Grok),
-        // not only rows that yield a token_count domain event.
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
-            continue;
-        };
-        acc.stats.json_parse_ok += 1;
-        let Some((ts, current)) = codex_token_event_from_value(&v) else {
-            continue;
-        };
-        let total = usage_total(current);
-        let duplicate = !seen.insert((ts, total));
-        let prior = previous.replace(current).unwrap_or((0, 0, 0, 0));
-        if duplicate || ts < start || total.saturating_sub(usage_total(prior)) == 0 {
-            continue;
-        }
-        let (i, ca, o, r) = current;
-        let (pi, pca, po, pr) = prior;
-        let di = i.saturating_sub(pi);
-        let dca = ca.saturating_sub(pca);
-        let do_ = o.saturating_sub(po);
-        let dr = r.saturating_sub(pr);
-        // kind = None: Codex tokens aren't per-tool attributable (see note).
-        acc.add_with_cost(
-            ts,
-            "gpt-5-codex",
-            "Codex CLI",
-            project,
-            None,
-            di,
-            dca,
-            do_,
-            dr,
-            codex_cost("gpt-5-codex", di, dca, do_, dr),
-        );
+        process_codex_line(acc, start, project, &line, &mut previous, seen);
     }
-}
-
-/// The session's project folder, from the first `payload.cwd` in the file
-/// (session_meta / turn_context). "" when none is found in the opening lines.
-fn first_cwd_basename(path: &PathBuf) -> String {
-    let Ok(file) = File::open(path) else {
-        return String::new();
-    };
-    let mut reader = BufReader::new(file);
-    let mut line = String::new();
-    // cwd lives near the top (session_meta first, turn_context soon after); a
-    // handful of lines is plenty and keeps this to one cheap head-read.
-    for _ in 0..8 {
-        line.clear();
-        match reader.read_line(&mut line) {
-            Ok(0) => break,
-            Ok(_) => {}
-            Err(_) => break,
-        }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) {
-            if let Some(cwd) = v
-                .get("payload")
-                .and_then(|p| p.get("cwd"))
-                .and_then(|c| c.as_str())
-            {
-                return basename(cwd);
-            }
-        }
-    }
-    String::new()
 }
 
 fn mtime_secs(p: &PathBuf) -> i64 {
@@ -977,16 +997,22 @@ fn scan_claude(acc: &mut Acc, start: i64) {
         };
         acc.stats.files_read += 1;
         acc.stats.eligible_file_bytes += meta.len();
-        scan_claude_lines(
-            acc,
-            start,
-            &project,
-            BufReader::new(file).lines().map_while(Result::ok),
-            &mut seen,
-        );
+        let mut reader = BufReader::new(file);
+        let mut buf = String::new();
+        loop {
+            buf.clear();
+            match reader.read_line(&mut buf) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+            let line = buf.trim_end_matches(['\r', '\n']);
+            scan_claude_line(acc, start, &project, line, &mut seen);
+        }
     }
 }
 
+#[cfg(test)]
 fn scan_claude_lines(
     acc: &mut Acc,
     start: i64,
@@ -995,102 +1021,112 @@ fn scan_claude_lines(
     seen: &mut HashSet<String>,
 ) {
     for line in lines {
-        acc.stats.lines_read += 1;
-        if !line.contains("\"usage\"") {
-            continue;
-        }
-        acc.stats.candidate_lines += 1;
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
-            continue;
-        };
-        acc.stats.json_parse_ok += 1;
-        let msg = v.get("message");
-        let Some(usage) = msg.and_then(|m| m.get("usage")) else {
-            continue;
-        };
-        let ts = v
-            .get("timestamp")
-            .and_then(|t| t.as_str())
-            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|d| d.timestamp())
-            .unwrap_or(0);
-        if ts < start {
-            continue;
-        }
-        let dedup_key = v
-            .get("requestId")
-            .and_then(|x| x.as_str())
-            .or_else(|| msg.and_then(|m| m.get("id")).and_then(|x| x.as_str()))
-            .or_else(|| v.get("uuid").and_then(|x| x.as_str()));
-        if dedup_key.is_some_and(|key| !seen.insert(key.to_string())) {
-            continue;
-        }
-        let model = msg
-            .and_then(|m| m.get("model"))
-            .and_then(|m| m.as_str())
-            .unwrap_or("claude");
-        // Activity kind from this message's tool_use names.
-        let mut tools: Vec<String> = Vec::new();
-        if let Some(content) = msg
-            .and_then(|m| m.get("content"))
-            .and_then(|c| c.as_array())
-        {
-            for it in content {
-                if it.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                    if let Some(name) = it.get("name").and_then(|n| n.as_str()) {
-                        tools.push(name.to_string());
-                    }
+        scan_claude_line(acc, start, project, &line, seen);
+    }
+}
+
+fn scan_claude_line(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    line: &str,
+    seen: &mut HashSet<String>,
+) {
+    acc.stats.lines_read += 1;
+    if !line.contains("\"usage\"") {
+        return;
+    }
+    acc.stats.candidate_lines += 1;
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+        return;
+    };
+    acc.stats.json_parse_ok += 1;
+    let msg = v.get("message");
+    let Some(usage) = msg.and_then(|m| m.get("usage")) else {
+        return;
+    };
+    let ts = v
+        .get("timestamp")
+        .and_then(|t| t.as_str())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.timestamp())
+        .unwrap_or(0);
+    if ts < start {
+        return;
+    }
+    let dedup_key = v
+        .get("requestId")
+        .and_then(|x| x.as_str())
+        .or_else(|| msg.and_then(|m| m.get("id")).and_then(|x| x.as_str()))
+        .or_else(|| v.get("uuid").and_then(|x| x.as_str()));
+    if dedup_key.is_some_and(|key| !seen.insert(key.to_string())) {
+        return;
+    }
+    let model = msg
+        .and_then(|m| m.get("model"))
+        .and_then(|m| m.as_str())
+        .unwrap_or("claude");
+    // Activity kind from this message's tool_use names.
+    let mut tools: Vec<String> = Vec::new();
+    if let Some(content) = msg
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+    {
+        for it in content {
+            if it.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                if let Some(name) = it.get("name").and_then(|n| n.as_str()) {
+                    tools.push(name.to_string());
                 }
             }
         }
-        let kind = message_kind(&tools);
-        let input = usage
-            .get("input_tokens")
-            .and_then(|x| x.as_u64())
-            .unwrap_or(0);
-        let output = usage
-            .get("output_tokens")
-            .and_then(|x| x.as_u64())
-            .unwrap_or(0);
-        let cache_read = usage
-            .get("cache_read_input_tokens")
-            .and_then(|x| x.as_u64())
-            .unwrap_or(0);
-        let cache_creation = usage
-            .get("cache_creation_input_tokens")
-            .and_then(|x| x.as_u64())
-            .unwrap_or(0);
-        let cache_creation_detail = usage.get("cache_creation");
-        let cache_write_1h = cache_creation_detail
-            .and_then(|x| x.get("ephemeral_1h_input_tokens"))
-            .and_then(|x| x.as_u64())
-            .unwrap_or(0);
-        let cache_write_5m = cache_creation_detail
-            .and_then(|x| x.get("ephemeral_5m_input_tokens"))
-            .and_then(|x| x.as_u64())
-            .unwrap_or_else(|| cache_creation.saturating_sub(cache_write_1h));
-        let cached = cache_read + cache_creation;
-        let cost = claude_cost(
-            model,
-            input,
-            output,
-            cache_read,
-            cache_write_5m,
-            cache_write_1h,
-        );
-        acc.add_with_cost(
-            ts,
-            model,
-            "Claude Code",
-            &project,
-            Some(kind),
-            input,
-            cached,
-            output,
-            0,
-            cost,
-        );
     }
+    let kind = message_kind(&tools);
+    let input = usage
+        .get("input_tokens")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(0);
+    let output = usage
+        .get("output_tokens")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(0);
+    let cache_read = usage
+        .get("cache_read_input_tokens")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(0);
+    let cache_creation = usage
+        .get("cache_creation_input_tokens")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(0);
+    let cache_creation_detail = usage.get("cache_creation");
+    let cache_write_1h = cache_creation_detail
+        .and_then(|x| x.get("ephemeral_1h_input_tokens"))
+        .and_then(|x| x.as_u64())
+        .unwrap_or(0);
+    let cache_write_5m = cache_creation_detail
+        .and_then(|x| x.get("ephemeral_5m_input_tokens"))
+        .and_then(|x| x.as_u64())
+        .unwrap_or_else(|| cache_creation.saturating_sub(cache_write_1h));
+    let cached = cache_read + cache_creation;
+    let cost = claude_cost(
+        model,
+        input,
+        output,
+        cache_read,
+        cache_write_5m,
+        cache_write_1h,
+    );
+    acc.add_with_cost(
+        ts,
+        model,
+        "Claude Code",
+        project,
+        Some(kind),
+        input,
+        cached,
+        output,
+        0,
+        cost,
+    );
 }
 
 // ── Grok CLI: cumulative session totals (T-916) ───────────────────────────
@@ -1211,6 +1247,7 @@ fn grok_event(line: &str) -> Option<(i64, u64, Option<String>)> {
     Some((ts, total, grok_model_id_from_value(&v)))
 }
 
+#[cfg(test)]
 fn scan_grok_lines<I>(
     acc: &mut Acc,
     start: i64,
@@ -1221,42 +1258,55 @@ fn scan_grok_lines<I>(
     I: Iterator<Item = String>,
 {
     let mut previous: u64 = 0;
-    // Sticky model for this file. Real Grok logs emit modelId on update rows
-    // that do *not* carry totalTokens; token rows then inherit this value.
     let mut current_model = String::from("grok");
     for line in lines {
-        acc.stats.lines_read += 1;
-        // Cheap prefilter: most stream chunks are huge content without either key.
-        if !line.contains("totalTokens") && !line.contains("modelId") {
-            continue;
-        }
-        acc.stats.candidate_lines += 1;
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
-            continue;
-        };
-        acc.stats.json_parse_ok += 1;
-        if let Some(model) = grok_model_id_from_value(&v) {
-            current_model = model;
-        }
-        let Some((ts, cumulative)) = grok_token_from_value(&v) else {
-            continue;
-        };
-        let duplicate = !seen.insert((ts, cumulative));
-        // Monotonic diff, with a reset guard: a drop is a new session baseline
-        // (brief), so the whole current value is this event's delta — not a
-        // saturating-to-zero like Codex, and never a negative delta.
-        let delta = if cumulative >= previous {
-            cumulative - previous
-        } else {
-            cumulative
-        };
-        previous = cumulative;
-        if duplicate || ts < start || delta == 0 {
-            continue;
-        }
-        // total-only (no breakdown), cost 0.0 (no public pricing). See section note.
-        acc.add_total_only(ts, &current_model, "Grok CLI", project, delta, 0.0);
+        process_grok_line(
+            acc,
+            start,
+            project,
+            &line,
+            &mut previous,
+            &mut current_model,
+            seen,
+        );
     }
+}
+
+fn process_grok_line(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    line: &str,
+    previous: &mut u64,
+    current_model: &mut String,
+    seen: &mut HashSet<(i64, u64)>,
+) {
+    acc.stats.lines_read += 1;
+    if !line.contains("totalTokens") && !line.contains("modelId") {
+        return;
+    }
+    acc.stats.candidate_lines += 1;
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+        return;
+    };
+    acc.stats.json_parse_ok += 1;
+    if let Some(model) = grok_model_id_from_value(&v) {
+        *current_model = model;
+    }
+    let Some((ts, cumulative)) = grok_token_from_value(&v) else {
+        return;
+    };
+    let duplicate = !seen.insert((ts, cumulative));
+    let delta = if cumulative >= *previous {
+        cumulative - *previous
+    } else {
+        cumulative
+    };
+    *previous = cumulative;
+    if duplicate || ts < start || delta == 0 {
+        return;
+    }
+    acc.add_total_only(ts, current_model, "Grok CLI", project, delta, 0.0);
 }
 
 fn scan_grok(acc: &mut Acc, start: i64) {
@@ -1285,13 +1335,28 @@ fn scan_grok(acc: &mut Acc, start: i64) {
         };
         acc.stats.files_read += 1;
         acc.stats.eligible_file_bytes += meta.len();
-        scan_grok_lines(
-            acc,
-            start,
-            &project,
-            BufReader::new(file).lines().map_while(Result::ok),
-            &mut seen,
-        );
+        let mut reader = BufReader::new(file);
+        let mut buf = String::new();
+        let mut previous: u64 = 0;
+        let mut current_model = String::from("grok");
+        loop {
+            buf.clear();
+            match reader.read_line(&mut buf) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+            let line = buf.trim_end_matches(['\r', '\n']);
+            process_grok_line(
+                acc,
+                start,
+                &project,
+                line,
+                &mut previous,
+                &mut current_model,
+                &mut seen,
+            );
+        }
     }
 }
 
