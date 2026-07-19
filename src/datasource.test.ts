@@ -32,7 +32,8 @@ describe("getAnalytics error contract", () => {
     const { getAnalytics, isTauri } = await import("./datasource");
     expect(isTauri()).toBe(false);
     const a = await getAnalytics("week");
-    expect(a.range).toBe("week");
+    expect(a).not.toBeNull();
+    expect(a!.range).toBe("week");
     expect(mockAnalytics).toHaveBeenCalledWith("week");
   });
 

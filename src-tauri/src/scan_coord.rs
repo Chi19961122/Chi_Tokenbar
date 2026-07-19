@@ -87,6 +87,16 @@ type ScanFn = Arc<dyn Fn(&str, &[String]) -> Result<Analytics, AnalyticsError> +
 /// Spawn a background job. Returns Err if the worker cannot be started.
 type SpawnFn = Arc<dyn Fn(Box<dyn FnOnce() + Send>) -> Result<(), AnalyticsError> + Send + Sync>;
 
+fn default_spawn_fn() -> SpawnFn {
+    Arc::new(|job| {
+        std::thread::Builder::new()
+            .name("atoll-analytics".into())
+            .spawn(job)
+            .map(|_| ())
+            .map_err(|e| AnalyticsError::scan_failed(format!("worker spawn failed: {e}")))
+    })
+}
+
 struct InflightEntry {
     waiters: Vec<Waiter>,
 }
@@ -123,6 +133,14 @@ impl ScanCoordinator {
     pub fn new() -> Self {
         Self::with_hooks(
             Arc::new(|range, sources| Ok(analytics::compute_with(range, sources))),
+            default_spawn_fn(),
+        )
+    }
+
+    #[cfg(test)]
+    pub fn with_scan(scan_fn: ScanFn) -> Self {
+        Self::with_hooks(
+            scan_fn,
             Arc::new(|job| {
                 std::thread::Builder::new()
                     .name("atoll-analytics".into())
@@ -131,16 +149,6 @@ impl ScanCoordinator {
                     .map_err(|e| AnalyticsError::scan_failed(format!("worker spawn failed: {e}")))
             }),
         )
-    }
-
-    pub fn with_scan(scan_fn: ScanFn) -> Self {
-        Self::with_hooks(scan_fn, Arc::new(|job| {
-            std::thread::Builder::new()
-                .name("atoll-analytics".into())
-                .spawn(job)
-                .map(|_| ())
-                .map_err(|e| AnalyticsError::scan_failed(format!("worker spawn failed: {e}")))
-        }))
     }
 
     pub fn with_hooks(scan_fn: ScanFn, spawn_fn: SpawnFn) -> Self {
