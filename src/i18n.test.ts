@@ -15,7 +15,7 @@ const SAMPLE_KEYS = [
   "tab.limits",
   "tab.usage",
   "settings.language",
-  "subtab.overview",
+  "subtab.trends",
   "toggle.today",
   "analytics.estCost",
   "limit.cc5h",

@@ -3,8 +3,8 @@ import "./styles.css";
 import type { Analytics, Limit, Snapshot } from "./types";
 import type { ReloginState } from "./panel";
 import { MANUAL_LOGIN_CMD } from "./panel";
-import type { AnalyticsOpts, Group, Metric, SubTab } from "./analytics";
-import type { Settings } from "./types";
+import type { AnalyticsOpts, Granularity, Group, Metric } from "./analytics";
+import type { Account, Settings } from "./types";
 import {
   getAnalytics,
   getSettings,
@@ -50,18 +50,13 @@ const $ = (id: string) => document.getElementById(id)!;
  *  truth and no separate boolean to keep in sync. */
 const shareOpen = () => !$("share").hasAttribute("hidden");
 
-/** The four analytics sub-tabs (階段 C). Any persisted/legacy value outside this
- *  set — e.g. an older build's removed "report" tab (T-914) — coerces to the
- *  overview default so it can never land on a dead tab. subtab is session-only
- *  (not in Settings/Rust), so this only guards the click handler today. */
-const SUBTABS: readonly SubTab[] = ["overview", "share", "hourly", "stats"];
-const coerceSubTab = (v: string): SubTab =>
-  (SUBTABS as readonly string[]).includes(v) ? (v as SubTab) : "overview";
-
 const ui = {
   expanded: false,
   compact: false,
-  subtab: "overview" as SubTab,
+  // T-ui-301: both lenses render together, so there is no sub-tab. The Trends
+  // granularity (daily/hourly) took over what the overview↔hourly tabs did;
+  // metric/group/range are the remaining slices. All session-only.
+  granularity: "daily" as Granularity,
   metric: "tokens" as Metric,
   group: "agent" as Group,
   range: "week" as "today" | "week" | "month",
@@ -100,49 +95,18 @@ const analyticsInflight = new Set<string>();
 
 // ── rendering ────────────────────────────────────────────────────────
 
-function renderSubtabs() {
-  const subs: [SubTab, string][] = [
-    ["overview", t("subtab.overview")],
-    ["share", t("subtab.share")],
-    ["hourly", t("subtab.hourly")],
-    ["stats", t("subtab.stats")],
-  ];
-  $("subtabs").innerHTML = subs
-    .map(([id, label]) => `<button data-sub="${id}" class="${ui.subtab === id ? "on" : ""}">${label}</button>`)
-    .join("");
-}
-
+/** The global range control (Today|Week|Month) that sits above both lenses —
+ *  the only persistent top toggle now. Granularity/metric/group moved inline into
+ *  each lens header (rendered by renderAnalytics), because range is the one input
+ *  that re-slices the payload for BOTH lenses, while the others just re-slice the
+ *  already-fetched data. */
 function renderToggles() {
-  // Scope each toggle to where it actually changes something:
-  //  · metric (tokens/price): overview, share, hourly — NOT stats, whose
-  //    token-type breakdown has no price variant.
-  //  · group (model/agent): share only — on overview the grouping changes
-  //    nothing visible, and elsewhere it has no meaning.
-  const showMetric =
-    ui.subtab === "overview" || ui.subtab === "share" || ui.subtab === "hourly";
-  const showGroup = ui.subtab === "share";
   $("toggles").innerHTML = `
     <div class="seg" data-seg="range">
       <button data-range="today" class="${ui.range === "today" ? "on" : ""}">${t("toggle.today")}</button>
       <button data-range="week" class="${ui.range === "week" ? "on" : ""}">${t("toggle.week")}</button>
       <button data-range="month" class="${ui.range === "month" ? "on" : ""}">${t("toggle.month")}</button>
-    </div>
-    ${
-      showMetric
-        ? `<div class="seg" data-seg="metric">
-      <button data-metric="tokens" class="${ui.metric === "tokens" ? "on" : ""}">${t("toggle.tokens")}</button>
-      <button data-metric="price" class="${ui.metric === "price" ? "on" : ""}">${t("toggle.price")}</button>
-    </div>`
-        : ""
-    }
-    ${
-      showGroup
-        ? `<div class="seg" data-seg="group">
-             <button data-group="model" class="${ui.group === "model" ? "on" : ""}">${t("toggle.model")}</button>
-             <button data-group="agent" class="${ui.group === "agent" ? "on" : ""}">${t("toggle.agent")}</button>
-           </div>`
-        : ""
-    }`;
+    </div>`;
 }
 
 function renderIslandNow() {
@@ -236,7 +200,7 @@ function currentAnalyticsRange(): AnalyticsRange {
 /** Paint the analytics layer from an already-fetched payload (no IPC). */
 function renderAnalyticsInto(a: Analytics): void {
   $("rate").textContent = `${fmtTokens(a.tokPerMin)} ${t("analytics.tokPerMin")}`;
-  const opts: AnalyticsOpts = { subtab: ui.subtab, metric: ui.metric, group: ui.group };
+  const opts: AnalyticsOpts = { metric: ui.metric, group: ui.group, granularity: ui.granularity };
   const box = $("analytics");
   // The innerHTML swap resets the fixed-height box's scroll; a background
   // revalidate repaint must not yank the reader back to the top.
@@ -467,7 +431,6 @@ function rerenderAll() {
     renderCards();
     renderRefresh();
     if (!ui.compact) {
-      renderSubtabs();
       renderToggles();
       beginAnalytics();
     }
@@ -494,7 +457,6 @@ async function applyCompact() {
     // locks the window at the wrong height until the next mode change.
     renderCards();
     if (!ui.compact) {
-      renderSubtabs();
       renderToggles();
       beginAnalytics();
       sizeAnalytics();
@@ -557,8 +519,39 @@ function pinOptionsHtml(provider: "anthropic" | "codex", current: string): strin
   return html;
 }
 
+/** Accounts to show on the Settings page (moved here from the old analytics
+ *  "stats" sub-tab, T-ui-301 §3). Lowest-coupling source: the already-fetched
+ *  analytics payload — accounts are range-invariant, so any cached slice serves.
+ *  On a cold Settings open (nothing warmed yet) fall back to one fetch. */
+function cachedAccounts(): Account[] {
+  for (const entry of analyticsCache.values()) {
+    if (entry.data.accounts?.length) return entry.data.accounts;
+  }
+  return [];
+}
+async function accountsForSettings(): Promise<Account[]> {
+  const cached = cachedAccounts();
+  if (cached.length) return cached;
+  const a = await fetchAnalytics(currentAnalyticsRange());
+  return a?.accounts ?? cachedAccounts();
+}
+
 async function renderSettings() {
   const s = await getSettings();
+  const accounts = await accountsForSettings();
+  const accountsGroup = accounts.length
+    ? `<div class="sgroup">
+      <div class="lsec-head">${t("settings.accounts")}</div>
+      ${accounts
+        .map(
+          (ac) =>
+            `<div class="srow"><span class="slabel">${escAttr(ac.client)}<span class="snote">${escAttr(
+              ac.account,
+            )} · ${escAttr(ac.plan)}</span></span></div>`,
+        )
+        .join("")}
+    </div>`
+    : "";
   $("settings").innerHTML = `
     <div class="sgroup">
       <div class="lsec-head">${t("settings.startupWindow")}</div>
@@ -675,7 +668,8 @@ async function renderSettings() {
           ],
         )}
       </div>
-    </div>`;
+    </div>
+    ${accountsGroup}`;
 }
 
 function readSettingsForm(): Settings {
@@ -737,7 +731,6 @@ function closeSettings(): void {
   document.body.classList.remove("settings-open");
   renderCards();
   if (!ui.compact) {
-    renderSubtabs();
     renderToggles();
     beginAnalytics();
     sizeAnalytics();
@@ -787,7 +780,6 @@ function closeShare(): void {
   document.body.classList.remove("share-open");
   renderCards();
   if (!ui.compact) {
-    renderSubtabs();
     renderToggles();
     beginAnalytics();
     sizeAnalytics();
@@ -821,7 +813,6 @@ function setExpanded(on: boolean): void {
     renderCards();
     renderRefresh();
     if (!ui.compact) {
-      renderSubtabs();
       renderToggles();
       // Non-blocking: paint from cache or drop a fixed-height skeleton, so
       // fitWindow() below measures the final height and resizes exactly once —
@@ -1029,23 +1020,26 @@ function wireEvents() {
     }
   });
 
-  $("subtabs").addEventListener("click", (e) => {
-    const t = (e.target as HTMLElement).closest("[data-sub]");
+  // Range is the global top toggle (re-slices the payload for both lenses).
+  $("toggles").addEventListener("click", (e) => {
+    const t = (e.target as HTMLElement).closest("[data-range]");
     if (!t) return;
-    ui.subtab = coerceSubTab(t.getAttribute("data-sub") ?? "");
-    renderSubtabs();
+    ui.range = t.getAttribute("data-range") as "today" | "week" | "month";
     renderToggles();
     renderAnalyticsNow();
   });
 
-  $("toggles").addEventListener("click", (e) => {
-    const el = e.target as HTMLElement;
-    const t = el.closest("[data-range],[data-metric],[data-group]");
+  // The per-lens toggles live inside #analytics (granularity/metric in Trends,
+  // group/metric in Breakdown). None re-slice the payload — they just re-render
+  // both lenses from the already-fetched data, so scroll + stale-while-revalidate
+  // are preserved by renderAnalyticsInto.
+  $("analytics").addEventListener("click", (e) => {
+    const t = (e.target as HTMLElement).closest("[data-metric],[data-group],[data-granularity]");
     if (!t) return;
-    if (t.hasAttribute("data-range")) ui.range = t.getAttribute("data-range") as "today" | "week" | "month";
     if (t.hasAttribute("data-metric")) ui.metric = t.getAttribute("data-metric") as Metric;
     if (t.hasAttribute("data-group")) ui.group = t.getAttribute("data-group") as Group;
-    renderToggles();
+    if (t.hasAttribute("data-granularity"))
+      ui.granularity = t.getAttribute("data-granularity") as Granularity;
     renderAnalyticsNow();
   });
 }

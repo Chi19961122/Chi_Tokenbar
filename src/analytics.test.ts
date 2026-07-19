@@ -93,7 +93,7 @@ describe("month chart with a short history", () => {
     a.rangeStartDay = a.daily[a.daily.length - 2].date;
 
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "overview", metric: "tokens", group: "agent" });
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
 
     expect(root.querySelector(".chart-note")?.textContent).toContain(a.rangeStartDay.slice(5));
     // Leading empty days are still dropped, while the x-axis keeps its endpoints.
@@ -140,7 +140,7 @@ describe("chart axes (T-911)", () => {
   it("renders a y-axis gutter (gridlines + tokens labels) on the daily chart", () => {
     const a = mockAnalytics("month");
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "overview", metric: "tokens", group: "agent" });
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
     // 3 gridlines (0/half/max) and 3 matching gutter labels.
     expect(root.querySelectorAll(".daily-chart .grid")).toHaveLength(3);
     expect(root.querySelectorAll(".daily-chart .axis-y")).toHaveLength(3);
@@ -154,7 +154,7 @@ describe("chart axes (T-911)", () => {
     const a = { ...mockAnalytics("week"), hourlyCost: Array(24).fill(0) };
     a.hourlyCost[3] = 20;
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "hourly", metric: "price", group: "agent" });
+    renderAnalytics(root, a, { metric: "price", group: "agent", granularity: "hourly" });
     const yText = [...root.querySelectorAll(".chart .axis-y")].map((n) => n.textContent);
     expect(root.querySelectorAll(".chart .grid").length).toBeGreaterThanOrEqual(2);
     // Max tick reflects the $20 peak, formatted as USD.
@@ -166,7 +166,7 @@ describe("custom bar tooltip (T-911)", () => {
   it("stamps data-tip on daily bars with the date · value · share label", () => {
     const a = mockAnalytics("month");
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "overview", metric: "tokens", group: "agent" });
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
     const bars = [...root.querySelectorAll<SVGRectElement>(".daily-bar")];
     expect(bars.every((b) => b.hasAttribute("data-tip"))).toBe(true);
     // Shape: "MM/DD · <tokens> · <pct>%" and it matches the <title> fallback.
@@ -179,7 +179,7 @@ describe("custom bar tooltip (T-911)", () => {
     const a = { ...mockAnalytics("week"), hourly: Array(24).fill(0) };
     a.hourly[5] = 2_000_000;
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "hourly", metric: "tokens", group: "agent" });
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "hourly" });
     const bars = [...root.querySelectorAll<SVGRectElement>(".chart rect[data-tip]")];
     expect(bars).toHaveLength(24);
     expect(bars[5].getAttribute("data-tip")).toBe("5:00 · 2.0M");
@@ -234,44 +234,79 @@ describe("heatCells (activity heatmap)", () => {
   });
 });
 
-describe("階段 C+ render wiring", () => {
+describe("T-ui-301 two-lens render wiring", () => {
+  it("renders both lenses in one scrolling pane, no sub-tab switcher", () => {
+    const a = mockAnalytics("week");
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+
+    const lenses = [...root.querySelectorAll(".feature")];
+    expect(lenses).toHaveLength(2);
+    expect(lenses[0].querySelector(".cap")?.textContent).toContain("Trends");
+    expect(lenses[1].querySelector(".cap")?.textContent).toContain("Breakdown");
+    // No leftover sub-tab buttons anywhere in the analytics output.
+    expect(root.querySelector("[data-sub]")).toBeNull();
+  });
+
   it("renders daily totals as neutral single bars with a pink today bar", () => {
     const a = mockAnalytics("month");
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "overview", metric: "tokens", group: "agent" });
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
 
     const bars = [...root.querySelectorAll<SVGRectElement>(".daily-bar")];
     expect(bars).toHaveLength(a.daily.length);
-    // Fill is now class-driven (theme-following), not an inline hex: the last bar
-    // is the pink "today" bar; the rest are heavy ("is-strong") or dim (plain).
+    // Fill is class-driven (theme-following), not an inline hex: the last bar is
+    // the pink "today" bar; the rest are heavy ("is-strong") or dim (plain).
     expect(bars[bars.length - 1]?.classList.contains("is-today")).toBe(true);
     expect(bars.slice(0, -1).some((bar) => bar.classList.contains("is-today"))).toBe(false);
     expect(bars.slice(0, -1).every((bar) => !bar.hasAttribute("fill"))).toBe(true);
-    expect(root.querySelector(".legend")).toBeNull();
   });
 
-  it("shows the heatmap on overview only for the month range", () => {
+  it("shows the month heatmap only in the daily granularity for a month range", () => {
     const month = { ...mockAnalytics("month"), range: "month" as const };
     const week = { ...mockAnalytics("week"), range: "week" as const };
     const root = document.createElement("div");
 
-    renderAnalytics(root, month, { subtab: "overview", metric: "tokens", group: "agent" });
+    renderAnalytics(root, month, { metric: "tokens", group: "agent", granularity: "daily" });
     expect(root.querySelector(".hm")).not.toBeNull();
     expect(root.querySelectorAll(".hm-today")).toHaveLength(1);
 
-    renderAnalytics(root, week, { subtab: "overview", metric: "tokens", group: "agent" });
+    // A week range never draws the heatmap…
+    renderAnalytics(root, week, { metric: "tokens", group: "agent", granularity: "daily" });
+    expect(root.querySelector(".hm")).toBeNull();
+
+    // …and neither does the hourly granularity, even for a month.
+    renderAnalytics(root, month, { metric: "tokens", group: "agent", granularity: "hourly" });
     expect(root.querySelector(".hm")).toBeNull();
   });
 
-  it("renders the activity donut and project bars on Breakdown", () => {
+  it("renders the grayscale activity donut and project rows on Breakdown", () => {
     const a = mockAnalytics("week");
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
-    expect(root.querySelector(".donut")).not.toBeNull();
-    expect(root.querySelector(".donut")?.tagName).toBe("svg");
-    expect(root.querySelectorAll(".donut circle")).toHaveLength(a.byKind.length + 1);
-    // Project bars carry a token·% label (shareLabel), like the other bars.
-    expect(root.querySelector(".sub-sec")).not.toBeNull();
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+    const donut = root.querySelector(".donutsec svg");
+    expect(donut).not.toBeNull();
+    expect(donut?.tagName).toBe("svg");
+    // One arc per kind + the base ring.
+    expect(root.querySelectorAll(".donutsec circle")).toHaveLength(a.byKind.length + 1);
+    // Breakdown carries ranked `.rows` (model/agent, projects) with token·% labels.
+    expect(root.querySelector(".rows")).not.toBeNull();
+    expect(root.querySelector(".vl")?.textContent).toMatch(/·/);
+    // The single Breakdown magenta is the #1 row; nothing else gets `.top`.
+    expect(root.querySelectorAll(".row.top")).toHaveLength(1);
+  });
+
+  it("keeps the donut and composition fully grayscale (no magenta/provider colors)", () => {
+    const a = mockAnalytics("week");
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+    const inlineColors = [
+      ...root.querySelectorAll<HTMLElement>(".legend i, .complegend i, .compbar i"),
+    ].map((dot) => dot.style.background || dot.style.stroke);
+    expect(inlineColors.length).toBeGreaterThan(0);
+    expect(
+      inlineColors.every((c) => /^var\(--(?:ink-\d+|faint)\)$/.test(c)),
+    ).toBe(true);
   });
 
   it("renders all expanded activity-kind labels in both locales", () => {
@@ -283,26 +318,19 @@ describe("階段 C+ render wiring", () => {
 
     try {
       setLocale("en");
-      renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
-      expect(root.querySelector(".donut-legend")?.textContent).toContain("Search");
-      expect(root.querySelector(".donut-legend")?.textContent).toContain("Web");
-      expect(root.querySelector(".donut-legend")?.textContent).toContain("Agent");
-      expect(root.querySelector(".donut-legend")?.textContent).toContain("MCP");
-      expect(root.querySelectorAll(".donut-legend span")).toHaveLength(8);
-      const colors = [...root.querySelectorAll<HTMLElement>(".donut-legend i")].map(
-        (dot) => dot.style.background,
-      );
-      expect(new Set(colors).size).toBe(8);
-      expect(colors.every((color) => /^var\(--(?:ink-\d+|prov-claude|prov-codex|accent)\)$/.test(color))).toBe(
-        true,
-      );
+      renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+      expect(root.querySelector(".donutsec .legend")?.textContent).toContain("Search");
+      expect(root.querySelector(".donutsec .legend")?.textContent).toContain("Web");
+      expect(root.querySelector(".donutsec .legend")?.textContent).toContain("Agent");
+      expect(root.querySelector(".donutsec .legend")?.textContent).toContain("MCP");
+      expect(root.querySelectorAll(".donutsec .legend span")).toHaveLength(8);
 
       setLocale("zh-TW");
-      renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
-      expect(root.querySelector(".donut-legend")?.textContent).toContain("搜尋");
-      expect(root.querySelector(".donut-legend")?.textContent).toContain("網路");
-      expect(root.querySelector(".donut-legend")?.textContent).toContain("代理");
-      expect(root.querySelector(".donut-legend")?.textContent).toContain("MCP");
+      renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+      expect(root.querySelector(".donutsec .legend")?.textContent).toContain("搜尋");
+      expect(root.querySelector(".donutsec .legend")?.textContent).toContain("網路");
+      expect(root.querySelector(".donutsec .legend")?.textContent).toContain("代理");
+      expect(root.querySelector(".donutsec .legend")?.textContent).toContain("MCP");
     } finally {
       setLocale("en");
     }
@@ -311,16 +339,24 @@ describe("階段 C+ render wiring", () => {
   it("omits empty advanced sections instead of drawing blank cards", () => {
     const a = { ...mockAnalytics("week"), byKind: [], byProject: [] };
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
-    expect(root.querySelector(".donut")).toBeNull();
-    expect(root.querySelector(".sub-sec")).toBeNull();
-    // The primary model/agent breakdown is still there.
-    expect(root.querySelector(".bars")).not.toBeNull();
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+    expect(root.querySelector(".donutsec")).toBeNull();
+    // No project section, but the primary model/agent ranking is still there.
+    expect(root.querySelector(".rows")).not.toBeNull();
+  });
+
+  it("never renders accounts in the analytics output (moved to Settings)", () => {
+    const a = mockAnalytics("week");
+    const root = document.createElement("div");
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+    // Accounts carry an email; it must not leak into the analytics pane anymore.
+    expect(root.querySelector(".acct")).toBeNull();
+    expect(root.textContent).not.toContain(a.accounts[0].account);
   });
 });
 
-describe("personal records", () => {
-  it("omits the whole records section when records are empty", () => {
+describe("records/rate footnote (Trends)", () => {
+  it("omits the peak-day fact when records are empty", () => {
     const a = mockAnalytics("week");
     a.records = {
       maxDay: { date: "", tokens: 0 },
@@ -329,18 +365,15 @@ describe("personal records", () => {
       prNow: false,
     };
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "stats", metric: "tokens", group: "agent" });
-    expect(root.querySelector(".records")).toBeNull();
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+    const foot = root.querySelector(".footnote")?.textContent ?? "";
+    // No peak/busiest facts with zeroed records; the rate/session facts remain.
+    expect(foot).not.toContain("Peak day");
+    expect(foot).not.toContain("Busiest hour");
+    expect(foot).toContain("sessions this week");
   });
 
-  it("renders three stat tiles with Est. Cost reversed", () => {
-    const root = document.createElement("div");
-    renderAnalytics(root, mockAnalytics("week"), { subtab: "overview", metric: "tokens", group: "agent" });
-    expect(root.querySelectorAll(":scope > .tiles > .tile")).toHaveLength(3);
-    expect(root.querySelector(":scope > .tiles > .tile")?.classList.contains("tile-accent")).toBe(true);
-  });
-
-  it("renders record values and PR badge", () => {
+  it("carries peak day + busiest hour + sessions + rate when records exist", () => {
     const a = mockAnalytics("week");
     a.records = {
       maxDay: { date: "2026-07-16", tokens: 2_400_000 },
@@ -349,11 +382,13 @@ describe("personal records", () => {
       prNow: true,
     };
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "stats", metric: "tokens", group: "agent" });
-    expect(root.querySelector(".records")?.textContent).toContain("2.4M");
-    expect(root.querySelector(".records")?.textContent).toContain("800.0K");
-    expect(root.querySelector(".records")?.textContent).toContain("07-16 09:00");
-    expect(root.querySelector(".pr-now")?.textContent).toBe("PR NOW");
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+    const foot = root.querySelector(".footnote")?.textContent ?? "";
+    expect(foot).toContain("07-16"); // peak day (M-D)
+    expect(foot).toContain("09:00"); // busiest hour
+    expect(foot).toContain("sessions this week");
+    // The streak is deduped into the hero, not repeated in the footnote.
+    expect(root.querySelector(".hero .sub")?.textContent).toContain("6d streak");
   });
 });
 
@@ -362,7 +397,7 @@ describe("metric price mode", () => {
     const a = { ...mockAnalytics("week"), hourly: Array(24).fill(0), hourlyCost: Array(24).fill(0) };
     a.hourlyCost[3] = 12.5;
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "hourly", metric: "price", group: "agent" });
+    renderAnalytics(root, a, { metric: "price", group: "agent", granularity: "hourly" });
     const titles = [...root.querySelectorAll(".chart title")].map((n) => n.textContent);
     expect(titles).toHaveLength(24);
     expect(titles[3]).toBe("3:00 · $12.50");
@@ -374,7 +409,7 @@ describe("metric price mode", () => {
     const a = { ...mockAnalytics("week"), hourly: Array(24).fill(0) };
     a.hourly[5] = 2_000_000;
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "hourly", metric: "tokens", group: "agent" });
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "hourly" });
     const titles = [...root.querySelectorAll(".chart title")].map((n) => n.textContent);
     expect(titles[5]).toBe("5:00 · 2.0M");
     expect(titles.every((t) => !t?.includes("$"))).toBe(true);
@@ -389,8 +424,8 @@ describe("metric price mode", () => {
       byProject: [],
     };
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "share", metric: "price", group: "agent" });
-    const vals = [...root.querySelectorAll(".bar-val")].map((n) => n.textContent);
+    renderAnalytics(root, a, { metric: "price", group: "agent", granularity: "daily" });
+    const vals = [...root.querySelectorAll(".rows .vl")].map((n) => n.textContent);
     // Sorted desc by cost: Claude $30 (75% of $40), Codex $10 (25%).
     expect(vals).toEqual(["$30.00 · 75%", "$10.00 · 25%"]);
   });
@@ -404,24 +439,24 @@ describe("metric price mode", () => {
       byProject: [],
     };
     const root = document.createElement("div");
-    renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
-    const vals = [...root.querySelectorAll(".bar-val")].map((n) => n.textContent);
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
+    const vals = [...root.querySelectorAll(".rows .vl")].map((n) => n.textContent);
     expect(vals).toEqual(["3.0M · 75%", "1.0M · 25%"]);
   });
 });
 
-describe("subtab convergence", () => {
-  it("share breakdown follows the model/agent group toggle", () => {
+describe("breakdown group toggle", () => {
+  it("the ranking follows the model/agent group toggle", () => {
     const a = mockAnalytics("week");
     const root = document.createElement("div");
 
-    renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "agent" });
+    renderAnalytics(root, a, { metric: "tokens", group: "agent", granularity: "daily" });
     const byAgent = root.innerHTML;
-    renderAnalytics(root, a, { subtab: "share", metric: "tokens", group: "model" });
+    renderAnalytics(root, a, { metric: "tokens", group: "model", granularity: "daily" });
     const byModel = root.innerHTML;
 
     // The agent view names agents (Claude Code / Codex CLI); the model view
-    // names models (opus / gpt) — the same subtab, switched by the toggle.
+    // names models (opus / gpt) — same Breakdown lens, switched by the toggle.
     expect(byAgent).toContain("Claude Code");
     expect(byModel).toContain("opus-4.8");
     expect(byAgent).not.toBe(byModel);

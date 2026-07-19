@@ -2,7 +2,7 @@
 
 import type { Analytics, AnalyticsRange, DayPoint, KindCount, ProjectCount } from "./types";
 import { fmtTokens, fmtUsd } from "./format";
-import { keyColor, seriesColor } from "./colors";
+import { seriesColor } from "./colors";
 import { t } from "./i18n";
 
 /** Escape before interpolating a project name (derived from a local folder
@@ -16,11 +16,11 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-// 階段 C subtab convergence: "daily" folded into overview (the stacked daily
-// chart *is* the overview's main chart), and "models"/"agents" collapsed into a
-// single "share" breakdown switched by the model/agent group toggle — one less
-// navigation layer either way.
-export type SubTab = "overview" | "hourly" | "share" | "stats";
+// T-ui-301 二鏡頭 IA: the analytics pane is now one scrolling column with two
+// stacked lenses — Trends (何時) over Breakdown (去哪) — rendered together every
+// time. There is no more sub-tab switcher; the old overview/hourly split became
+// the Trends granularity toggle, and the old share/stats folded into Breakdown.
+export type Granularity = "daily" | "hourly";
 export type Metric = "tokens" | "price";
 export type Group = "model" | "agent";
 
@@ -81,9 +81,9 @@ export function monthStartNote(a: Analytics): string | null {
 }
 
 export interface AnalyticsOpts {
-  subtab: SubTab;
   metric: Metric;
   group: Group;
+  granularity: Granularity;
 }
 
 // ── activity heatmap (階段 C+, overview · month only) ─────────────────────
@@ -193,20 +193,23 @@ function heatmap(a: Analytics): string {
 
 // ── activity-type donut + project bars (階段 C+, Breakdown) ────────────────
 
-/** Fixed editorial sequence; activity kinds no longer carry semantic colors.
- *  CSS-variable values (theme-following) — see colors.ts SERIES header. */
-function kindColor(index: number): string {
-  const colors = [
-    "var(--ink-900)",
-    "var(--ink-300)",
-    "var(--prov-claude)",
-    "var(--ink-700)",
-    "var(--accent)",
-    "var(--ink-400)",
-    "var(--prov-codex)",
-    "var(--ink-500)",
-  ];
-  return colors[index % colors.length];
+// T-ui-301 grayscale ramp (SPEC §2): donut/composition/projects stay fully
+// grayscale — the single magenta per lens is reserved (Trends=today bar,
+// Breakdown=#1 row underline). The mockup names these --g5..--g1/--dim; those
+// are local aliases, so we map them onto the real :root ink scale (darkest →
+// lightest), theme-following in both light and dark.
+const GRAY_RAMP = [
+  "var(--ink-900)",
+  "var(--ink-700)",
+  "var(--ink-500)",
+  "var(--ink-400)",
+  "var(--faint)",
+  "var(--ink-300)",
+];
+/** One rung of the grayscale ramp, clamped so overflow kinds reuse the lightest
+ *  ink rather than wrapping back to a dark (which would misread as emphasis). */
+function grayColor(index: number): string {
+  return GRAY_RAMP[Math.min(index, GRAY_RAMP.length - 1)];
 }
 function kindLabel(kind: string): string {
   switch (kind) {
@@ -231,9 +234,9 @@ function kindLabel(kind: string): string {
   }
 }
 
-/** Activity-type donut (conic-gradient ring + center total + legend with %).
- *  Empty when nothing is classifiable — the caller then omits the section. */
-function donut(byKind: KindCount[]): string {
+/** Activity-type donut (C1 `.donutsec`): grayscale ring + right-hand legend with
+ *  %. Empty when nothing is classifiable — the caller then omits the section. */
+function donutGray(byKind: KindCount[]): string {
   if (byKind.length === 0) return "";
   const total = byKind.reduce((s, k) => s + k.tokens, 0);
   if (total <= 0) return "";
@@ -244,7 +247,7 @@ function donut(byKind: KindCount[]): string {
   const arcs: string[] = [];
   const legend = byKind
     .map((k, index) => {
-      const col = kindColor(index);
+      const col = grayColor(index);
       const share = k.tokens / total;
       const dash = Math.max(0, share * circumference - gap);
       arcs.push(`<circle cx="28" cy="28" r="${radius}" fill="none" style="stroke:${col}" stroke-width="7"
@@ -257,48 +260,80 @@ function donut(byKind: KindCount[]): string {
       )}%</b></span>`;
     })
     .join("");
-  return `<div class="donut-sec">
-    <svg class="donut" viewBox="0 0 56 56" role="img" aria-label="${fmtTokens(total)} ${t("analytics.tokens")}">
+  return `<div class="donutsec">
+    <svg width="92" height="92" viewBox="0 0 56 56" role="img" aria-label="${fmtTokens(total)} ${t("analytics.tokens")}">
       <circle cx="28" cy="28" r="${radius}" fill="none" style="stroke:var(--donut-ring)" stroke-width="7"/>
       ${arcs.join("")}
     </svg>
-    <div class="donut-legend">${legend}</div>
+    <div class="legend">${legend}</div>
   </div>`;
 }
 
-/** Per-project horizontal bars, "{tokens} · {pct}%" labels (reuses shareLabel).
- *  Empty when there is no project data. */
-function projectBars(byProject: ProjectCount[]): string {
+/** Ranked horizontal rows (C1 `.rows`/`.row`/`.track`). Grayscale fills come from
+ *  T-302's `.track i`; the lone Breakdown magenta is the `.row.top` underline, so
+ *  only the #1 row gets `.top` and only when `topAccent`. `price` reads the cost
+ *  series and labels with fmtUsd. Empty record → "". */
+function rankRows(rec: Record<string, number>, price: boolean, topAccent: boolean): string {
+  const entries = Object.entries(rec).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return "";
+  const max = Math.max(price ? 1e-9 : 1, ...entries.map((e) => e[1]));
+  // Share-of-total denominator = the sum of every row = this grouping's range
+  // total, so each label reads "value · % of range" (§ readability).
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  const label = (v: number) =>
+    price ? `${fmtUsd(v)} · ${sharePct(v, total)}%` : shareLabel(v, total);
+  return `<div class="rows">${entries
+    .map(
+      ([k, v], i) => `
+      <div class="row${topAccent && i === 0 ? " top" : ""}">
+        <div class="meta"><span class="nm" title="${esc(k)}">${esc(k)}</span><span class="vl">${label(v)}</span></div>
+        <div class="track"><i style="width:${(v / max) * 100}%"></i></div>
+      </div>`,
+    )
+    .join("")}</div>`;
+}
+
+/** Per-project ranked rows (grayscale, never the accent — `.row.top` is reserved
+ *  for the model/agent #1). Empty when there is no project data. */
+function projectRows(byProject: ProjectCount[]): string {
   if (byProject.length === 0) return "";
   const total = byProject.reduce((s, p) => s + p.tokens, 0);
   const max = Math.max(1, ...byProject.map((p) => p.tokens));
-  const rows = byProject
-    .map((p, i) => {
+  return `<div class="rows">${byProject
+    .map((p) => {
       const name = p.name === "__other__" ? t("analytics.projectsOther") : p.name;
-      return `<div class="bar-row">
-        <span class="bar-label" title="${esc(name)}">${esc(name)}</span>
-        <div class="bar-track"><div class="bar-fill${i === 0 ? " is-top" : ""}" style="width:${
-          (p.tokens / max) * 100
-        }%"></div></div>
-        <span class="bar-val">${shareLabel(p.tokens, total)}</span>
-      </div>`;
+      return `<div class="row"><div class="meta"><span class="nm" title="${esc(name)}">${esc(
+        name,
+      )}</span><span class="vl">${shareLabel(p.tokens, total)}</span></div><div class="track"><i style="width:${
+        (p.tokens / max) * 100
+      }%"></i></div></div>`;
     })
+    .join("")}</div>`;
+}
+
+/** Token-composition segmented bar (C1 `.comp`): four grayscale segments +
+ *  wrapping legend with %. Empty (no token breakdown yet) → "". */
+function compositionBar(a: Analytics): string {
+  const b = a.breakdown;
+  const total = b.input + b.cached + b.output + b.reasoning;
+  if (total <= 0) return "";
+  const segs: [string, number, string][] = [
+    [t("analytics.input"), b.input, "var(--ink-900)"],
+    [t("analytics.cached"), b.cached, "var(--ink-700)"],
+    [t("analytics.output"), b.output, "var(--ink-500)"],
+    [t("analytics.reasoning"), b.reasoning, "var(--ink-400)"],
+  ];
+  const bar = segs
+    .map(([, v, c]) => `<i style="width:${(v / total) * 100}%;background:${c}"></i>`)
     .join("");
-  return `<div class="bars bars-stack">${rows}</div>`;
-}
-
-/** A titled sub-section wrapper for the extra Breakdown / overview dimensions. */
-function section(title: string, inner: string): string {
-  return `<div class="sub-sec"><div class="sub-sec-h">${title}</div>${inner}</div>`;
-}
-
-function tiles(a: Analytics): string {
-  return `
-    <div class="tiles">
-      <div class="tile tile-accent"><span>${t("analytics.estCost")}</span><b>${fmtUsd(a.totalCostUsd)}</b></div>
-      <div class="tile"><span>${t("analytics.peak")}</span><b>${a.records.maxDay.date.slice(5)}</b></div>
-      <div class="tile"><span>${t("analytics.streak")}</span><b>${a.records.streakDays}d</b></div>
-    </div>`;
+  const legend = segs
+    .map(([lbl, v, c]) => `<span><i style="background:${c}"></i>${lbl} <b>${sharePct(v, total)}%</b></span>`)
+    .join("");
+  return `<div class="comp">
+    <span class="lbl">${t("analytics.compositionTitle")}</span>
+    <div class="compbar">${bar}</div>
+    <div class="complegend">${legend}</div>
+  </div>`;
 }
 
 /** Value shown on the y-axis for one day, honouring the metric. */
@@ -427,103 +462,130 @@ function hourly(a: Analytics, opts: AnalyticsOpts): string {
     <text x="${W - 2}" y="${H - 4}" class="axis" text-anchor="end">23h</text></svg>`;
 }
 
-function shareBars(rec: Record<string, number>, price = false): string {
-  const entries = Object.entries(rec).sort((a, b) => b[1] - a[1]);
-  const max = Math.max(price ? 1e-9 : 1, ...entries.map((e) => e[1]));
-  // Share-of-total denominator = the sum of every bar shown = this grouping's
-  // range total, so each label reads "value · % of range" (§ readability). In
-  // price mode the value is cost and the % is share of the cost total.
-  const total = entries.reduce((s, [, v]) => s + v, 0);
-  const label = (v: number) =>
-    price ? `${fmtUsd(v)} · ${sharePct(v, total)}%` : shareLabel(v, total);
-  return `<div class="bars bars-stack">${entries
-    .map(
-      ([k, v], i) => `
-      <div class="bar-row">
-        <span class="bar-label" title="${esc(k)}">${esc(k)}</span>
-        <div class="bar-track"><div class="bar-fill" style="width:${(v / max) * 100}%;background:${keyColor(k, i)}"></div></div>
-        <span class="bar-val">${label(v)}</span>
-      </div>`,
-    )
-    .join("")}</div>`;
+/** The segmented metric control (Tokens|Cost) embedded in each lens header. */
+function metricSeg(opts: AnalyticsOpts): string {
+  return `<div class="seg" data-seg="metric">
+    <button data-metric="tokens" class="${opts.metric === "tokens" ? "on" : ""}">${t("toggle.tokens")}</button>
+    <button data-metric="price" class="${opts.metric === "price" ? "on" : ""}">${t("toggle.price")}</button>
+  </div>`;
 }
 
-function statsView(a: Analytics): string {
-  const b = a.breakdown;
-  const total = Math.max(1, b.input + b.cached + b.output + b.reasoning);
-  const seg = (label: string, v: number, i: number) =>
-    `<div class="bar-row"><span class="bar-label">${label}</span>
-       <div class="bar-track"><div class="bar-fill" style="width:${(v / total) * 100}%;background:${seriesColor(i)}"></div></div>
-       <span class="bar-val">${fmtTokens(v)}</span></div>`;
-  const accounts = a.accounts
-    .map((ac) => `<div class="acct"><b>${ac.client}</b> · ${ac.account} · ${ac.plan}</div>`)
-    .join("");
-  const records = a.records.maxDay.tokens > 0
-    ? `<div class="records">${a.records.prNow ? `<span class="pr-now">${t("analytics.prNow")}</span>` : ""}
-       <div class="tiles">
-         <div class="tile"><b>${fmtTokens(a.records.maxDay.tokens)}</b><span>${t("analytics.maxDay")} · ${a.records.maxDay.date.slice(5)}</span></div>
-         <div class="tile"><b>${fmtTokens(a.records.maxHour.tokens)}</b><span>${t("analytics.maxHour")} · ${a.records.maxHour.date.slice(5)} ${String(a.records.maxHour.hour).padStart(2, "0")}:00</span></div>
-         <div class="tile"><b>${a.records.streakDays}</b><span>${t("analytics.streak")}</span></div>
-       </div></div>`
-    : "";
-  return `
-    ${records}
-    <div class="bars">
-      ${seg(t("analytics.input"), b.input, 0)}
-      ${seg(t("analytics.cached"), b.cached, 1)}
-      ${seg(t("analytics.output"), b.output, 2)}
-      ${seg(t("analytics.reasoning"), b.reasoning, 3)}
-    </div>
-    <div class="kv">
-      <div><b>${a.sessionsThisWeek}</b><span>${t("analytics.sessionsThisWeek")}</span></div>
-      <div><b>${fmtTokens(a.tokPerMin)}</b><span>${t("analytics.tokPerMin")}</span></div>
-    </div>
-    <div class="accounts">${accounts}</div>`;
+/** Split the range-total into a big figure + a unit tail so the hero can render
+ *  "5.6" large with "M tokens" small (C1 `.fig` + `.u`). Cost metric shows the
+ *  dollar total whole, with no unit tail. */
+function heroFig(a: Analytics, price: boolean): { fig: string; unit: string } {
+  if (price) return { fig: fmtUsd(a.totalCostUsd), unit: "" };
+  const s = fmtTokens(a.totalTokens); // "5.6M" / "608.0K" / "1234"
+  const m = /^([\d.]+)([KMB])?$/.exec(s);
+  if (!m) return { fig: s, unit: t("analytics.tokens") };
+  const suffix = m[2] ? `${m[2]} ` : "";
+  return { fig: m[1], unit: `${suffix}${t("analytics.tokens")}` };
 }
 
-export function renderAnalytics(container: HTMLElement, a: Analytics, opts: AnalyticsOpts): void {
-  let body = "";
-  switch (opts.subtab) {
-    case "hourly":
-      body = hourly(a, opts);
-      break;
-    case "share": {
-      // The model/agent grouping, then two independent dimensions below it
-      // (階段 C+): activity type (donut) and per-project totals (bars). Each is
-      // omitted when it has no data, so an empty section never shows. The metric
-      // toggle switches the primary grouping between token and cost totals.
-      const price = opts.metric === "price";
-      const rec = price
-        ? opts.group === "model" ? a.byModelCost : a.byAgentCost
-        : opts.group === "model" ? a.byModel : a.byAgent;
-      const activity = donut(a.byKind);
-      const projects = projectBars(a.byProject);
-      body =
-        shareBars(rec, price) +
-        (activity ? section(t("analytics.activityTitle"), activity) : "") +
-        (projects ? section(t("analytics.projectsTitle"), projects) : "");
-      break;
-    }
-    case "stats":
-      body = statsView(a);
-      break;
-    default: {
-      // overview: daily stacked chart, plus the GitHub-style heatmap for the
-      // month range only (§ layout decision).
-      body = stackedDaily(a, opts);
-      if (a.range === "month") {
-        const hm = heatmap(a);
-        if (hm) body += section(t("analytics.heatmapTitle"), hm);
-      }
-    }
+/** Trends footnote (C1): the leftover records/rate facts, deduped against the
+ *  hero (which already carries the streak) — Peak day, Busiest hour, sessions
+ *  this week, tok/min. Records with no data drop out rather than showing 0. */
+function trendsFootnote(a: Analytics): string {
+  const parts: string[] = [];
+  if (a.records.maxDay.tokens > 0)
+    parts.push(t("analytics.footPeak", { date: `<b>${a.records.maxDay.date.slice(5)}</b>` }));
+  if (a.records.maxHour.tokens > 0) {
+    const hh = String(a.records.maxHour.hour).padStart(2, "0");
+    parts.push(t("analytics.footBusiest", { hour: `<b>${hh}:00</b>` }));
   }
+  parts.push(`<b>${a.sessionsThisWeek}</b> ${t("analytics.sessionsThisWeek")}`);
+  parts.push(`<b>${fmtTokens(a.tokPerMin)}</b> ${t("analytics.tokPerMin")}`);
+  return parts.join(" · ");
+}
+
+/** 鏡頭 1 · Trends (何時): hero total, granularity-switched main chart (daily
+ *  stacked + month heatmap / 24h hourly), and the records/rate footnote. */
+function trendsLens(a: Analytics, opts: AnalyticsOpts): string {
+  const price = opts.metric === "price";
+  const chart = opts.granularity === "hourly" ? hourly(a, opts) : stackedDaily(a, opts);
+  const heat = opts.granularity === "daily" && a.range === "month" ? heatmap(a) : "";
   // "from {date}" when a month's local logs don't reach the nominal window start.
   const start = monthStartNote(a);
   const note = start ? `<div class="chart-note">${t("analytics.since", { date: start.slice(5) })}</div>` : "";
-  // The tooltip div lives inside .chart-wrap and is re-created on every render;
-  // the delegated listeners (wired once on the container) find it fresh.
+  const { fig, unit } = heroFig(a, price);
+  return `<div class="feature">
+    <span class="cap">Lens 1 · ${t("subtab.trends")}</span>
+    <p class="kick">${t("analytics.trendsKick")}</p>
+    <div class="toggles">
+      <div class="seg" data-seg="granularity">
+        <button data-granularity="daily" class="${opts.granularity === "daily" ? "on" : ""}">${t("toggle.daily")}</button>
+        <button data-granularity="hourly" class="${opts.granularity === "hourly" ? "on" : ""}">${t("toggle.hourly")}</button>
+      </div>
+      ${metricSeg(opts)}
+    </div>
+    <div class="hero">
+      <div class="eyebrow">${t("analytics.trendsEyebrow")}</div>
+      <div class="fig">${fig}${unit ? `<span class="u">${unit}</span>` : ""}</div>
+      <div class="sub num">${t("analytics.trendsSub", { cost: fmtUsd(a.totalCostUsd), days: a.records.streakDays })}</div>
+    </div>
+    <div class="support">
+      <span class="lbl">${t("analytics.trendsChartLabel")}</span>
+      ${chart}
+      ${note}
+    </div>
+    ${heat ? `<div class="support"><span class="lbl">${t("analytics.heatmapTitle")}</span>${heat}</div>` : ""}
+    <div class="footnote num">${trendsFootnote(a)}</div>
+  </div>`;
+}
+
+/** 鏡頭 2 · Breakdown (去哪): leading model/agent hero, group-switched ranking
+ *  (#1 = the lens's single magenta), grayscale activity donut, project rows, and
+ *  the token-composition bar. Each secondary section drops out when it has no
+ *  data, so an empty section never draws a blank card. */
+function breakdownLens(a: Analytics, opts: AnalyticsOpts): string {
+  const price = opts.metric === "price";
+  const rec = price
+    ? opts.group === "model" ? a.byModelCost : a.byAgentCost
+    : opts.group === "model" ? a.byModel : a.byAgent;
+  const entries = Object.entries(rec).sort((x, y) => y[1] - x[1]);
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  const leader = entries[0];
+  const eyebrow = opts.group === "model" ? t("analytics.leadingModel") : t("analytics.leadingAgent");
+  const hero = leader
+    ? `<div class="hero">
+        <div class="eyebrow">${eyebrow}</div>
+        <div class="fig fig-name">${esc(leader[0])}</div>
+        <div class="sub num">${t("analytics.breakdownSub", {
+          value: price ? fmtUsd(leader[1]) : fmtTokens(leader[1]),
+          pct: sharePct(leader[1], total),
+        })}</div>
+      </div>`
+    : "";
+  const activity = donutGray(a.byKind);
+  const projects = projectRows(a.byProject);
+  return `<div class="feature">
+    <span class="cap">Lens 2 · ${t("subtab.breakdown")}</span>
+    <p class="kick">${t("analytics.breakdownKick")}</p>
+    <div class="toggles">
+      <div class="seg" data-seg="group">
+        <button data-group="model" class="${opts.group === "model" ? "on" : ""}">${t("toggle.model")}</button>
+        <button data-group="agent" class="${opts.group === "agent" ? "on" : ""}">${t("toggle.agent")}</button>
+      </div>
+      ${metricSeg(opts)}
+    </div>
+    ${hero}
+    ${rankRows(rec, price, true)}
+    ${activity ? `<div class="support"><span class="lbl">${t("analytics.activityTitle")}</span>${activity}</div>` : ""}
+    ${projects ? `<div class="support"><span class="lbl">${t("analytics.projectsTitle")}</span>${projects}</div>` : ""}
+    ${compositionBar(a)}
+  </div>`;
+}
+
+/** Render both lenses into one scrolling column. `.chart-wrap` is the shared
+ *  positioning context for the single re-created `.chart-tip`; wireChartTip is
+ *  delegated on `container` once and survives this innerHTML swap. */
+export function renderAnalytics(container: HTMLElement, a: Analytics, opts: AnalyticsOpts): void {
   container.innerHTML =
-    tiles(a) + note + `<div class="chart-wrap">${body}<div class="chart-tip" hidden></div></div>`;
+    `<div class="chart-wrap">` +
+    trendsLens(a, opts) +
+    breakdownLens(a, opts) +
+    `<div class="chart-tip" hidden></div>` +
+    `</div>`;
   wireChartTip(container);
 }
 
