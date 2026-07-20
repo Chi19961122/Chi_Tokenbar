@@ -1,6 +1,6 @@
 [package]
 name = "atoll"
-version = "0.9.2"
+version = "0.9.3"
 description = "Atoll — AI coding quota runway monitor"
 authors = ["you"]
 edition = "2021"
