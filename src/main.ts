@@ -343,6 +343,21 @@ function beginAnalytics(): void {
   void renderAnalyticsNow();
 }
 
+/** T-perf-002: free the heavy #analytics DOM (chart canvases, heatmap tiles,
+ *  skeleton) when the analytics layer stops being the visible pane but the
+ *  window stays open — switching to the Limits tab, or opening the Settings /
+ *  Share full pages. The CSS for each of those states already sets #analytics
+ *  to display:none, so clearing its content here is invisible; the box itself
+ *  (the fixed-height container) is left in the DOM untouched, so contentHeight()
+ *  / sizeAnalytics() — which size the window from `analyticsDesiredH`, never
+ *  from the box's live content — measure exactly as before (no height jump).
+ *  ui.range, the sub-tab state, and analyticsCache are untouched, so
+ *  beginAnalytics() on the way back repaints instantly from cache. */
+function teardownAnalytics(): void {
+  const box = $("analytics");
+  if (box.innerHTML !== "") box.innerHTML = "";
+}
+
 // ── window sizing (locked per display mode, bottom-right anchored) ───
 // The window is resized ONLY when a mode is entered (expand, compact toggle,
 // settings open/close) — never on subtab clicks or the 1s tick, so page
@@ -464,6 +479,8 @@ async function applyCompact() {
       renderToggles();
       beginAnalytics();
       sizeAnalytics();
+    } else {
+      teardownAnalytics(); // T-perf-002: leaving analytics for the Limits tab
     }
   }
   fitWindow();
@@ -718,6 +735,7 @@ async function openSettingsPanel(): Promise<void> {
     document.body.classList.remove("share-open");
   }
   if (!ui.expanded) setExpanded(true);
+  teardownAnalytics(); // T-perf-002: leaving analytics for the Settings full page
   // Render the settings form BEFORE fitWindow measures — it is the only visible
   // content on the settings page, so its natural height is the window height.
   await renderSettings();
@@ -755,6 +773,7 @@ async function openSharePanel(): Promise<void> {
     document.body.classList.remove("settings-open");
   }
   if (!ui.expanded) setExpanded(true);
+  teardownAnalytics(); // T-perf-002: leaving analytics for the Share full page
   // Reveal + flag BEFORE painting so shareOpen() reads true inside the render
   // path (currentAnalyticsRange → ui.shareRange, paintIfShowing → paintShare).
   el.removeAttribute("hidden");
@@ -823,6 +842,8 @@ function setExpanded(on: boolean): void {
       beginAnalytics();
       sizeAnalytics();
     }
+  } else {
+    teardownAnalytics(); // T-perf-002: leaving analytics by collapsing to the pill
   }
   // Size the window immediately (analytics height is locked for this mode, so
   // its content arriving later never changes the measured height).
