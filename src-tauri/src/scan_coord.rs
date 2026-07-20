@@ -1,6 +1,11 @@
 //! Stage 1B analytics scan coordinator.
 //!
-//! - **TTL cache** — same `sources|range` within the window never re-parses
+//! - **Fingerprint cache** (T-perf-001) — same `sources|range` serves the
+//!   cached result while the underlying session-log files are unchanged
+//!   `(path, mtime, len)`; a changed fingerprint invalidates immediately,
+//!   ignoring the TTL. `ANALYTICS_TTL` is now only a safety ceiling for the
+//!   pathological case where content-relevant state changes without moving
+//!   any file's mtime.
 //! - **In-flight coalesce** — concurrent identical keys share one result
 //! - **Mutual exclusion** — at most one full scan body at a time
 //! - **Latest-request-wins queue** — while busy, at most one pending job; a
@@ -8,6 +13,8 @@
 //! - **Non-blocking promote** — pending runs on a worker; leader returns first
 //! - **Panic / spawn isolation** — scan panics and worker-spawn failures become
 //!   `ScanFailed` and restore coordinator state
+//! - **`force`** — bypasses the cache read entirely (still coalesces with any
+//!   identical in-flight request) and always refreshes the stored fingerprint
 
 use crate::analytics::{self, Analytics};
 use std::collections::HashMap;
@@ -15,7 +22,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Short process-local cache.
+/// Safety-ceiling TTL — no longer the primary invalidation path (see module
+/// docs). Kept short: it only matters when the fingerprint fails to move.
 const ANALYTICS_TTL: Duration = Duration::from_secs(60);
 
 /// Stable error codes for Tauri + frontend (snake_case over the wire).
@@ -88,6 +96,8 @@ type Waiter = std::sync::mpsc::Sender<Result<Analytics, AnalyticsError>>;
 type ScanFn = Arc<dyn Fn(&str, &[String]) -> Result<Analytics, AnalyticsError> + Send + Sync>;
 /// Spawn a background job. Returns Err if the worker cannot be started.
 type SpawnFn = Arc<dyn Fn(Box<dyn FnOnce() + Send>) -> Result<(), AnalyticsError> + Send + Sync>;
+/// Fingerprint of the source files a `(range, sources)` scan would read.
+type FingerprintFn = Arc<dyn Fn(&str, &[String]) -> u64 + Send + Sync>;
 
 fn default_spawn_fn() -> SpawnFn {
     Arc::new(|job| {
@@ -99,6 +109,10 @@ fn default_spawn_fn() -> SpawnFn {
     })
 }
 
+fn default_fingerprint_fn() -> FingerprintFn {
+    Arc::new(|range, sources| analytics::source_fingerprint(range, sources))
+}
+
 struct InflightEntry {
     waiters: Vec<Waiter>,
 }
@@ -108,10 +122,14 @@ struct PendingJob {
     range: String,
     sources: Vec<String>,
     waiters: Vec<Waiter>,
+    /// True if any coalesced waiter asked for `force`; OR-ed in so one forced
+    /// request among several queued for the same key still forces the promoted
+    /// scan to bypass the cache.
+    force: bool,
 }
 
 struct Inner {
-    cache: HashMap<String, (Instant, Analytics)>,
+    cache: HashMap<String, (Instant, u64, Analytics)>,
     inflight: HashMap<String, InflightEntry>,
     busy: bool,
     pending: Option<PendingJob>,
@@ -122,6 +140,7 @@ pub struct ScanCoordinator {
     inner: Arc<Mutex<Inner>>,
     scan_fn: ScanFn,
     spawn_fn: SpawnFn,
+    fingerprint_fn: FingerprintFn,
     scan_gate: Arc<Mutex<()>>,
 }
 
@@ -136,9 +155,13 @@ impl ScanCoordinator {
         Self::with_hooks(
             Arc::new(|range, sources| Ok(analytics::compute_with(range, sources))),
             default_spawn_fn(),
+            default_fingerprint_fn(),
         )
     }
 
+    /// Test convenience: real scan behaviour, fixed fingerprint (`0` for every
+    /// key) so cache-hit/TTL/coalesce tests don't depend on the filesystem.
+    /// Tests that need fingerprint semantics use `with_hooks` directly.
     #[cfg(test)]
     pub fn with_scan(scan_fn: ScanFn) -> Self {
         Self::with_hooks(
@@ -150,10 +173,11 @@ impl ScanCoordinator {
                     .map(|_| ())
                     .map_err(|e| AnalyticsError::scan_failed(format!("worker spawn failed: {e}")))
             }),
+            Arc::new(|_, _| 0),
         )
     }
 
-    pub fn with_hooks(scan_fn: ScanFn, spawn_fn: SpawnFn) -> Self {
+    pub fn with_hooks(scan_fn: ScanFn, spawn_fn: SpawnFn, fingerprint_fn: FingerprintFn) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 cache: HashMap::new(),
@@ -163,27 +187,47 @@ impl ScanCoordinator {
             })),
             scan_fn,
             spawn_fn,
+            fingerprint_fn,
             scan_gate: Arc::new(Mutex::new(())),
         }
     }
 
-    pub fn get(&self, range: String, sources: Vec<String>) -> Result<Analytics, AnalyticsError> {
+    pub fn get(
+        &self,
+        range: String,
+        sources: Vec<String>,
+        force: bool,
+    ) -> Result<Analytics, AnalyticsError> {
         let key = cache_key(&sources, &range);
+        // Computed once up front and reused for both the cache check and the
+        // value stored after a recompute — see `run_job`. `force` skips only
+        // the cache *read*; the coalesce/leader-follower machinery below is
+        // unchanged, so concurrent forced + normal requests for the same key
+        // still share one scan.
+        let fp = (self.fingerprint_fn)(&range, &sources);
 
-        if let Some(hit) = self.cache_get(&key) {
-            return Ok(hit);
+        if !force {
+            if let Some(hit) = self.cache_get(&key, fp) {
+                return Ok(hit);
+            }
         }
 
         enum Role {
-            Leader { range: String, sources: Vec<String> },
+            Leader {
+                range: String,
+                sources: Vec<String>,
+                force: bool,
+            },
             Follower(std::sync::mpsc::Receiver<Result<Analytics, AnalyticsError>>),
         }
 
         let role = {
             let mut g = lock(&self.inner);
 
-            if let Some(hit) = cache_lookup(&g.cache, &key) {
-                return Ok(hit);
+            if !force {
+                if let Some(hit) = cache_lookup(&g.cache, &key, fp) {
+                    return Ok(hit);
+                }
             }
 
             if let Some(entry) = g.inflight.get_mut(&key) {
@@ -197,6 +241,7 @@ impl ScanCoordinator {
                         p.range = range;
                         p.sources = sources;
                         p.waiters.push(tx);
+                        p.force = p.force || force;
                     }
                     Some(p) => {
                         cancel_waiters(std::mem::take(&mut p.waiters), AnalyticsError::superseded());
@@ -205,6 +250,7 @@ impl ScanCoordinator {
                             range,
                             sources,
                             waiters: vec![tx],
+                            force,
                         };
                     }
                     None => {
@@ -213,6 +259,7 @@ impl ScanCoordinator {
                             range,
                             sources,
                             waiters: vec![tx],
+                            force,
                         });
                     }
                 }
@@ -221,19 +268,19 @@ impl ScanCoordinator {
                 g.busy = true;
                 g.inflight
                     .insert(key.clone(), InflightEntry { waiters: vec![] });
-                Role::Leader { range, sources }
+                Role::Leader { range, sources, force }
             }
         };
 
         match role {
             Role::Follower(rx) => rx.recv().map_err(|_| AnalyticsError::cancelled())?,
-            Role::Leader { range, sources } => self.run_job(key, range, sources),
+            Role::Leader { range, sources, force } => self.run_job(key, range, sources, force),
         }
     }
 
-    fn cache_get(&self, key: &str) -> Option<Analytics> {
+    fn cache_get(&self, key: &str, fp: u64) -> Option<Analytics> {
         let g = lock(&self.inner);
-        cache_lookup(&g.cache, key)
+        cache_lookup(&g.cache, key, fp)
     }
 
     pub fn invalidate_all(&self) {
@@ -246,17 +293,25 @@ impl ScanCoordinator {
         key: String,
         range: String,
         sources: Vec<String>,
+        force: bool,
     ) -> Result<Analytics, AnalyticsError> {
+        // Fingerprinted independently of whatever `get()` computed: a job
+        // promoted from the pending queue never goes through `get()` at all,
+        // and by the time this runs the `(range, sources)` may have been
+        // merged/updated by later coalesced callers.
+        let fp = (self.fingerprint_fn)(&range, &sources);
         let result = {
             let _gate = self
                 .scan_gate
                 .lock()
                 .unwrap_or_else(|p| p.into_inner());
 
-            if let Some(hit) = self.cache_get(&key) {
-                drop(_gate);
-                self.finish_job(&key, Ok(hit.clone()));
-                return Ok(hit);
+            if !force {
+                if let Some(hit) = self.cache_get(&key, fp) {
+                    drop(_gate);
+                    self.finish_job(&key, Ok(hit.clone()));
+                    return Ok(hit);
+                }
             }
 
             let scan = Arc::clone(&self.scan_fn);
@@ -270,7 +325,7 @@ impl ScanCoordinator {
 
         if let Ok(ref a) = result {
             let mut g = lock(&self.inner);
-            g.cache.insert(key.clone(), (Instant::now(), a.clone()));
+            g.cache.insert(key.clone(), (Instant::now(), fp, a.clone()));
         }
 
         self.finish_job(&key, result.clone());
@@ -304,17 +359,17 @@ impl ScanCoordinator {
                             waiters: job.waiters,
                         },
                     );
-                    Some((job.key, job.range, job.sources))
+                    Some((job.key, job.range, job.sources, job.force))
                 }
             }
         };
 
-        if let Some((key, range, sources)) = promote {
+        if let Some((key, range, sources, force)) = promote {
             let this = self.clone();
             let spawn = Arc::clone(&self.spawn_fn);
             let fail_key = key.clone();
             if let Err(e) = spawn(Box::new(move || {
-                let _ = this.run_job(key, range, sources);
+                let _ = this.run_job(key, range, sources, force);
             })) {
                 // Spawn failed: resolve waiters and restore idle state.
                 self.fail_promote(&fail_key, e);
@@ -359,8 +414,20 @@ fn cache_key(sources: &[String], range: &str) -> String {
     format!("{}|{}", src.join(","), range)
 }
 
-fn cache_lookup(cache: &HashMap<String, (Instant, Analytics)>, key: &str) -> Option<Analytics> {
-    let (t, a) = cache.get(key)?;
+/// Hit only if the fingerprint still matches *and* the TTL ceiling hasn't
+/// passed. A changed fingerprint is an immediate miss regardless of TTL —
+/// per T-perf-001, the fingerprint is the primary invalidation signal and TTL
+/// is only a safety fallback for the case where content-relevant state
+/// changes without any source file's mtime moving.
+fn cache_lookup(
+    cache: &HashMap<String, (Instant, u64, Analytics)>,
+    key: &str,
+    fp: u64,
+) -> Option<Analytics> {
+    let (t, cached_fp, a) = cache.get(key)?;
+    if *cached_fp != fp {
+        return None;
+    }
     if t.elapsed() > ANALYTICS_TTL {
         return None;
     }
@@ -435,13 +502,13 @@ mod tests {
     fn superseded_returns_typed_code() {
         let coord = ScanCoordinator::with_scan(slow_ok(80));
         let c = coord.clone();
-        let leader = thread::spawn(move || c.get("today".into(), vec!["claude".into()]));
+        let leader = thread::spawn(move || c.get("today".into(), vec!["claude".into()], false));
         thread::sleep(Duration::from_millis(15));
         let c2 = coord.clone();
-        let week = thread::spawn(move || c2.get("week".into(), vec!["claude".into()]));
+        let week = thread::spawn(move || c2.get("week".into(), vec!["claude".into()], false));
         thread::sleep(Duration::from_millis(10));
         let c3 = coord.clone();
-        let month = thread::spawn(move || c3.get("month".into(), vec!["claude".into()]));
+        let month = thread::spawn(move || c3.get("month".into(), vec!["claude".into()], false));
         leader.join().unwrap().unwrap();
         let week_err = match week.join().unwrap() {
             Err(e) => e,
@@ -456,7 +523,7 @@ mod tests {
         let coord = ScanCoordinator::with_scan(Arc::new(|_, _| {
             Err(AnalyticsError::scan_failed("disk full"))
         }));
-        let err = match coord.get("today".into(), vec!["claude".into()]) {
+        let err = match coord.get("today".into(), vec!["claude".into()], false) {
             Err(e) => e,
             Ok(_) => panic!("expected scan_failed"),
         };
@@ -472,12 +539,12 @@ mod tests {
             spawn_calls2.fetch_add(1, Ordering::SeqCst);
             Err(AnalyticsError::scan_failed("spawn denied"))
         });
-        let coord = ScanCoordinator::with_hooks(slow_ok(40), spawn);
+        let coord = ScanCoordinator::with_hooks(slow_ok(40), spawn, Arc::new(|_, _| 0));
         let c = coord.clone();
-        let leader = thread::spawn(move || c.get("today".into(), vec!["claude".into()]));
+        let leader = thread::spawn(move || c.get("today".into(), vec!["claude".into()], false));
         thread::sleep(Duration::from_millis(10));
         let c2 = coord.clone();
-        let pending = thread::spawn(move || c2.get("week".into(), vec!["claude".into()]));
+        let pending = thread::spawn(move || c2.get("week".into(), vec!["claude".into()], false));
         assert_eq!(leader.join().unwrap().unwrap().range, "today");
         let err = match pending.join().unwrap() {
             Err(e) => e,
@@ -487,7 +554,7 @@ mod tests {
         assert!(spawn_calls.load(Ordering::SeqCst) >= 1);
         // Coordinator reusable
         let ok = coord
-            .get("month".into(), vec!["claude".into()])
+            .get("month".into(), vec!["claude".into()], false)
             .expect("after spawn fail");
         assert_eq!(ok.range, "month");
     }
@@ -502,14 +569,14 @@ mod tests {
             }
             Ok(sample_analytics(range))
         }));
-        let err = match coord.get("today".into(), vec!["claude".into()]) {
+        let err = match coord.get("today".into(), vec!["claude".into()], false) {
             Err(e) => e,
             Ok(_) => panic!("expected panic as ScanFailed"),
         };
         assert_eq!(err.code, AnalyticsErrorCode::ScanFailed);
         assert_eq!(
             coord
-                .get("today".into(), vec!["claude".into()])
+                .get("today".into(), vec!["claude".into()], false)
                 .unwrap()
                 .range,
             "today"
@@ -543,7 +610,7 @@ mod tests {
         for _ in 0..4 {
             let c = coord.clone();
             hs.push(thread::spawn(move || {
-                c.get("week".into(), vec!["claude".into()]).unwrap()
+                c.get("week".into(), vec!["claude".into()], false).unwrap()
             }));
         }
         for h in hs {
@@ -564,12 +631,13 @@ mod tests {
                 Ok(sample_analytics(range))
             }),
             default_spawn(),
+            Arc::new(|_, _| 0),
         );
         let c = coord.clone();
-        let leader = thread::spawn(move || c.get("today".into(), vec!["claude".into()]));
+        let leader = thread::spawn(move || c.get("today".into(), vec!["claude".into()], false));
         thread::sleep(Duration::from_millis(5));
         let c2 = coord.clone();
-        let _p = thread::spawn(move || c2.get("month".into(), vec!["claude".into()]));
+        let _p = thread::spawn(move || c2.get("month".into(), vec!["claude".into()], false));
         let t0 = Instant::now();
         assert_eq!(leader.join().unwrap().unwrap().range, "today");
         assert!(t0.elapsed().as_millis() < 150);
@@ -581,5 +649,67 @@ mod tests {
             &["codex".into(), "claude".into()],
             &["claude".into(), "codex".into()]
         ));
+    }
+
+    // ── T-perf-001: fingerprint-driven invalidation ──────────────────────
+
+    #[test]
+    fn same_fingerprint_serves_cache_within_ttl() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls2 = Arc::clone(&calls);
+        let coord = ScanCoordinator::with_hooks(
+            Arc::new(move |range, _| {
+                calls2.fetch_add(1, Ordering::SeqCst);
+                Ok(sample_analytics(range))
+            }),
+            default_spawn(),
+            // Source files never change between calls.
+            Arc::new(|_, _| 42),
+        );
+        coord.get("week".into(), vec!["claude".into()], false).unwrap();
+        coord.get("week".into(), vec!["claude".into()], false).unwrap();
+        coord.get("week".into(), vec!["claude".into()], false).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn changed_fingerprint_forces_rescan_ignoring_ttl() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls2 = Arc::clone(&calls);
+        let seen_fp = Arc::new(AtomicUsize::new(0));
+        let seen_fp2 = Arc::clone(&seen_fp);
+        let coord = ScanCoordinator::with_hooks(
+            Arc::new(move |range, _| {
+                calls2.fetch_add(1, Ordering::SeqCst);
+                Ok(sample_analytics(range))
+            }),
+            default_spawn(),
+            // Each call reports a new fingerprint, as if a source log's mtime
+            // moved between requests — well within the 60s TTL.
+            Arc::new(move |_, _| seen_fp2.fetch_add(1, Ordering::SeqCst) as u64),
+        );
+        coord.get("week".into(), vec!["claude".into()], false).unwrap();
+        coord.get("week".into(), vec!["claude".into()], false).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn force_rescans_even_with_unchanged_fingerprint() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls2 = Arc::clone(&calls);
+        let coord = ScanCoordinator::with_hooks(
+            Arc::new(move |range, _| {
+                calls2.fetch_add(1, Ordering::SeqCst);
+                Ok(sample_analytics(range))
+            }),
+            default_spawn(),
+            Arc::new(|_, _| 7),
+        );
+        coord.get("week".into(), vec!["claude".into()], false).unwrap();
+        coord.get("week".into(), vec!["claude".into()], true).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        // And the refreshed fingerprint is cached: a normal follow-up hits it.
+        coord.get("week".into(), vec!["claude".into()], false).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }

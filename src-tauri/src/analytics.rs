@@ -492,6 +492,85 @@ fn filter_accounts(sources: &[String], accounts: Vec<Account>) -> Vec<Account> {
         .collect()
 }
 
+fn days_back_for(range: &str) -> i64 {
+    match range {
+        "today" => 0,
+        "month" => 29, // last 30 days including today
+        _ => 6,        // "week"
+    }
+}
+
+/// Window start (unix seconds) for `range`, aligned to the user's LOCAL
+/// midnight (F-15) — the same boundary `compute_routed` scans from. Shared
+/// with `source_fingerprint` so the fingerprint covers exactly the files a
+/// scan of this range would actually read.
+fn range_start(range: &str) -> i64 {
+    let now = chrono::Utc::now().timestamp();
+    let days_back = days_back_for(range);
+    let local_midnight = chrono::Local::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|naive| chrono::Local.from_local_datetime(&naive).single())
+        .map(|dt| dt.timestamp())
+        .unwrap_or_else(|| now - now.rem_euclid(86400));
+    local_midnight - days_back * 86400
+}
+
+/// Glob one source's session-log tree, same pattern each `scan_*` uses.
+/// Returns `PathBuf`s only — no file is opened here.
+fn glob_source(pattern: &Path) -> Vec<PathBuf> {
+    let pattern = pattern.to_string_lossy().replace('\\', "/");
+    match glob::glob(&pattern) {
+        Ok(paths) => paths.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// T-perf-001: a cheap fingerprint of every session-log file the current
+/// `sources` selection would actually read for `range` — `(path, mtime, len)`
+/// per file, combined into one hash. Two calls with the same fingerprint mean
+/// "no source file changed"; the cache layer (`scan_coord`) uses that to skip
+/// a full re-scan instead of relying on TTL alone.
+///
+/// Metadata only (`fs::metadata` mtime/len) — never opens or reads a file, so
+/// this cannot touch credential/token content (CLAUDE.md 機密鐵則).
+/// Missing home dir / unreadable file metadata contribute nothing rather than
+/// panicking — a fingerprint must be as robust as the scan it stands in for.
+pub fn source_fingerprint(range: &str, sources: &[String]) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    let Some(home) = dirs::home_dir() else {
+        return 0;
+    };
+    let start = range_start(range);
+
+    let mut entries: Vec<(String, i64, u64)> = Vec::new();
+    let mut collect = |pattern: PathBuf| {
+        for p in glob_source(&pattern) {
+            if mtime_secs(&p) < start {
+                continue;
+            }
+            let len = fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+            entries.push((p.to_string_lossy().into_owned(), mtime_secs(&p), len));
+        }
+    };
+    if wants(sources, "codex") {
+        collect(home.join(".codex/sessions/**/rollout-*.jsonl"));
+    }
+    if wants(sources, "claude") {
+        collect(home.join(".claude/projects/**/*.jsonl"));
+    }
+    if wants(sources, "grok") {
+        collect(home.join(".grok/sessions/**/updates.jsonl"));
+    }
+
+    // Sort so the hash is independent of glob/filesystem enumeration order.
+    entries.sort();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    entries.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// Compute analytics for a range, scoped to the selected `sources`.
 ///
 /// Skips the scan outright rather than scanning then discarding: `scan_*` walks
@@ -529,22 +608,8 @@ where
 {
     let t0 = Instant::now();
     let now = chrono::Utc::now().timestamp();
-    let days_back: i64 = match range {
-        "today" => 0,
-        "month" => 29, // last 30 days including today
-        _ => 6,        // "week"
-    };
-    // Window boundaries align to the user's LOCAL midnight (F-15), matching the
-    // local day/hour bucketing in `book`. Falls back to UTC midnight only if the
-    // local wall-clock midnight is ambiguous/nonexistent (a DST edge; none in
-    // Asia/Taipei, but kept correct everywhere).
-    let local_midnight = chrono::Local::now()
-        .date_naive()
-        .and_hms_opt(0, 0, 0)
-        .and_then(|naive| chrono::Local.from_local_datetime(&naive).single())
-        .map(|dt| dt.timestamp())
-        .unwrap_or_else(|| now - now.rem_euclid(86400));
-    let start = local_midnight - days_back * 86400;
+    let days_back = days_back_for(range);
+    let start = range_start(range);
 
     let mut acc = Acc::new(now);
     // Each source scans iff selected. A source with no local data simply

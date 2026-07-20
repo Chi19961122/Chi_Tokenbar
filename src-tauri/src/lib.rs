@@ -248,6 +248,7 @@ fn refresh_now(data: State<'_, AppData>) {
 async fn get_analytics(
     data: State<'_, AppData>,
     range: String,
+    force: Option<bool>,
 ) -> Result<analytics::Analytics, String> {
     // Read the live in-memory setting, not config::load(): set_settings updates
     // this immediately, so switching the selection reflects on the next fetch
@@ -260,10 +261,14 @@ async fn get_analytics(
         .map(|s| s.sources.clone())
         .unwrap_or_else(all_sources);
     let scan = data.scan.clone();
-    // Stage 1B: coordinator owns TTL cache, same-key coalesce, and global
-    // exclusion. The scan re-parses every session log in range (hundreds of MB
-    // on a heavy machine) — must stay off the UI / async-runtime threads.
-    tauri::async_runtime::spawn_blocking(move || scan.get(range, sources))
+    // Stage 1B: coordinator owns the fingerprint cache (T-perf-001), same-key
+    // coalesce, and global exclusion. The scan re-parses every session log in
+    // range (hundreds of MB on a heavy machine) — must stay off the UI /
+    // async-runtime threads. `force` (⟳) always bypasses the cache read and
+    // refreshes the stored fingerprint; omitted by any caller that doesn't
+    // send it, so this stays backward compatible.
+    let force = force.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || scan.get(range, sources, force))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
