@@ -1,0 +1,30 @@
+[package]
+name = "atoll-slint"
+version = "0.1.0-exp"
+description = "Experimental Atoll shell on Slint (software renderer, no WebView2, no GPU) — evaluation only"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "atoll-slint"
+path = "src/main.rs"
+
+[dependencies]
+# Software renderer only — no femtovg/skia GPU backend compiled in.
+# See README for why: this spike exists to test whether a non-GPU native
+# shell beats WebView2 on RAM, and the egui spike lost most of its
+# advantage to a GPU GL context + font atlas (~100MB private baseline).
+slint = { version = "1", default-features = false, features = [
+    "compat-1-2",
+    "std",
+    "backend-winit",
+    "renderer-software",
+] }
+
+[build-dependencies]
+slint-build = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

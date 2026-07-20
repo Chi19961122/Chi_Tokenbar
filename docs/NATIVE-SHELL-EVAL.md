@@ -14,8 +14,10 @@
 | Tauri v0.9.2 | 膠囊顯示(shown,先前輪) | 7 | ~372MB | ~135MB |
 | Tauri v0.9.1 | shown(trim 前) | 7 | ~434MB | ~219MB |
 | **egui 空殼** | 膠囊顯示 | 1 | ~136MB | **~100MB** |
+| **Slint 空殼**(軟渲染) | 膠囊顯示 | 1 | **~18MB** | **~3–5MB** |
 
-egui 空殼＝只有膠囊 + 額度列表、全 mock，**無** API/掃描/analytics/tray/share。
+egui/Slint 空殼＝只有膠囊 + 額度列表、全 mock，**無** API/掃描/analytics/tray/share。
+Slint spike 建於 `atoll-slint/`(Slint 1.17.1,`renderer-software` 確認無 GPU/skia/femtovg;PrintWindow 截圖確認膠囊正常渲染 `C 22% / X 0%`)。
 
 ## 結論
 
@@ -24,16 +26,24 @@ egui 空殼＝只有膠囊 + 額度列表、全 mock，**無** API/掃描/analyt
 3. **省 RAM 大頭早已用便宜招數吃掉**：v0.9.2 webview trim(Private -38%, 219→135)＋資源優化輪的 idle-destroy(隱藏久了 destroy webview → 近 tray-only，比任何**常駐**原生殼還低)。
 4. **egui 重寫成本 vs 效益完全不成比例**：要在 immediate-mode egui 重建整個前端 + providers + analytics(圖表/月熱力圖硬骨頭) + UX Spec v3 狀態機 + Geist/glass 視覺，換 ~30MB。**否決 egui 重寫。**
 
-## 唯一還值得的原生路：Slint（未實測）
+## Slint 實測翻盤（2026-07-20 已量）
 
-只有「膠囊**恆常顯示**、且 RAM 是硬需求」時，原生殼才有意義。此情境下 Slint 是唯一候選：
-- 軟體渲染，**無 GL context / 字型 atlas GPU 打底** → private 有機會壓到 egui 的 100MB 以下。
-- 宣告式 UI，視覺還原比 egui 容易。
-- 先前輪估 WS 50~90MB，但**是估算，非實測**。
+egui 敗在 GL 打底；改用 **Slint 軟體渲染器**（`renderer-software`，dep tree 確認無 skia/femtovg/wgpu/glow）後：
+- **膠囊顯示態 WS ~18MB / Private ~3–5MB，單行程。**
+- 對比：Tauri ~344MB WS、egui ~136MB WS → **Slint 比 Tauri 少 ~95%、比 egui 少 ~87%。**
+- 截圖確認真有渲染（不是空白窗）。
 
-**閘門規則：不得憑估算決定重寫。** 要繼續，先做一張最小 Slint 膠囊 spike（同 `measure-memory.ps1` 量顯示/隱藏兩態），拿真數字對比 Tauri v0.9.3，才談整體重寫。
+**這是 egui 沒有的結構性優勢**：軟渲染完全沒有 GPU driver / GL context / 字型 atlas 的私有配置，所以打底極低。
 
-## 現況決定
+**但仍是空殼數字。** 加上真功能(providers/analytics 圖表/熱力圖/tray/settings/i18n/UX 狀態機)後 RAM 會漲，但「無 GPU/無 WebView」的結構優勢會保留——就算漲到 2–4 倍，估仍在 ~40–80MB，**遠低於 Tauri 的 135MB+**。
 
-- egui prototype：凍結 spike，`atoll-egui/` 保留、README 已寫 abandon/freeze。
-- Tauri 續為正式路；RAM 便宜招數已到頂，再降只能等 Slint spike 的真數字。
+## 決定（待使用者拍板）
+
+egui 否決不變。**Slint 值得認真考慮**，但整體重寫成本仍大（整個前端 + IPC + analytics 渲染要在 Slint 重做）。分三檔：
+1. **正式立案分階段遷移 Slint**：先殼+providers+膠囊/面板出可用 native 版，analytics 後補；風險高、回報大。
+2. **再做一張「真功能」Slint 驗證票**：在 spike 上加 1–2 個真 provider + 一張真圖表，量加了真功能後的 RAM，確認結構優勢不被吃掉，再決定全遷。
+3. **凍結**：保留 spike 當已證資產，暫不遷，等哪天 RAM 變硬需求再啟動。
+
+- egui prototype：凍結，`atoll-egui/` 保留。
+- Slint spike：保留於 `atoll-slint/`（已證軟渲染 ~18MB 可行）。
+- Tauri 目前仍為正式路。

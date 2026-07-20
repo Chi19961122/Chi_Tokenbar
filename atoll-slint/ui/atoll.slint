@@ -1,0 +1,230 @@
+// Minimal Atoll-like shell UI: compact island + expandable limits panel.
+// Experimental — mock data only. Software-rendered (see README).
+
+export struct LimitRow {
+    label: string,
+    provider: string,
+    status_label: string,
+    remaining-pct: float,
+    util-pct: float,
+    runway-label: string,
+    color: color,
+}
+
+component Pill inherits Rectangle {
+    in property <string> tag;
+    in property <float> remaining-pct;
+    in property <color> value-color;
+
+    height: 20px;
+    HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+        Text {
+            text: tag;
+            color: #a0a0b4;
+            font-size: 12px;
+        }
+        Text {
+            text: round(remaining-pct) + "%";
+            color: value-color;
+            font-size: 13px;
+            font-weight: 700;
+        }
+    }
+}
+
+component LimitCard inherits Rectangle {
+    in property <LimitRow> item;
+    in property <bool> expanded;
+    callback clicked;
+
+    background: #1c1c22;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: #2d2d37;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 4px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background: item.color;
+                y: (parent.height - self.height) / 2;
+            }
+            Text {
+                text: item.label;
+                font-weight: 700;
+                color: #e6e6eb;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: round(item.remaining-pct) + "% left";
+                color: item.color;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle {
+            height: 6px;
+            border-radius: 3px;
+            background: #33333e;
+            Rectangle {
+                x: 0;
+                width: parent.width * (item.remaining-pct / 100.0);
+                height: parent.height;
+                border-radius: 3px;
+                background: item.color;
+            }
+        }
+
+        if expanded: VerticalLayout {
+            spacing: 2px;
+            padding-top: 4px;
+            Text { text: "Provider: " + item.provider; color: #c8c8d4; font-size: 12px; }
+            Text { text: "Status: " + item.status-label; color: #c8c8d4; font-size: 12px; }
+            Text { text: "Runway: " + item.runway-label; color: #c8c8d4; font-size: 12px; }
+            Text {
+                text: "Live APIs / log scan not wired in this build.";
+                color: #967c64;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component AtollWindow inherits Window {
+    title: "Atoll · slint exp";
+    background: #121216;
+    no-frame: true;
+    always-on-top: false;
+
+    in property <bool> expanded: false;
+    in property <float> claude-remaining: 0;
+    in property <float> codex-remaining: 0;
+    in property <color> claude-color: #4ade80;
+    in property <color> codex-color: #4ade80;
+    in property <string> updated-label: "";
+    in property <[LimitRow]> limits: [];
+    in-out property <int> open-index: -1;
+
+    callback expand-requested;
+    callback collapse-requested;
+    callback row-toggled(int);
+
+    width: expanded ? 380px : 340px;
+    height: expanded ? 420px : 56px;
+
+    if !expanded: Rectangle {
+        background: #1c1c22;
+        border-radius: 20px;
+        border-width: 1px;
+        border-color: #323240;
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 10px;
+
+            Pill { tag: "C"; remaining-pct: claude-remaining; value-color: claude-color; }
+            Pill { tag: "X"; remaining-pct: codex-remaining; value-color: codex-color; }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Text {
+                text: "slint exp";
+                color: #78788c;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+
+            TouchArea {
+                width: 18px;
+                Text {
+                    text: "v";
+                    color: #a0a0b4;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+                clicked => { root.expand-requested(); }
+            }
+        }
+    }
+
+    if expanded: Rectangle {
+        background: #121216;
+
+        VerticalLayout {
+            padding: 8px;
+            spacing: 6px;
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Atoll";
+                    font-weight: 700;
+                    font-size: 16px;
+                    color: #e6e6eb;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "- slint experiment";
+                    font-size: 12px;
+                    color: #8c8ca0;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                TouchArea {
+                    width: 50px;
+                    Text {
+                        text: "Island";
+                        color: #a0a0b4;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                    }
+                    clicked => { root.collapse-requested(); }
+                }
+            }
+
+            Text {
+                text: updated-label;
+                font-size: 11px;
+                color: #82829c;
+            }
+
+            Flickable {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 6px;
+                    for row[i] in limits: LimitCard {
+                        item: row;
+                        expanded: open-index == i;
+                        clicked => { root.row-toggled(i); }
+                    }
+
+                    Rectangle { height: 1px; background: #2a2a34; }
+                    Text {
+                        text: "Local experiment (Slint, software renderer).\nNo WebView2, no GPU. Demo data only.\nMain product remains Tauri unless you choose to rewrite.";
+                        font-size: 11px;
+                        color: #6e6e82;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+}
