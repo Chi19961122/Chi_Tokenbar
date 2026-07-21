@@ -4,8 +4,9 @@
 
 - **執行**:codex 斷糧(額度至 7/25)→ 依備援政策全走 Claude executor,一票一 commit:9059763(T-feat-006)→ 27b384e(T-test-001)→ a2d7cc9(T-feat-007)→ 8d2ab49(T-perf-004)。**測試 226 Rust + 170 前端全綠**,fresh-context verifier 對全分支 CONFIRMED(零新增網路呼叫、無 token 印出、crosscheck 凍結網零 diff、線性態逐位不變)。
 - **實作偏離(各票檔內有備註)**:007 的 pace_basis/run_out_probability 掛在 `Pace` 非 `Limit`(避免逼改凍結的 crosscheck 完整字面量);007 前端本無 pace 行(階段 B 已刪),新 runway 行**僅 historical(≥2 週期)時出現**;007 落地節流(≥300s 或 util 移動 ≥0.5 才記);004 快取存 per-file「解析事件」非聚合(跨檔去重在聚合形態下無法正確,事件重播 book 邏輯得 byte-identical);004 指紋用 DefaultHasher 固定 seed 非 SHA256。
-- **尚未真人驗證(真機)**:① 峰值 RSS 不倒退(004 §6,快取載入 vs 串流解析);② TOKENBar_DEBUG=1 兩輪 `[tb] scan cache: N hit / M parsed`;③ 首啟生成 %APPDATA%\Atoll\quota-history.json 與 %LOCALAPPDATA%\Atoll\scan-cache.json.gz、刪壞檔重累積;④ 壞 pricing.json 時成本照常顯示;⑤ historical 模式要真跑 ≥2 個完整週期(5h 窗最快隔天、週窗要兩週)才會首次出現 hist 標。
-- verifier 誠實揭露的未覆蓋:多實例並發寫(temp+rename 防撕裂但未壓測)、mtime 同秒中段改寫的指紋盲點(JSONL append-only 天然規避)。
+- **真機驗證(2026-07-22 凌晨,dev + 現編 release 實測)**:① **RSS 無倒退** —— 同工具鏈冷啟 150s 對照:base(d48ac9c)42.2/峰 43.4 vs 分支 41.8/峰 42.9,分支反低 0.4MB;安裝版 v0.9.3 差 6.6MB 是建置環境差異非分支造成(長跑後 OS 修剪至 ~16MB 不受影響)。② 掃描快取實測:冷啟 `0 hit / 18 parsed` → 穩定 `450 hit / 0 parsed`;快取檔 963KB(上限 32MB)。③ 兩落地檔生成正常,quota-history.json 僅 [ts,util]+resets 零隱私外洩。④ 壞 pricing.json 活測:`skipped broken-entry` 如規格印出、好條目照載、app 不炸。⑤ **快取命中路徑真資料驗證**:app 印的 fable-5 今日 tokens 與 Python 重算 ground truth 逐位相等(4,342,396)。
+- **F 級誤報排除(2026-07-22)**:使用者回報「byModel 全算在 fable5」→ 非 bug,是**換日**:今日視圖午夜歸零,凌晨只有主 session(Fable)在燒;昨日全天去重後實為 Opus 20M/Sonnet 18.5M/Fable 15M/Haiku 5M 健康混合。診斷時順手把 by_model 加進 TOKENBAR_DEBUG 行(03f4efd)。
+- 剩真機長期觀察:historical 模式要真跑 ≥2 個完整週期(5h 窗最快隔天、週窗要兩週)才首次出現 hist 標。verifier 誠實揭露的未覆蓋:多實例並發寫(temp+rename 防撕裂但未壓測)、mtime 同秒中段改寫的指紋盲點(JSONL append-only 天然規避)。
 - **打包待使用者決定**(版號建議 0.9.3→0.10.0;build:release 會 taskkill 執行中的 app)。
 
 ## 2026-07-21:下輪備料 — 優化建議檢視 + Nanako0129/TokenBar 借鏡 → 四張新票(未實作)
