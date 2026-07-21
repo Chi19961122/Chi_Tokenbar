@@ -1,5 +1,7 @@
 # T-perf-004 — 增量掃描快取:未變檔案跳過重解析
-status: todo
+status: done
+
+> 實作偏離備註(2026-07-21,詳 HANDOFF 與 scan_cache.rs 檔頭):① 快取存 per-file「解析後事件」而非規格 1 的 per-file 聚合——跨檔去重(規格 5)在聚合形態下無法正確(加總裡減不出重複 key 的貢獻),事件形態可重播 production booking 邏輯得 byte-identical 結果。② 指紋 hash 用 std DefaultHasher 固定 seed 而非 SHA256(本地一致性檢查非安全邊界,守住只加 flate2 一行依賴的約束)。③ 成本刻意不入快取(book 時以當輪 pricing override 重算),改價無需失效快取。待真機驗收:峰值 RSS 不倒退、TOKENBAR_DEBUG=1 兩輪 hit/parsed 行為。
 
 `只實作本票行為與資料。可沿用現有樣式。禁止大規模 redesign。對照 PLAN flow。`
 

@@ -9,6 +9,7 @@ mod model;
 mod pricing;
 mod providers;
 mod ranking;
+mod scan_cache;
 mod scan_coord;
 
 use config::Settings;
