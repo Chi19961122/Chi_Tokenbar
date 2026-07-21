@@ -825,8 +825,8 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
                     // Debug log only: use the live source selection.
                     let a = analytics::compute_with("today", &sources);
                     eprintln!(
-                        "[tb] analytics today: total_tokens={} by_agent={:?} sessions={} tok/min={}",
-                        a.total_tokens, a.by_agent, a.sessions_this_week, a.tok_per_min
+                        "[tb] analytics today: total_tokens={} by_agent={:?} by_model={:?} sessions={} tok/min={}",
+                        a.total_tokens, a.by_agent, a.by_model, a.sessions_this_week, a.tok_per_min
                     );
                     first = false;
                 }
