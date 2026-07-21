@@ -1,5 +1,13 @@
 # HANDOFF — 進度快照(2026-07-21)
 
+## 2026-07-21(晚):四票全數實作完成(分支 feat/data-layer-v0100,未合併未打包)
+
+- **執行**:codex 斷糧(額度至 7/25)→ 依備援政策全走 Claude executor,一票一 commit:9059763(T-feat-006)→ 27b384e(T-test-001)→ a2d7cc9(T-feat-007)→ 8d2ab49(T-perf-004)。**測試 226 Rust + 170 前端全綠**,fresh-context verifier 對全分支 CONFIRMED(零新增網路呼叫、無 token 印出、crosscheck 凍結網零 diff、線性態逐位不變)。
+- **實作偏離(各票檔內有備註)**:007 的 pace_basis/run_out_probability 掛在 `Pace` 非 `Limit`(避免逼改凍結的 crosscheck 完整字面量);007 前端本無 pace 行(階段 B 已刪),新 runway 行**僅 historical(≥2 週期)時出現**;007 落地節流(≥300s 或 util 移動 ≥0.5 才記);004 快取存 per-file「解析事件」非聚合(跨檔去重在聚合形態下無法正確,事件重播 book 邏輯得 byte-identical);004 指紋用 DefaultHasher 固定 seed 非 SHA256。
+- **尚未真人驗證(真機)**:① 峰值 RSS 不倒退(004 §6,快取載入 vs 串流解析);② TOKENBar_DEBUG=1 兩輪 `[tb] scan cache: N hit / M parsed`;③ 首啟生成 %APPDATA%\Atoll\quota-history.json 與 %LOCALAPPDATA%\Atoll\scan-cache.json.gz、刪壞檔重累積;④ 壞 pricing.json 時成本照常顯示;⑤ historical 模式要真跑 ≥2 個完整週期(5h 窗最快隔天、週窗要兩週)才會首次出現 hist 標。
+- verifier 誠實揭露的未覆蓋:多實例並發寫(temp+rename 防撕裂但未壓測)、mtime 同秒中段改寫的指紋盲點(JSONL append-only 天然規避)。
+- **打包待使用者決定**(版號建議 0.9.3→0.10.0;build:release 會 taskkill 執行中的 app)。
+
 ## 2026-07-21:下輪備料 — 優化建議檢視 + Nanako0129/TokenBar 借鏡 → 四張新票(未實作)
 
 - **「TokenBar 優化建議(初版).txt」檢視結論**:五點中僅「可重載 pricing 表」可採;「本地 log 取代 Claude Limits API」不可行(官方 2026 起只給 %、無絕對上限,本地 token 算不出分母;連 30+ agent 的對手也走同一支 oauth/usage API,反向證實);core crate 抽離無效益(除 lib.rs 外已全是純 Rust,213 個測試標記直跑);「失敗保留舊值」已實作(anthropic.rs last_good + stale_limits)。
