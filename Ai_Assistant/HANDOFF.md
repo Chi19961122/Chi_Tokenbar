@@ -1,4 +1,11 @@
-# HANDOFF — 進度快照(2026-07-18)
+# HANDOFF — 進度快照(2026-07-21)
+
+## 2026-07-21:下輪備料 — 優化建議檢視 + Nanako0129/TokenBar 借鏡 → 四張新票(未實作)
+
+- **「TokenBar 優化建議(初版).txt」檢視結論**:五點中僅「可重載 pricing 表」可採;「本地 log 取代 Claude Limits API」不可行(官方 2026 起只給 %、無絕對上限,本地 token 算不出分母;連 30+ agent 的對手也走同一支 oauth/usage API,反向證實);core crate 抽離無效益(除 lib.rs 外已全是純 Rust,213 個測試標記直跑);「失敗保留舊值」已實作(anthropic.rs last_good + stale_limits)。
+- **對手勘察(Nanako0129/TokenBar,macOS/Swift+Rust,169 stars,shallow clone 分析)**:Claude/Codex 額度同樣打 oauth/usage 與 wham/usage;Cursor **無本機 log**,對手靠 Cursor usage export API 抓 CSV(v1/v2/v3 格式)快取後解析;pricing 走 custom-pricing.json 容錯 override → LiteLLM 遠端(TTL 快取)→ fallback;掃描用取樣指紋 + bincode 磁碟快取 + schema 版本;pace 有 linear/historical 雙模(≥2 完整週期後啟用,含 runOutProbability);Rust↔Swift 共用 fixture 交叉驗證掛 CI。
+- **使用者裁決**:開四張票 = `T-feat-006-pricing-override`(vendored+本機 override,維持零外連)、`T-feat-007-historical-pace`(前置:quota-history.json 落地,Engine::history 現為純記憶體)、`T-perf-004-scan-cache`(黃金測試:快取 vs 全掃逐位一致;跨檔 dedup keys 是最大風險,票內已標)、`T-test-001-crosscheck`(fixtures/crosscheck-v1.json 兩端共讀)。**不採**:Cursor 支援、系統匣顯示模式(牴觸 v0.1.5 純 logo 決定)、自動更新(遠期)、遠端價目表。
+- 票全在 docs/tickets/,status: todo;建議順序 T-feat-006 → T-test-001 → T-feat-007 → T-perf-004(006 小票暖身;001 先立回歸網;007 落地要跑兩週才學得起來,越早出貨越早累積;004 正確性風險最高放最後)。
 
 ## 2026-07-18:v0.6 輪 Wave2 — 方向 D 極簡編輯部視覺換皮全數完成(程式碼完成、未打包)
 
