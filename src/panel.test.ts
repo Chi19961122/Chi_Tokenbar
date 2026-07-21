@@ -4,7 +4,7 @@
 // button), not by asserting a selector equals itself.
 
 import { describe, expect, it } from "vitest";
-import { buildQuotaSummary, renderPanel } from "./panel";
+import { buildQuotaSummary, historicalPaceNote, renderPanel } from "./panel";
 import type { Limit, Snapshot } from "./types";
 
 function limit(over: Partial<Limit>): Limit {
@@ -37,6 +37,45 @@ const snap = (limits: Limit[]): Snapshot => ({
 });
 
 const baseOpts = { resetDisplay: "relative" as const, now: 0, locale: "en" as const };
+
+describe("historicalPaceNote (T-feat-007)", () => {
+  it("renders nothing on the linear path (current behavior preserved)", () => {
+    // No pace, linear pace, or missing runway all produce an empty string.
+    expect(historicalPaceNote(limit({ pace: null, runway_secs: 1800 }))).toBe("");
+    expect(
+      historicalPaceNote(
+        limit({ pace: { deficit: 0, in_deficit: false, pace_basis: "linear" }, runway_secs: 1800 }),
+      ),
+    ).toBe("");
+    expect(
+      historicalPaceNote(
+        limit({ pace: { deficit: 0, in_deficit: false, pace_basis: "historical" }, runway_secs: null }),
+      ),
+    ).toBe("");
+  });
+
+  it("shows the runway + hist tag once the basis is historical", () => {
+    const html = historicalPaceNote(
+      limit({
+        pace: { deficit: 0, in_deficit: false, pace_basis: "historical", run_out_probability: 0.2 },
+        runway_secs: 3 * 3600 + 12 * 60,
+      }),
+    );
+    expect(html).toContain("hist");
+    expect(html).toContain("3h 12m");
+    expect(html).not.toContain("hist-amber"); // prob < 0.5 → no amber
+  });
+
+  it("turns amber when run_out_probability ≥ 0.5", () => {
+    const html = historicalPaceNote(
+      limit({
+        pace: { deficit: 0, in_deficit: false, pace_basis: "historical", run_out_probability: 0.5 },
+        runway_secs: 1800,
+      }),
+    );
+    expect(html).toContain("hist-amber");
+  });
+});
 
 describe("buildQuotaSummary", () => {
   it("digests each provider's windows into fixed-English short labels + % left", () => {

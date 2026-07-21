@@ -42,12 +42,35 @@ pub enum LimitAction {
     Relogin,
 }
 
+/// 配速/runway 投影所依據的曲線 (T-feat-007)。
+///
+/// `Linear` 是現行 §4.3 的最近斜率外插;`Historical` 是累積 ≥2 個完整週期後,
+/// 用同視窗時間點的歷史用量中位數曲線外插。前端只在 `Historical` 時加 `hist`
+/// 小標,所以這個值必須誠實反映「這條 runway 數字到底是誰算的」—— 歷史缺料退
+/// 回線性時,basis 也必須退回 `Linear`,不可掛著 `Historical` 卻報線性數字。
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PaceBasis {
+    #[default]
+    Linear,
+    Historical,
+}
+
 /// Pace vs an even-burn line over the window (UX Spec v3 §4.1).
+///
+/// `pace_basis` / `run_out_probability` 是 T-feat-007 的快照新欄位。刻意掛在
+/// `Pace`(而非 `Limit`)上:歷史投影一定有視窗才成立,而有視窗才會有 `Pace`,
+/// 兩者共生;`Limit` 的欄位集另有回歸鎖凍結,不得增。舊前端缺這兩個欄位不炸
+/// (TS 端型別為 optional)。
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Pace {
     /// util% minus the on-pace util% (positive = burning too fast).
     pub deficit: f64,
     pub in_deficit: bool,
+    /// 這條 runway 是線性還是歷史配速算出來的 (§C-9)。
+    pub pace_basis: PaceBasis,
+    /// 歷史週期中「撞到 100 / 進 locked」的比例 0..1;未達歷史門檻時為 None (§C-9)。
+    pub run_out_probability: Option<f64>,
 }
 
 /// A single rate limit for one provider window.

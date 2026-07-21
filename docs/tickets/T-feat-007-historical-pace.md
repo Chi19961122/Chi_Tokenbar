@@ -1,5 +1,7 @@
 # T-feat-007 — Historical pace:額度歷史落地 + 歷史配速投影
-status: todo
+status: done
+
+> 實作偏離備註(2026-07-21,詳 HANDOFF):① `pace_basis`/`run_out_probability` 掛在 `Pace` 非 `Limit`(crosscheck 凍結檔用完整 Limit 字面量,掛 Limit 會逼改凍結檔;語意亦自洽)。② 現行前端本無 pace 行(階段 B 已移除),新 runway 行僅在 historical(≥2 週期)出現,線性態零變化——驗收時若想要別種呈現,此處最易回退。③ 落地節流:每 limit ≥300s 或 util 移動 ≥0.5 才記一筆(工單「每輪 append」與「量小」矛盾,取後者)。
 
 `只實作本票行為與資料。可沿用現有樣式。禁止大規模 redesign。對照 PLAN flow。`
 

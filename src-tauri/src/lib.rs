@@ -721,6 +721,9 @@ fn apply_always_on_top(app: &AppHandle, enable: bool) {
 fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
     std::thread::spawn(move || {
         let mut engine = Engine::new();
+        // Load the landed quota history from disk so runway/pace projection can
+        // upgrade to the historical curve once ≥2 cycles have accumulated (T-feat-007).
+        engine.attach_disk_history(chrono::Utc::now().timestamp());
         let mut anthropic = AnthropicProvider::new();
         let mut codex_live = providers::codex_live::CodexLiveProvider::new();
         let mut notified: HashMap<String, i64> = HashMap::new();

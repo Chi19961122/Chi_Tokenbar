@@ -848,6 +848,27 @@ body.share-open #share-btn {
   font-size: 9px;
   font-family: var(--sans);
 }
+/* Historical-pace runway line (T-feat-007). Same faint treatment as the reset
+   note; the amber variant reuses the existing --near token (no new color). */
+.gauge-hist {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gauge-hist.hist-amber {
+  color: var(--near);
+}
+.gauge-hist .hist-tag {
+  padding: 0 3px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-family: var(--sans);
+  font-size: 8px;
+  opacity: 0.85;
+}
 .empty-note {
   padding: 20px 12px;
   text-align: center;
