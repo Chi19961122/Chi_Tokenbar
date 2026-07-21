@@ -161,6 +161,10 @@ const en = {
   "note.resetsIn": "Resets in {d}",
   // Grok context-fill note — no reset schedule; empties on a new session (T-917).
   "note.grokSession": "This conversation's memory; a new chat starts at 0%",
+  // Historical-pace runway line (T-feat-007) — shown only at ≥2 complete cycles.
+  "note.histRunway": "~empty in {d}",
+  "note.histBadge": "hist",
+  "note.histTooltip": "Estimated from your past cycles' median usage curve (≥2 cycles).",
 
   // Island context menu (D4)
   "menu.pinClaude": "Pin Claude",
@@ -383,6 +387,9 @@ const zhTW = {
   "note.resets": "{r} 重置",
   "note.resetsIn": "{d} 後重置",
   "note.grokSession": "目前對話的記憶容量,開新對話從 0% 開始",
+  "note.histRunway": "約 {d} 後見底",
+  "note.histBadge": "hist",
+  "note.histTooltip": "依你過去完整週期的用量中位數曲線推估(≥2 週期)。",
 
   "menu.pinClaude": "釘選 Claude",
   "menu.pinCodex": "釘選 Codex",

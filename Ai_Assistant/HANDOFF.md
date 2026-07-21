@@ -1,4 +1,20 @@
-# HANDOFF — 進度快照(2026-07-18)
+# HANDOFF — 進度快照(2026-07-21)
+
+## 2026-07-21(晚):四票全數實作完成(分支 feat/data-layer-v0100,未合併未打包)
+
+- **執行**:codex 斷糧(額度至 7/25)→ 依備援政策全走 Claude executor,一票一 commit:9059763(T-feat-006)→ 27b384e(T-test-001)→ a2d7cc9(T-feat-007)→ 8d2ab49(T-perf-004)。**測試 226 Rust + 170 前端全綠**,fresh-context verifier 對全分支 CONFIRMED(零新增網路呼叫、無 token 印出、crosscheck 凍結網零 diff、線性態逐位不變)。
+- **實作偏離(各票檔內有備註)**:007 的 pace_basis/run_out_probability 掛在 `Pace` 非 `Limit`(避免逼改凍結的 crosscheck 完整字面量);007 前端本無 pace 行(階段 B 已刪),新 runway 行**僅 historical(≥2 週期)時出現**;007 落地節流(≥300s 或 util 移動 ≥0.5 才記);004 快取存 per-file「解析事件」非聚合(跨檔去重在聚合形態下無法正確,事件重播 book 邏輯得 byte-identical);004 指紋用 DefaultHasher 固定 seed 非 SHA256。
+- **真機驗證(2026-07-22 凌晨,dev + 現編 release 實測)**:① **RSS 無倒退** —— 同工具鏈冷啟 150s 對照:base(d48ac9c)42.2/峰 43.4 vs 分支 41.8/峰 42.9,分支反低 0.4MB;安裝版 v0.9.3 差 6.6MB 是建置環境差異非分支造成(長跑後 OS 修剪至 ~16MB 不受影響)。② 掃描快取實測:冷啟 `0 hit / 18 parsed` → 穩定 `450 hit / 0 parsed`;快取檔 963KB(上限 32MB)。③ 兩落地檔生成正常,quota-history.json 僅 [ts,util]+resets 零隱私外洩。④ 壞 pricing.json 活測:`skipped broken-entry` 如規格印出、好條目照載、app 不炸。⑤ **快取命中路徑真資料驗證**:app 印的 fable-5 今日 tokens 與 Python 重算 ground truth 逐位相等(4,342,396)。
+- **F 級誤報排除(2026-07-22)**:使用者回報「byModel 全算在 fable5」→ 非 bug,是**換日**:今日視圖午夜歸零,凌晨只有主 session(Fable)在燒;昨日全天去重後實為 Opus 20M/Sonnet 18.5M/Fable 15M/Haiku 5M 健康混合。診斷時順手把 by_model 加進 TOKENBAR_DEBUG 行(03f4efd)。
+- 剩真機長期觀察:historical 模式要真跑 ≥2 個完整週期(5h 窗最快隔天、週窗要兩週)才首次出現 hist 標。verifier 誠實揭露的未覆蓋:多實例並發寫(temp+rename 防撕裂但未壓測)、mtime 同秒中段改寫的指紋盲點(JSONL append-only 天然規避)。
+- **打包待使用者決定**(版號建議 0.9.3→0.10.0;build:release 會 taskkill 執行中的 app)。
+
+## 2026-07-21:下輪備料 — 優化建議檢視 + Nanako0129/TokenBar 借鏡 → 四張新票(未實作)
+
+- **「TokenBar 優化建議(初版).txt」檢視結論**:五點中僅「可重載 pricing 表」可採;「本地 log 取代 Claude Limits API」不可行(官方 2026 起只給 %、無絕對上限,本地 token 算不出分母;連 30+ agent 的對手也走同一支 oauth/usage API,反向證實);core crate 抽離無效益(除 lib.rs 外已全是純 Rust,213 個測試標記直跑);「失敗保留舊值」已實作(anthropic.rs last_good + stale_limits)。
+- **對手勘察(Nanako0129/TokenBar,macOS/Swift+Rust,169 stars,shallow clone 分析)**:Claude/Codex 額度同樣打 oauth/usage 與 wham/usage;Cursor **無本機 log**,對手靠 Cursor usage export API 抓 CSV(v1/v2/v3 格式)快取後解析;pricing 走 custom-pricing.json 容錯 override → LiteLLM 遠端(TTL 快取)→ fallback;掃描用取樣指紋 + bincode 磁碟快取 + schema 版本;pace 有 linear/historical 雙模(≥2 完整週期後啟用,含 runOutProbability);Rust↔Swift 共用 fixture 交叉驗證掛 CI。
+- **使用者裁決**:開四張票 = `T-feat-006-pricing-override`(vendored+本機 override,維持零外連)、`T-feat-007-historical-pace`(前置:quota-history.json 落地,Engine::history 現為純記憶體)、`T-perf-004-scan-cache`(黃金測試:快取 vs 全掃逐位一致;跨檔 dedup keys 是最大風險,票內已標)、`T-test-001-crosscheck`(fixtures/crosscheck-v1.json 兩端共讀)。**不採**:Cursor 支援、系統匣顯示模式(牴觸 v0.1.5 純 logo 決定)、自動更新(遠期)、遠端價目表。
+- 票全在 docs/tickets/,status: todo;建議順序 T-feat-006 → T-test-001 → T-feat-007 → T-perf-004(006 小票暖身;001 先立回歸網;007 落地要跑兩週才學得起來,越早出貨越早累積;004 正確性風險最高放最後)。
 
 ## 2026-07-18:v0.6 輪 Wave2 — 方向 D 極簡編輯部視覺換皮全數完成(程式碼完成、未打包)
 

@@ -2,11 +2,14 @@
 
 mod analytics;
 mod burnrate;
+#[cfg(test)] mod crosscheck_tests;
 mod config;
 mod engine;
 mod model;
+mod pricing;
 mod providers;
 mod ranking;
+mod scan_cache;
 mod scan_coord;
 
 use config::Settings;
@@ -719,6 +722,9 @@ fn apply_always_on_top(app: &AppHandle, enable: bool) {
 fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
     std::thread::spawn(move || {
         let mut engine = Engine::new();
+        // Load the landed quota history from disk so runway/pace projection can
+        // upgrade to the historical curve once ≥2 cycles have accumulated (T-feat-007).
+        engine.attach_disk_history(chrono::Utc::now().timestamp());
         let mut anthropic = AnthropicProvider::new();
         let mut codex_live = providers::codex_live::CodexLiveProvider::new();
         let mut notified: HashMap<String, i64> = HashMap::new();
@@ -819,8 +825,8 @@ fn spawn_scheduler(app: AppHandle, refresh_rx: Receiver<()>) {
                     // Debug log only: use the live source selection.
                     let a = analytics::compute_with("today", &sources);
                     eprintln!(
-                        "[tb] analytics today: total_tokens={} by_agent={:?} sessions={} tok/min={}",
-                        a.total_tokens, a.by_agent, a.sessions_this_week, a.tok_per_min
+                        "[tb] analytics today: total_tokens={} by_agent={:?} by_model={:?} sessions={} tok/min={}",
+                        a.total_tokens, a.by_agent, a.by_model, a.sessions_this_week, a.tok_per_min
                     );
                     first = false;
                 }

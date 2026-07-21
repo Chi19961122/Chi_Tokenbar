@@ -4,7 +4,7 @@
 // failure), so there is no second screen to route to.
 
 import type { Limit, Provider, ResetDisplay, Snapshot } from "./types";
-import { fmtResetClock, fmtResetRel, pctLeft } from "./format";
+import { fmtDur, fmtResetClock, fmtResetRel, pctLeft } from "./format";
 import type { Locale } from "./i18n";
 import { providerIcon } from "./icons";
 import { windowShort } from "./island";
@@ -146,6 +146,29 @@ function rowNote(l: Limit, opts: PanelOpts): string {
 }
 
 /**
+ * Historical-pace runway line (T-feat-007 §10). Deliberately renders **nothing**
+ * unless the backend upgraded this limit's projection to the historical curve
+ * (`pace.pace_basis === "historical"`, which only happens at ≥2 complete
+ * cycles). Below that threshold the row is byte-for-byte the current one — the
+ * 階段-B decision to drop the linear pace copy is untouched.
+ *
+ * When present it shows the honest estimate ("~empty in 3h 12m") with a small
+ * `hist` tag whose tooltip carries the full explanation, and turns amber
+ * (reusing the existing --near token, no new color) when the run-out probability
+ * is at least 0.5. Pure so it stays unit-testable.
+ */
+export function historicalPaceNote(l: Limit): string {
+  if (l.pace?.pace_basis !== "historical" || l.runway_secs == null) return "";
+  const prob = l.pace.run_out_probability;
+  const amber = prob != null && prob >= 0.5 ? " hist-amber" : "";
+  const line = t("note.histRunway", { d: fmtDur(l.runway_secs) });
+  return (
+    `<span class="gauge-hist${amber}" title="${escapeHtml(t("note.histTooltip"))}">` +
+    `${line} <span class="hist-tag">${t("note.histBadge")}</span></span>`
+  );
+}
+
+/**
  * The re-login affordance, shown only when the backend said this failure is
  * one that logging in again actually fixes (`l.action === "relogin"`).
  *
@@ -206,6 +229,7 @@ function row(l: Limit, opts: PanelOpts): string {
     <div class="gauge-meta">
       <span class="gauge-detail">${detail}</span>
       ${note ? `<span class="gauge-reset">${note}</span>` : ""}
+      ${historicalPaceNote(l)}
     </div>
     ${action}
   </div>`;

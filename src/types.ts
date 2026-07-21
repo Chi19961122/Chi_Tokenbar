@@ -21,9 +21,19 @@ export type Provider = "anthropic" | "codex" | "grok";
  */
 export type LimitAction = "relogin";
 
+/** Which curve produced the runway (T-feat-007): "linear" is the recent-slope
+ *  projection, "historical" the ≥2-cycle median curve. */
+export type PaceBasis = "linear" | "historical";
+
 export interface Pace {
   deficit: number;
   in_deficit: boolean;
+  /** T-feat-007 snapshot fields — optional so a snapshot from an older backend
+   *  (and the frozen crosscheck fixtures that build `pace: null`) still type. */
+  pace_basis?: PaceBasis;
+  /** Fraction of historical cycles that hit 100 / locked; absent below the
+   *  ≥2-cycle threshold. */
+  run_out_probability?: number | null;
 }
 
 export interface Limit {

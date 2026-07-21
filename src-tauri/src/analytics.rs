@@ -3,13 +3,25 @@
 //! no undocumented API, no risk. Days and hours are bucketed in the user's
 //! local timezone so the charts read on the same clock as their labels (F-15).
 
+use crate::pricing::{PricingOverride, RateSpec};
+use crate::scan_cache::{self, CacheStats, CachedFile, ClaudeEvent, CodexEvent, GrokEvent, ScanCache};
 use chrono::{Datelike, TimeZone, Timelike};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
+
+/// Loaded scan cache plus this round's hit/parse counters, shared (via a
+/// `RefCell`) across the three per-source scanners so one on-disk cache serves
+/// them all and the debug line can report a single hit/parsed total.
+struct CacheRun {
+    cache: ScanCache,
+    stats: CacheStats,
+}
 
 /// Per-scan counters for opt-in diagnostics (`TOKENBAR_DEBUG`).
 /// Does not change product behaviour — only logged when the env var is set.
@@ -265,6 +277,9 @@ struct Acc {
     recent_tokens: u64,
     now: i64,
     stats: ScanStats,
+    /// 查價用的本機 override 表(T-feat-006)。預設空表 = 純 vendored,所以既有
+    /// 測試與 stub 路徑行為不變;真實掃描由 `compute_with` 塞入 `pricing::current()`。
+    pricing: Arc<PricingOverride>,
 }
 
 #[derive(Default)]
@@ -294,6 +309,7 @@ impl Acc {
             recent_tokens: 0,
             now,
             stats: ScanStats::default(),
+            pricing: Arc::new(PricingOverride::empty()),
         }
     }
 
@@ -576,14 +592,38 @@ pub fn source_fingerprint(range: &str, sources: &[String]) -> u64 {
 /// Skips the scan outright rather than scanning then discarding: `scan_*` walks
 /// a whole directory tree, and an unselected source's files are pure waste.
 pub fn compute_with(range: &str, sources: &[String]) -> Analytics {
-    compute_routed(
+    // 每輪掃描前取一次 override 表:pricing::current() 內部 stat mtime,沒變就回快取,
+    // 變了才重讀(檔案不存在 = 空表 = 純 vendored,零成本路徑)。
+    //
+    // T-perf-004: load the per-file scan cache once, share it across the three
+    // scanners, persist only if something was re-parsed this round. The cache
+    // stores parsed events (not raw messages); cost is recomputed per-scan so a
+    // pricing-override change is honoured without invalidating the cache.
+    let run = RefCell::new(CacheRun {
+        cache: ScanCache::load(),
+        stats: CacheStats::default(),
+    });
+    let out = compute_routed(
         range,
         sources,
-        scan_codex,
-        scan_claude,
-        scan_grok,
+        |acc, start| scan_codex_cached(acc, start, &run),
+        |acc, start| scan_claude_cached(acc, start, &run),
+        |acc, start| scan_grok_cached(acc, start, &run),
         detect_accounts(),
-    )
+        crate::pricing::current(),
+    );
+    let run = run.into_inner();
+    // Only write when this round actually parsed a file (ticket 規格 4).
+    if run.stats.parsed > 0 {
+        run.cache.save_best_effort();
+    }
+    if std::env::var_os("TOKENBAR_DEBUG").is_some() {
+        eprintln!(
+            "[tb] scan cache: {} hit / {} parsed",
+            run.stats.hit, run.stats.parsed
+        );
+    }
+    out
 }
 
 /// The real body of `compute_with`, with every source of ambient state (the
@@ -600,6 +640,7 @@ fn compute_routed<C, L, K>(
     scan_claude_fn: L,
     scan_grok_fn: K,
     accounts: Vec<Account>,
+    pricing: Arc<PricingOverride>,
 ) -> Analytics
 where
     C: FnOnce(&mut Acc, i64) -> u32,
@@ -612,6 +653,8 @@ where
     let start = range_start(range);
 
     let mut acc = Acc::new(now);
+    // 在任何 scanner 跑之前塞入 override 表,cost 才會走 override → vendored → blended 鏈。
+    acc.pricing = pricing;
     // Each source scans iff selected. A source with no local data simply
     // contributes nothing (no fake 0 card — `book` drops zero-token rows and
     // byAgent only holds keys that actually had usage).
@@ -758,7 +801,7 @@ where
 //   …)是分開的記錄,token 無法歸屬到個別工具。故 **by_kind 不含 Codex**
 //   (計畫硬規定:無法分類就不出假類別),donut 只反映 Claude 活動。
 
-fn scan_codex(acc: &mut Acc, start: i64) -> u32 {
+fn scan_codex_cached(acc: &mut Acc, start: i64, run: &RefCell<CacheRun>) -> u32 {
     let Some(home) = dirs::home_dir() else {
         return 0;
     };
@@ -766,59 +809,97 @@ fn scan_codex(acc: &mut Acc, start: i64) -> u32 {
         .join(".codex/sessions/**/rollout-*.jsonl")
         .to_string_lossy()
         .replace('\\', "/");
-    let mut sessions = 0;
+    let Ok(paths) = glob::glob(&pattern) else {
+        return 0;
+    };
     let mut seen = HashSet::new();
-    if let Ok(paths) = glob::glob(&pattern) {
-        for p in paths.filter_map(Result::ok) {
-            acc.stats.files_considered += 1;
-            let ts = mtime_secs(&p);
-            if ts < start {
+    scan_codex_paths(acc, start, paths.filter_map(Result::ok), Some(run), &mut seen)
+}
+
+/// Shared per-file Codex loop. `run` = Some to use the disk cache, None to always
+/// parse (the full-scan reference path used by the golden test). Returns the
+/// session count (every in-range file, matching the pre-cache behaviour).
+fn scan_codex_paths<I>(
+    acc: &mut Acc,
+    start: i64,
+    paths: I,
+    run: Option<&RefCell<CacheRun>>,
+    seen: &mut HashSet<(i64, u64)>,
+) -> u32
+where
+    I: Iterator<Item = PathBuf>,
+{
+    let mut sessions = 0;
+    for p in paths {
+        acc.stats.files_considered += 1;
+        if mtime_secs(&p) < start {
+            continue;
+        }
+        sessions += 1;
+        let pstr = p.to_string_lossy().into_owned();
+        // Fingerprint once when caching; None means unreadable → skip (the old
+        // scan treated a metadata/open failure the same way).
+        let fp = match run {
+            Some(_) => match scan_cache::fingerprint(&p) {
+                Some(fp) => Some(fp),
+                None => continue,
+            },
+            None => None,
+        };
+
+        if let (Some(r), Some(fp)) = (run, fp.as_ref()) {
+            let hit = {
+                let mut g = r.borrow_mut();
+                match g.cache.get_matching(&pstr, fp) {
+                    Some(CachedFile::Codex { project, events }) => {
+                        Some((project.clone(), events.clone()))
+                    }
+                    _ => None,
+                }
+            };
+            if let Some((project, events)) = hit {
+                r.borrow_mut().stats.hit += 1;
+                let mut previous: Option<CodexUsage> = None;
+                for ev in &events {
+                    book_codex_event(acc, start, &project, ev, &mut previous, seen);
+                }
                 continue;
             }
-            sessions += 1;
-            let Ok(meta) = fs::metadata(&p) else {
-                continue;
-            };
-            let Ok(file) = File::open(&p) else {
-                continue;
-            };
-            acc.stats.files_read += 1;
-            acc.stats.eligible_file_bytes += meta.len();
-            // Single open: discover cwd from the first 8 lines, then process the
-            // whole file (including those lines) with one reusable buffer.
-            scan_codex_file(acc, start, file, &mut seen);
+        }
+
+        // Miss (or caching disabled): parse the file.
+        let Ok(meta) = fs::metadata(&p) else {
+            continue;
+        };
+        let Ok(file) = File::open(&p) else {
+            continue;
+        };
+        acc.stats.files_read += 1;
+        acc.stats.eligible_file_bytes += meta.len();
+        let (project, events) = parse_codex_file(file, &mut acc.stats);
+        let mut previous: Option<CodexUsage> = None;
+        for ev in &events {
+            book_codex_event(acc, start, &project, ev, &mut previous, seen);
+        }
+        if let (Some(r), Some(fp)) = (run, fp) {
+            let mut g = r.borrow_mut();
+            g.stats.parsed += 1;
+            g.cache
+                .insert(pstr, fp, CachedFile::Codex { project, events });
         }
     }
     sessions
 }
 
-/// One Codex rollout file: single `File` / `BufReader`, reusable line buffer.
-fn scan_codex_file(acc: &mut Acc, start: i64, file: File, seen: &mut HashSet<(i64, u64)>) {
+/// Parse one Codex rollout file into (project, token events). The expensive JSON
+/// pass — cached so an unchanged file skips it. Discovers cwd from the first 8
+/// lines, then collects every `token_count` event (including those lines).
+fn parse_codex_file(file: File, stats: &mut ScanStats) -> (String, Vec<CodexEvent>) {
     let mut reader = BufReader::new(file);
     let mut buf = String::new();
-    let mut prefix: Vec<String> = Vec::with_capacity(8);
     let mut project = String::new();
-    for _ in 0..8 {
-        buf.clear();
-        match reader.read_line(&mut buf) {
-            Ok(0) => break,
-            Ok(_) => {}
-            Err(_) => break,
-        }
-        let line = buf.trim_end_matches(['\r', '\n']).to_string();
-        if project.is_empty() {
-            if let Ok(env) = serde_json::from_str::<CodexEnvelope>(line.trim()) {
-                if let Some(p) = codex_cwd_from_envelope(&env) {
-                    project = p;
-                }
-            }
-        }
-        prefix.push(line);
-    }
-    let mut previous: Option<CodexUsage> = None;
-    for line in &prefix {
-        process_codex_line(acc, start, &project, line, &mut previous, seen);
-    }
+    let mut events = Vec::new();
+    let mut idx = 0u32;
     loop {
         buf.clear();
         match reader.read_line(&mut buf) {
@@ -827,35 +908,59 @@ fn scan_codex_file(acc: &mut Acc, start: i64, file: File, seen: &mut HashSet<(i6
             Err(_) => break,
         }
         let line = buf.trim_end_matches(['\r', '\n']);
-        process_codex_line(acc, start, &project, line, &mut previous, seen);
+        if idx < 8 && project.is_empty() {
+            if let Ok(env) = serde_json::from_str::<CodexEnvelope>(line.trim()) {
+                if let Some(p) = codex_cwd_from_envelope(&env) {
+                    project = p;
+                }
+            }
+        }
+        if let Some(ev) = parse_codex_line(line, stats) {
+            events.push(ev);
+        }
+        idx += 1;
     }
+    (project, events)
 }
 
-fn process_codex_line(
+/// Parse half of the old `process_codex_line`: line → cumulative token event,
+/// with no cross-file state. Diffing/dedup/booking happen in `book_codex_event`.
+fn parse_codex_line(line: &str, stats: &mut ScanStats) -> Option<CodexEvent> {
+    stats.lines_read += 1;
+    if !line.contains("token_count") {
+        return None;
+    }
+    stats.candidate_lines += 1;
+    // Typed envelope — unknown large fields ignored by serde.
+    let env = serde_json::from_str::<CodexEnvelope>(line.trim()).ok()?;
+    stats.json_parse_ok += 1;
+    let (ts, (input, cached, output, reasoning)) = codex_token_from_envelope(&env)?;
+    Some(CodexEvent {
+        ts,
+        input,
+        cached,
+        output,
+        reasoning,
+    })
+}
+
+/// Book half: the per-file cumulative diff + the global (ts,total) replay guard.
+/// `previous` is per-file (reset each file); `seen` is the cross-file guard, so a
+/// fork/resume that replays an earlier prefix advances the baseline but books
+/// nothing (T-fix-002) — identical whether the events came fresh or from cache.
+fn book_codex_event(
     acc: &mut Acc,
     start: i64,
     project: &str,
-    line: &str,
+    ev: &CodexEvent,
     previous: &mut Option<CodexUsage>,
     seen: &mut HashSet<(i64, u64)>,
 ) {
-    acc.stats.lines_read += 1;
-    if !line.contains("token_count") {
-        return;
-    }
-    acc.stats.candidate_lines += 1;
-    // Typed envelope — unknown large fields ignored by serde.
-    let Ok(env) = serde_json::from_str::<CodexEnvelope>(line.trim()) else {
-        return;
-    };
-    acc.stats.json_parse_ok += 1;
-    let Some((ts, current)) = codex_token_from_envelope(&env) else {
-        return;
-    };
+    let current = (ev.input, ev.cached, ev.output, ev.reasoning);
     let total = usage_total(current);
-    let duplicate = !seen.insert((ts, total));
+    let duplicate = !seen.insert((ev.ts, total));
     let prior = previous.replace(current).unwrap_or((0, 0, 0, 0));
-    if duplicate || ts < start || total.saturating_sub(usage_total(prior)) == 0 {
+    if duplicate || ev.ts < start || total.saturating_sub(usage_total(prior)) == 0 {
         return;
     }
     let (i, ca, o, r) = current;
@@ -864,8 +969,10 @@ fn process_codex_line(
     let dca = ca.saturating_sub(pca);
     let do_ = o.saturating_sub(po);
     let dr = r.saturating_sub(pr);
+    // 先算成本再 add:add_with_cost 借 &mut acc,無法在同一呼叫裡再借 acc.pricing。
+    let cost = codex_cost(&acc.pricing, "gpt-5-codex", di, dca, do_, dr);
     acc.add_with_cost(
-        ts,
+        ev.ts,
         "gpt-5-codex",
         "Codex CLI",
         project,
@@ -874,8 +981,24 @@ fn process_codex_line(
         dca,
         do_,
         dr,
-        codex_cost("gpt-5-codex", di, dca, do_, dr),
+        cost,
     );
+}
+
+/// Kept so the `scan_codex_lines` test helper still drives the exact production
+/// path: parse one line, then book it with the per-file / cross-file state.
+#[cfg(test)]
+fn process_codex_line(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    line: &str,
+    previous: &mut Option<CodexUsage>,
+    seen: &mut HashSet<(i64, u64)>,
+) {
+    if let Some(ev) = parse_codex_line(line, &mut acc.stats) {
+        book_codex_event(acc, start, project, &ev, previous, seen);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -928,7 +1051,28 @@ fn claude_rates(model: &str) -> Option<ClaudeRates> {
     Some(rates)
 }
 
+/// 單一查價入口(T-feat-006):override 精確 → override substring → vendored
+/// `claude_rates` 家族表 → blended `rate_per_mtok`。所有計價都收斂走這條鏈,新增
+/// 的 override 層只是插在最前面;沒有 override 檔時每一層都回退到原本的行為,故既有
+/// 金額斷言一字不變。
+fn resolve_rates(over: &PricingOverride, model: &str) -> RateSpec {
+    if let Some(spec) = over.lookup(model) {
+        return spec;
+    }
+    if let Some(r) = claude_rates(model) {
+        return RateSpec::Component {
+            input: r.input,
+            output: r.output,
+            cache_read: r.cache_read,
+            cache_write_5m: r.cache_write_5m,
+            cache_write_1h: r.cache_write_1h,
+        };
+    }
+    RateSpec::Blended(rate_per_mtok(model))
+}
+
 fn claude_cost(
+    over: &PricingOverride,
     model: &str,
     input: u64,
     output: u64,
@@ -936,24 +1080,57 @@ fn claude_cost(
     cache_write_5m: u64,
     cache_write_1h: u64,
 ) -> f64 {
-    let Some(r) = claude_rates(model) else {
-        return ((input + output + cache_read + cache_write_5m + cache_write_1h) as f64 / 1e6)
-            * rate_per_mtok(model);
-    };
-    (input as f64 * r.input
-        + output as f64 * r.output
-        + cache_read as f64 * r.cache_read
-        + cache_write_5m as f64 * r.cache_write_5m
-        + cache_write_1h as f64 * r.cache_write_1h)
-        / 1e6
+    match resolve_rates(over, model) {
+        RateSpec::Component {
+            input: ri,
+            output: ro,
+            cache_read: rcr,
+            cache_write_5m: rc5,
+            cache_write_1h: rc1,
+        } => {
+            (input as f64 * ri
+                + output as f64 * ro
+                + cache_read as f64 * rcr
+                + cache_write_5m as f64 * rc5
+                + cache_write_1h as f64 * rc1)
+                / 1e6
+        }
+        RateSpec::Blended(rate) => {
+            ((input + output + cache_read + cache_write_5m + cache_write_1h) as f64 / 1e6) * rate
+        }
+    }
 }
 
-fn codex_cost(model: &str, input: u64, cached: u64, output: u64, reasoning: u64) -> f64 {
-    let rate = rate_per_mtok(model);
-    (input.saturating_sub(cached) as f64 * rate
-        + cached as f64 * rate * 0.1
-        + (output + reasoning) as f64 * rate)
-        / 1e6
+/// Codex 的 `input` 累計已含 cached,計價把非快取部分與 cached 分開:blended 時 cached
+/// 打 0.1 折(沿用既有語意),分項時 cached 走 override 的 cache_read 費率,
+/// output+reasoning 走 output 費率。無 override 時 "gpt-5-codex" 落到 blended,行為不變。
+fn codex_cost(
+    over: &PricingOverride,
+    model: &str,
+    input: u64,
+    cached: u64,
+    output: u64,
+    reasoning: u64,
+) -> f64 {
+    match resolve_rates(over, model) {
+        RateSpec::Blended(rate) => {
+            (input.saturating_sub(cached) as f64 * rate
+                + cached as f64 * rate * 0.1
+                + (output + reasoning) as f64 * rate)
+                / 1e6
+        }
+        RateSpec::Component {
+            input: ri,
+            output: ro,
+            cache_read: rcr,
+            ..
+        } => {
+            (input.saturating_sub(cached) as f64 * ri
+                + cached as f64 * rcr
+                + (output + reasoning) as f64 * ro)
+                / 1e6
+        }
+    }
 }
 
 type CodexUsage = (u64, u64, u64, u64);
@@ -1065,7 +1242,7 @@ fn mtime_secs(p: &PathBuf) -> i64 {
 // (工具名是工具 schema 的一部分,非對話內容;此處只讀 name 與目錄名,不觸碰
 //  訊息文字/參數/檔案路徑細節。)
 
-fn scan_claude(acc: &mut Acc, start: i64) {
+fn scan_claude_cached(acc: &mut Acc, start: i64, run: &RefCell<CacheRun>) {
     let Some(home) = dirs::home_dir() else {
         return;
     };
@@ -1077,7 +1254,23 @@ fn scan_claude(acc: &mut Acc, start: i64) {
         return;
     };
     let mut seen = HashSet::new();
-    for p in paths.filter_map(Result::ok) {
+    scan_claude_paths(acc, start, paths.filter_map(Result::ok), Some(run), &mut seen);
+}
+
+/// Shared per-file Claude loop. `run` = Some to use the disk cache, None to
+/// always parse (the full-scan reference path used by the golden test). Project
+/// is derived from the path (parent slug), so it is recomputed on a hit rather
+/// than cached.
+fn scan_claude_paths<I>(
+    acc: &mut Acc,
+    start: i64,
+    paths: I,
+    run: Option<&RefCell<CacheRun>>,
+    seen: &mut HashSet<String>,
+) where
+    I: Iterator<Item = PathBuf>,
+{
+    for p in paths {
         acc.stats.files_considered += 1;
         if mtime_secs(&p) < start {
             continue;
@@ -1088,6 +1281,33 @@ fn scan_claude(acc: &mut Acc, start: i64) {
             .and_then(|d| d.file_name())
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
+        let pstr = p.to_string_lossy().into_owned();
+        let fp = match run {
+            Some(_) => match scan_cache::fingerprint(&p) {
+                Some(fp) => Some(fp),
+                None => continue,
+            },
+            None => None,
+        };
+
+        if let (Some(r), Some(fp)) = (run, fp.as_ref()) {
+            let hit = {
+                let mut g = r.borrow_mut();
+                match g.cache.get_matching(&pstr, fp) {
+                    Some(CachedFile::Claude(events)) => Some(events.clone()),
+                    _ => None,
+                }
+            };
+            if let Some(events) = hit {
+                r.borrow_mut().stats.hit += 1;
+                for ev in &events {
+                    book_claude_event(acc, start, &project, ev, seen);
+                }
+                continue;
+            }
+        }
+
+        // Miss (or caching disabled): parse the file.
         let Ok(meta) = fs::metadata(&p) else {
             continue;
         };
@@ -1096,19 +1316,37 @@ fn scan_claude(acc: &mut Acc, start: i64) {
         };
         acc.stats.files_read += 1;
         acc.stats.eligible_file_bytes += meta.len();
-        let mut reader = BufReader::new(file);
-        let mut buf = String::new();
-        loop {
-            buf.clear();
-            match reader.read_line(&mut buf) {
-                Ok(0) => break,
-                Ok(_) => {}
-                Err(_) => break,
-            }
-            let line = buf.trim_end_matches(['\r', '\n']);
-            scan_claude_line(acc, start, &project, line, &mut seen);
+        let events = parse_claude_file(file, &mut acc.stats);
+        for ev in &events {
+            book_claude_event(acc, start, &project, ev, seen);
+        }
+        if let (Some(r), Some(fp)) = (run, fp) {
+            let mut g = r.borrow_mut();
+            g.stats.parsed += 1;
+            g.cache.insert(pstr, fp, CachedFile::Claude(events));
         }
     }
+}
+
+/// Parse one Claude session file into booked-candidate events (the expensive
+/// JSON pass, cached so an unchanged file skips it).
+fn parse_claude_file(file: File, stats: &mut ScanStats) -> Vec<ClaudeEvent> {
+    let mut reader = BufReader::new(file);
+    let mut buf = String::new();
+    let mut out = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_line(&mut buf) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+        let line = buf.trim_end_matches(['\r', '\n']);
+        if let Some(ev) = parse_claude_line(line, stats) {
+            out.push(ev);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1165,46 +1403,35 @@ struct ClaudeContentPart {
     name: Option<String>,
 }
 
-fn scan_claude_line(
-    acc: &mut Acc,
-    start: i64,
-    project: &str,
-    line: &str,
-    seen: &mut HashSet<String>,
-) {
-    acc.stats.lines_read += 1;
+/// Parse half: line → booked-candidate event, no cross-file state. The `ts<start`
+/// gate and the dedup live in `book_claude_event` so a cached event stays
+/// range-independent (one cache serves today/week/month).
+fn parse_claude_line(line: &str, stats: &mut ScanStats) -> Option<ClaudeEvent> {
+    stats.lines_read += 1;
     if !line.contains("\"usage\"") {
-        return;
+        return None;
     }
-    acc.stats.candidate_lines += 1;
-    let Ok(env) = serde_json::from_str::<ClaudeEnvelope>(line) else {
-        return;
-    };
-    acc.stats.json_parse_ok += 1;
+    stats.candidate_lines += 1;
+    let env = serde_json::from_str::<ClaudeEnvelope>(line).ok()?;
+    stats.json_parse_ok += 1;
     let msg = env.message.as_ref();
-    let Some(usage) = msg.and_then(|m| m.usage.as_ref()) else {
-        return;
-    };
+    let usage = msg.and_then(|m| m.usage.as_ref())?;
     let ts = env
         .timestamp
         .as_deref()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|d| d.timestamp())
         .unwrap_or(0);
-    if ts < start {
-        return;
-    }
     let dedup_key = env
         .request_id
         .as_deref()
         .or_else(|| msg.and_then(|m| m.id.as_deref()))
-        .or(env.uuid.as_deref());
-    if dedup_key.is_some_and(|key| !seen.insert(key.to_string())) {
-        return;
-    }
+        .or(env.uuid.as_deref())
+        .map(|s| s.to_string());
     let model = msg
         .and_then(|m| m.model.as_deref())
-        .unwrap_or("claude");
+        .unwrap_or("claude")
+        .to_string();
     let mut tools: Vec<String> = Vec::new();
     if let Some(content) = msg.and_then(|m| m.content.as_ref()) {
         for it in content {
@@ -1215,7 +1442,7 @@ fn scan_claude_line(
             }
         }
     }
-    let kind = message_kind(&tools);
+    let kind = message_kind(&tools).to_string();
     let input = usage.input_tokens.unwrap_or(0);
     let output = usage.output_tokens.unwrap_or(0);
     let cache_read = usage.cache_read_input_tokens.unwrap_or(0);
@@ -1231,26 +1458,77 @@ fn scan_claude_line(
         .and_then(|c| c.ephemeral_5m_input_tokens)
         .unwrap_or_else(|| cache_creation.saturating_sub(cache_write_1h));
     let cached = cache_read + cache_creation;
-    let cost = claude_cost(
+    Some(ClaudeEvent {
+        dedup_key,
+        ts,
         model,
+        kind,
         input,
         output,
         cache_read,
         cache_write_5m,
         cache_write_1h,
+        cached,
+    })
+}
+
+/// Book half: the global dedup (T-fix-001 — requestId/message.id/uuid priority
+/// already resolved into `dedup_key`) + cost + aggregation. `seen` is the
+/// cross-file set, so a resume/fork copy of a message is counted once whether the
+/// event came fresh from a parse or from the cache — this is ticket 規格 5.
+fn book_claude_event(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    ev: &ClaudeEvent,
+    seen: &mut HashSet<String>,
+) {
+    // ts<start is checked before the dedup insert (as the pre-cache scan did), so
+    // an out-of-range copy never reserves a key an in-range copy needs.
+    if ev.ts < start {
+        return;
+    }
+    if let Some(key) = ev.dedup_key.as_deref() {
+        if !seen.insert(key.to_string()) {
+            return;
+        }
+    }
+    let cost = claude_cost(
+        &acc.pricing,
+        &ev.model,
+        ev.input,
+        ev.output,
+        ev.cache_read,
+        ev.cache_write_5m,
+        ev.cache_write_1h,
     );
     acc.add_with_cost(
-        ts,
-        model,
+        ev.ts,
+        &ev.model,
         "Claude Code",
         project,
-        Some(kind),
-        input,
-        cached,
-        output,
+        Some(ev.kind.as_str()),
+        ev.input,
+        ev.cached,
+        ev.output,
         0,
         cost,
     );
+}
+
+/// Kept so the `scan_claude_lines` test helper still drives the exact production
+/// path: parse one line, then book it with the cross-file dedup set.
+#[cfg(test)]
+fn scan_claude_line(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    line: &str,
+    seen: &mut HashSet<String>,
+) {
+    if let Some(ev) = parse_claude_line(line, &mut acc.stats) {
+        book_claude_event(acc, start, project, &ev, seen);
+    }
 }
 
 // ── Grok CLI: cumulative session totals (T-916) ───────────────────────────
@@ -1413,28 +1691,39 @@ fn scan_grok_lines<I>(
     }
 }
 
-fn process_grok_line(
+/// Parse half: line → Grok event (optional sticky model id and/or a cumulative
+/// token reading). Baseline diff + replay guard run in `book_grok_event`.
+fn parse_grok_line(line: &str, stats: &mut ScanStats) -> Option<GrokEvent> {
+    stats.lines_read += 1;
+    if !line.contains("totalTokens") && !line.contains("modelId") {
+        return None;
+    }
+    stats.candidate_lines += 1;
+    let env = serde_json::from_str::<GrokEnvelope>(line.trim()).ok()?;
+    stats.json_parse_ok += 1;
+    Some(GrokEvent {
+        model_update: grok_model_id_from_env(&env),
+        token: grok_token_from_env(&env),
+    })
+}
+
+/// Book half: sticky per-file model + per-file cumulative baseline + the global
+/// (ts,total) replay guard. A reset (value drop) is a new baseline, not a
+/// saturating-to-zero (T-916). `previous`/`current_model` are per-file; `seen` is
+/// cross-file — identical whether events came fresh or from cache.
+fn book_grok_event(
     acc: &mut Acc,
     start: i64,
     project: &str,
-    line: &str,
+    ev: &GrokEvent,
     previous: &mut u64,
     current_model: &mut String,
     seen: &mut HashSet<(i64, u64)>,
 ) {
-    acc.stats.lines_read += 1;
-    if !line.contains("totalTokens") && !line.contains("modelId") {
-        return;
+    if let Some(model) = ev.model_update.as_ref() {
+        *current_model = model.clone();
     }
-    acc.stats.candidate_lines += 1;
-    let Ok(env) = serde_json::from_str::<GrokEnvelope>(line.trim()) else {
-        return;
-    };
-    acc.stats.json_parse_ok += 1;
-    if let Some(model) = grok_model_id_from_env(&env) {
-        *current_model = model;
-    }
-    let Some((ts, cumulative)) = grok_token_from_env(&env) else {
+    let Some((ts, cumulative)) = ev.token else {
         return;
     };
     let duplicate = !seen.insert((ts, cumulative));
@@ -1450,7 +1739,43 @@ fn process_grok_line(
     acc.add_total_only(ts, current_model, "Grok CLI", project, delta, 0.0);
 }
 
-fn scan_grok(acc: &mut Acc, start: i64) {
+/// Kept so the `scan_grok_lines` test helper drives the exact production path.
+#[cfg(test)]
+fn process_grok_line(
+    acc: &mut Acc,
+    start: i64,
+    project: &str,
+    line: &str,
+    previous: &mut u64,
+    current_model: &mut String,
+    seen: &mut HashSet<(i64, u64)>,
+) {
+    if let Some(ev) = parse_grok_line(line, &mut acc.stats) {
+        book_grok_event(acc, start, project, &ev, previous, current_model, seen);
+    }
+}
+
+/// Parse one Grok updates file into events (the expensive JSON pass, cached).
+fn parse_grok_file(file: File, stats: &mut ScanStats) -> Vec<GrokEvent> {
+    let mut reader = BufReader::new(file);
+    let mut buf = String::new();
+    let mut out = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_line(&mut buf) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+        let line = buf.trim_end_matches(['\r', '\n']);
+        if let Some(ev) = parse_grok_line(line, stats) {
+            out.push(ev);
+        }
+    }
+    out
+}
+
+fn scan_grok_cached(acc: &mut Acc, start: i64, run: &RefCell<CacheRun>) {
     let Some(home) = dirs::home_dir() else {
         return;
     };
@@ -1462,12 +1787,62 @@ fn scan_grok(acc: &mut Acc, start: i64) {
         return;
     };
     let mut seen = HashSet::new();
-    for p in paths.filter_map(Result::ok) {
+    scan_grok_paths(acc, start, paths.filter_map(Result::ok), Some(run), &mut seen);
+}
+
+/// Shared per-file Grok loop. `run` = Some to use the disk cache, None to always
+/// parse. Project is derived from the path, so it is recomputed on a hit.
+fn scan_grok_paths<I>(
+    acc: &mut Acc,
+    start: i64,
+    paths: I,
+    run: Option<&RefCell<CacheRun>>,
+    seen: &mut HashSet<(i64, u64)>,
+) where
+    I: Iterator<Item = PathBuf>,
+{
+    for p in paths {
         acc.stats.files_considered += 1;
         if mtime_secs(&p) < start {
             continue;
         }
         let project = grok_project_from_path(&p);
+        let pstr = p.to_string_lossy().into_owned();
+        let fp = match run {
+            Some(_) => match scan_cache::fingerprint(&p) {
+                Some(fp) => Some(fp),
+                None => continue,
+            },
+            None => None,
+        };
+
+        if let (Some(r), Some(fp)) = (run, fp.as_ref()) {
+            let hit = {
+                let mut g = r.borrow_mut();
+                match g.cache.get_matching(&pstr, fp) {
+                    Some(CachedFile::Grok(events)) => Some(events.clone()),
+                    _ => None,
+                }
+            };
+            if let Some(events) = hit {
+                r.borrow_mut().stats.hit += 1;
+                let mut previous: u64 = 0;
+                let mut current_model = String::from("grok");
+                for ev in &events {
+                    book_grok_event(
+                        acc,
+                        start,
+                        &project,
+                        ev,
+                        &mut previous,
+                        &mut current_model,
+                        seen,
+                    );
+                }
+                continue;
+            }
+        }
+
         let Ok(meta) = fs::metadata(&p) else {
             continue;
         };
@@ -1476,27 +1851,24 @@ fn scan_grok(acc: &mut Acc, start: i64) {
         };
         acc.stats.files_read += 1;
         acc.stats.eligible_file_bytes += meta.len();
-        let mut reader = BufReader::new(file);
-        let mut buf = String::new();
+        let events = parse_grok_file(file, &mut acc.stats);
         let mut previous: u64 = 0;
         let mut current_model = String::from("grok");
-        loop {
-            buf.clear();
-            match reader.read_line(&mut buf) {
-                Ok(0) => break,
-                Ok(_) => {}
-                Err(_) => break,
-            }
-            let line = buf.trim_end_matches(['\r', '\n']);
-            process_grok_line(
+        for ev in &events {
+            book_grok_event(
                 acc,
                 start,
                 &project,
-                line,
+                ev,
                 &mut previous,
                 &mut current_model,
-                &mut seen,
+                seen,
             );
+        }
+        if let (Some(r), Some(fp)) = (run, fp) {
+            let mut g = r.borrow_mut();
+            g.stats.parsed += 1;
+            g.cache.insert(pstr, fp, CachedFile::Grok(events));
         }
     }
 }
@@ -1545,6 +1917,7 @@ mod tests {
             claude,
             |_, _| {},
             accounts,
+            Arc::new(PricingOverride::empty()),
         )
     }
 
@@ -2105,6 +2478,7 @@ mod tests {
             |_, _| {},
             |_, _| {},
             Vec::new(),
+            Arc::new(PricingOverride::empty()),
         );
         assert!(a.by_agent.is_empty());
         assert_eq!(a.total_tokens, 0);
@@ -2406,6 +2780,381 @@ mod tests {
 
         let tied = record_acc(0, &[("2026-07-16", 9, 101), ("2026-07-17", 10, 101)]);
         assert!(!records_for(&tied, today, 10).pr_now);
+    }
+
+    // ── T-feat-006 pricing override: the override → vendored → blended chain ──
+    //
+    // These drive real cost through `scan_claude_line` (the same path production
+    // uses) with an injected override table, and assert the resulting $ amount —
+    // a lookup that never reaches the cost is the bug this ticket guards against,
+    // so the assertions are on money, not on `lookup` in isolation.
+
+    /// Total est. cost for one input-only Claude message of `tokens` under `over`.
+    /// Input-only so the amount is just `tokens × input_rate / 1e6`, making the
+    /// active rate directly readable from the assertion.
+    fn claude_cost_with(over: Arc<PricingOverride>, model: &str, tokens: u64) -> f64 {
+        let mut acc = Acc::new(1_782_000_000);
+        acc.pricing = over;
+        let mut seen = HashSet::new();
+        let line = serde_json::json!({
+            "timestamp": "2026-07-17T00:00:00Z",
+            "message": { "model": model, "usage": { "input_tokens": tokens } }
+        })
+        .to_string();
+        scan_claude_lines(&mut acc, 0, "p", vec![line].into_iter(), &mut seen);
+        acc.days.values().map(|d| d.cost).sum()
+    }
+
+    /// 精確命中蓋過 vendored:opus vendored input = $5/Mtok,override 到 $10/Mtok。
+    #[test]
+    fn override_exact_hit_overrides_vendored_amount() {
+        let vendored = claude_cost_with(
+            Arc::new(PricingOverride::empty()),
+            "claude-opus-4-8",
+            1_000_000,
+        );
+        assert!((vendored - 5.0).abs() < 1e-9, "vendored opus 應為 $5:{vendored}");
+
+        let over = Arc::new(PricingOverride::from_json_str(
+            r#"{ "models": { "claude-opus-4-8": { "input": 10.0, "output": 50.0 } } }"#,
+        ));
+        let overridden = claude_cost_with(over, "claude-opus-4-8", 1_000_000);
+        assert!((overridden - 10.0).abs() < 1e-9, "override 應蓋成 $10:{overridden}");
+    }
+
+    /// 混合檔:壞條目(負 input)被跳過、好條目生效,兩者互不影響。
+    #[test]
+    fn override_mixed_file_skips_bad_keeps_good() {
+        let over = Arc::new(PricingOverride::from_json_str(
+            r#"{ "models": {
+                "claude-opus-4-8": { "input": 10.0, "output": 50.0 },
+                "claude-sonnet-4-x": { "input": -3.0, "output": 15.0 }
+            } }"#,
+        ));
+        // 好條目:opus 走 override input=10 → $10。
+        let good = claude_cost_with(over.clone(), "claude-opus-4-8", 1_000_000);
+        assert!((good - 10.0).abs() < 1e-9, "好條目應生效:{good}");
+        // 壞條目(負 input)被跳過:sonnet 落回 vendored input=3 → $3。
+        let fell_back = claude_cost_with(over, "claude-sonnet-4-x", 1_000_000);
+        assert!((fell_back - 3.0).abs() < 1e-9, "壞條目應退 vendored $3:{fell_back}");
+    }
+
+    /// 整檔壞 JSON → 全部退 vendored,結果與無檔一致(逐 model 比對成本)。
+    #[test]
+    fn override_whole_bad_json_matches_no_file() {
+        let bad = Arc::new(PricingOverride::from_json_str("not json {{{"));
+        let none = Arc::new(PricingOverride::empty());
+        for model in ["claude-opus-4-8", "claude-sonnet-4-x", "claude-haiku-x"] {
+            let with_bad = claude_cost_with(bad.clone(), model, 1_000_000);
+            let no_file = claude_cost_with(none.clone(), model, 1_000_000);
+            assert!(
+                (with_bad - no_file).abs() < 1e-12,
+                "壞檔成本必須與無檔一致:{model} {with_bad} vs {no_file}"
+            );
+        }
+    }
+
+    /// 優先序:精確 > override substring > vendored(sonnet vendored=3,substring=7,精確=20)。
+    #[test]
+    fn override_priority_exact_beats_substring_beats_vendored() {
+        let model = "claude-sonnet-4-x";
+        let vendored = claude_cost_with(Arc::new(PricingOverride::empty()), model, 1_000_000);
+        assert!((vendored - 3.0).abs() < 1e-9, "vendored sonnet 應為 $3:{vendored}");
+
+        // substring key "sonnet" 蓋過 vendored(7 > 3)。
+        let sub = Arc::new(PricingOverride::from_json_str(
+            r#"{ "models": { "sonnet": { "input": 7.0, "output": 15.0 } } }"#,
+        ));
+        let sub_cost = claude_cost_with(sub, model, 1_000_000);
+        assert!((sub_cost - 7.0).abs() < 1e-9, "substring 應蓋成 $7:{sub_cost}");
+
+        // 同時有 substring(7)與精確 id(20)→ 精確勝出。
+        let both = Arc::new(PricingOverride::from_json_str(
+            r#"{ "models": {
+                "sonnet": { "input": 7.0, "output": 15.0 },
+                "claude-sonnet-4-x": { "input": 20.0, "output": 15.0 }
+            } }"#,
+        ));
+        let exact_cost = claude_cost_with(both, model, 1_000_000);
+        assert!((exact_cost - 20.0).abs() < 1e-9, "精確應蓋成 $20:{exact_cost}");
+    }
+
+    // ── T-perf-004 scan cache: golden equality, incremental, dedup, rebuild ──
+    //
+    // These drive the real Claude scan over on-disk fixture files (temp dir) so
+    // the fingerprint, gzip round-trip and cross-file dedup are all exercised.
+    // Equality is on the serialized Analytics (serde normalises HashMap key
+    // order to a sorted object), so "逐欄位相等" is a single Value comparison.
+
+    fn unique_temp_dir(tag: &str) -> PathBuf {
+        let n = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
+        let d = std::env::temp_dir().join(format!(
+            "atoll-scan-test-{tag}-{}-{}",
+            std::process::id(),
+            n
+        ));
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn cleanup(dir: &Path) {
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn claude_usage_line(ts: i64, req: Option<&str>, model: &str, input: u64) -> String {
+        let tsr = chrono::DateTime::from_timestamp(ts, 0).unwrap().to_rfc3339();
+        let mut v = serde_json::json!({
+            "timestamp": tsr,
+            "message": { "model": model, "usage": { "input_tokens": input } }
+        });
+        if let Some(r) = req {
+            v["requestId"] = serde_json::json!(r);
+        }
+        v.to_string()
+    }
+
+    /// Three files across two project-slug dirs. All timestamps are >600s old so
+    /// `recent_tokens`/`tok_per_min` stay 0 and no now-boundary flake creeps into
+    /// the field-for-field comparison.
+    fn write_claude_fixture(dir: &Path) -> Vec<PathBuf> {
+        let now = chrono::Utc::now().timestamp();
+        let proj_a = dir.join("proj-a");
+        let proj_b = dir.join("proj-b");
+        fs::create_dir_all(&proj_a).unwrap();
+        fs::create_dir_all(&proj_b).unwrap();
+        let f1 = proj_a.join("sess1.jsonl");
+        fs::write(
+            &f1,
+            format!(
+                "{}\n{}\n",
+                claude_usage_line(now - 7200, Some("req-1"), "claude-opus-4-8", 1000),
+                claude_usage_line(now - 7000, Some("req-2"), "claude-sonnet-4-x", 500),
+            ),
+        )
+        .unwrap();
+        let f2 = proj_a.join("sess2.jsonl");
+        fs::write(
+            &f2,
+            format!(
+                "{}\n",
+                claude_usage_line(now - 6000, Some("req-3"), "claude-opus-4-8", 200),
+            ),
+        )
+        .unwrap();
+        let f3 = proj_b.join("sess3.jsonl");
+        fs::write(
+            &f3,
+            format!(
+                "{}\n{}\n",
+                claude_usage_line(now - 5000, None, "claude-haiku-x", 50),
+                claude_usage_line(now - 4000, Some("req-4"), "claude-opus-4-8", 777),
+            ),
+        )
+        .unwrap();
+        vec![f1, f2, f3]
+    }
+
+    fn fresh_run(cache: ScanCache) -> RefCell<CacheRun> {
+        RefCell::new(CacheRun {
+            cache,
+            stats: CacheStats::default(),
+        })
+    }
+
+    /// Real Claude scan over an explicit path list (temp fixtures) so the golden
+    /// tests never touch the user's home dir. `run` = None → full scan.
+    fn compute_claude_paths(
+        range: &str,
+        paths: &[PathBuf],
+        run: Option<&RefCell<CacheRun>>,
+    ) -> Analytics {
+        compute_routed(
+            range,
+            &to_sources(&["claude"]),
+            no_codex,
+            |acc, start| {
+                let mut seen = HashSet::new();
+                scan_claude_paths(acc, start, paths.iter().cloned(), run, &mut seen);
+            },
+            |_, _| {},
+            Vec::new(),
+            Arc::new(PricingOverride::empty()),
+        )
+    }
+
+    fn value_of(a: &Analytics) -> serde_json::Value {
+        serde_json::to_value(a).unwrap()
+    }
+
+    /// The soul of the ticket: a full scan and a "build cache, reload from disk,
+    /// second round all-hit" scan must produce byte-identical Analytics.
+    #[test]
+    fn cache_all_hit_matches_full_scan_field_for_field() {
+        let dir = unique_temp_dir("golden");
+        let files = write_claude_fixture(&dir);
+        let cache_file = dir.join("scan-cache.json.gz");
+
+        let full = compute_claude_paths("month", &files, None);
+
+        // Round 1: empty cache → every file parsed; already equals full.
+        {
+            let run = fresh_run(ScanCache::empty());
+            let a1 = compute_claude_paths("month", &files, Some(&run));
+            assert_eq!(value_of(&a1), value_of(&full), "round-1 parse must equal full scan");
+            let run = run.into_inner();
+            assert_eq!(run.stats.parsed as usize, files.len());
+            assert_eq!(run.stats.hit, 0);
+            run.cache.save_to(&cache_file);
+        }
+
+        // Round 2: reload from disk (gzip + serde round-trip) → every file a hit.
+        let run = fresh_run(ScanCache::load_from(&cache_file));
+        let a2 = compute_claude_paths("month", &files, Some(&run));
+        assert_eq!(
+            value_of(&a2),
+            value_of(&full),
+            "second-round all-hit must equal full scan byte for byte"
+        );
+        let run = run.into_inner();
+        assert_eq!(run.stats.hit as usize, files.len(), "every file must hit");
+        assert_eq!(run.stats.parsed, 0, "nothing should re-parse on the second round");
+
+        cleanup(&dir);
+    }
+
+    /// Append a line to one file → only that file re-parses; total equals a fresh
+    /// full scan of the appended set.
+    #[test]
+    fn appending_a_line_reparses_only_that_file() {
+        let dir = unique_temp_dir("append");
+        let files = write_claude_fixture(&dir);
+        let cache_file = dir.join("scan-cache.json.gz");
+
+        {
+            let run = fresh_run(ScanCache::empty());
+            compute_claude_paths("month", &files, Some(&run));
+            run.into_inner().cache.save_to(&cache_file);
+        }
+
+        let now = chrono::Utc::now().timestamp();
+        {
+            use std::io::Write;
+            let mut f = fs::OpenOptions::new().append(true).open(&files[0]).unwrap();
+            writeln!(
+                f,
+                "{}",
+                claude_usage_line(now - 3600, Some("appended-req"), "claude-opus-4-8", 4242)
+            )
+            .unwrap();
+        }
+
+        let full = compute_claude_paths("month", &files, None);
+        let run = fresh_run(ScanCache::load_from(&cache_file));
+        let a = compute_claude_paths("month", &files, Some(&run));
+        assert_eq!(value_of(&a), value_of(&full), "incremental result must equal a fresh full scan");
+        let run = run.into_inner();
+        assert_eq!(run.stats.parsed, 1, "only the appended file re-parses");
+        assert_eq!(run.stats.hit as usize, files.len() - 1, "the rest hit");
+
+        cleanup(&dir);
+    }
+
+    /// Cross-file duplicate requestId (fork/resume) must count once on the cache
+    /// path — ticket 規格 5, the biggest correctness risk.
+    #[test]
+    fn cross_file_duplicate_request_id_counts_once_on_cache_hit() {
+        let dir = unique_temp_dir("dup");
+        let now = chrono::Utc::now().timestamp();
+        let proj = dir.join("proj");
+        fs::create_dir_all(&proj).unwrap();
+        let f1 = proj.join("a.jsonl");
+        let f2 = proj.join("b.jsonl");
+        // "dup-req" appears in both files with the same tokens (a real fork copy).
+        fs::write(
+            &f1,
+            format!(
+                "{}\n",
+                claude_usage_line(now - 7200, Some("dup-req"), "claude-opus-4-8", 1000)
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &f2,
+            format!(
+                "{}\n{}\n",
+                claude_usage_line(now - 7200, Some("dup-req"), "claude-opus-4-8", 1000),
+                claude_usage_line(now - 6000, Some("uniq-req"), "claude-opus-4-8", 500),
+            ),
+        )
+        .unwrap();
+        let files = vec![f1, f2];
+        let cache_file = dir.join("scan-cache.json.gz");
+
+        let full = compute_claude_paths("month", &files, None);
+        assert_eq!(full.total_tokens, 1500, "dup counted once (1000) + 500");
+
+        {
+            let run = fresh_run(ScanCache::empty());
+            compute_claude_paths("month", &files, Some(&run));
+            run.into_inner().cache.save_to(&cache_file);
+        }
+        let run = fresh_run(ScanCache::load_from(&cache_file));
+        let cached = compute_claude_paths("month", &files, Some(&run));
+        assert_eq!(
+            cached.total_tokens, 1500,
+            "cache-hit path must not double-count a cross-file requestId"
+        );
+        assert_eq!(value_of(&cached), value_of(&full));
+        assert_eq!(run.into_inner().stats.hit, 2);
+
+        cleanup(&dir);
+    }
+
+    /// A corrupt/truncated cache file must silently rebuild to the correct result.
+    #[test]
+    fn corrupt_cache_file_rebuilds_to_correct_result() {
+        let dir = unique_temp_dir("corrupt");
+        let files = write_claude_fixture(&dir);
+        let cache_file = dir.join("scan-cache.json.gz");
+        fs::write(&cache_file, b"garbage, not gzip, not json {{{").unwrap();
+
+        let full = compute_claude_paths("month", &files, None);
+        let run = fresh_run(ScanCache::load_from(&cache_file));
+        let a = compute_claude_paths("month", &files, Some(&run));
+        assert_eq!(value_of(&a), value_of(&full), "corrupt cache must rebuild correctly");
+        let run = run.into_inner();
+        assert_eq!(run.stats.hit, 0, "corrupt cache → all miss");
+        assert_eq!(run.stats.parsed as usize, files.len());
+
+        cleanup(&dir);
+    }
+
+    /// A bumped schema invalidates the whole cache: a file written under one
+    /// schema is discarded when the code's `SCHEMA` no longer matches, forcing a
+    /// full rebuild. Simulated by loading a cache whose stored schema differs.
+    #[test]
+    fn schema_mismatch_invalidates_and_rebuilds() {
+        let dir = unique_temp_dir("schema");
+        let files = write_claude_fixture(&dir);
+        let cache_file = dir.join("scan-cache.json.gz");
+
+        // Build a valid cache, then corrupt only its schema tag by re-writing it
+        // with a bumped schema via the cache module's own encoder path.
+        {
+            let run = fresh_run(ScanCache::empty());
+            compute_claude_paths("month", &files, Some(&run));
+            run.into_inner().cache.save_with_schema(&cache_file, scan_cache::SCHEMA + 1);
+        }
+
+        let full = compute_claude_paths("month", &files, None);
+        let run = fresh_run(ScanCache::load_from(&cache_file));
+        let a = compute_claude_paths("month", &files, Some(&run));
+        assert_eq!(value_of(&a), value_of(&full), "schema bump must rebuild correctly");
+        let run = run.into_inner();
+        assert_eq!(run.stats.hit, 0, "schema mismatch → whole cache dropped");
+        assert_eq!(run.stats.parsed as usize, files.len());
+
+        cleanup(&dir);
     }
 }
 
