@@ -1,0 +1,270 @@
+{
+  "version": 1,
+  "_doc": [
+    "Rust<->TS crosscheck fixture (T-test-001). One shared scenario set, loaded by",
+    "src-tauri crosscheck_tests.rs and src/crosscheck.test.ts. Each end computes what it can",
+    "and asserts against expect.backend / expect.frontend respectively.",
+    "TIME IS RELATIVE: input.subject.resets_in_secs and samples[][0] are seconds relative to",
+    "each end's own fixed fake `now` (backend: NOW_BE constant; frontend: local Thu 15 Jan 2026",
+    "10:00). No absolute timestamps live in this file so cases never expire.",
+    "samples are [t_secs_from_now, util%]; the last sample sits at t=0 (== subject.util).",
+    "backend.runway_secs asserted with +/-1s tolerance (float truncation); pace.deficit +/-0.05.",
+    "expect.frontend.resetClock is null when a case does not pin a wall-clock (only the three",
+    "clock cases anchor to local wall time). expect.frontend.pick == null renders '-' (v0.3.0 rule)."
+  ],
+  "cases": [
+    {
+      "name": "normal_reset_today_clock",
+      "note": "Fresh 5h window, reset later today 14:30 local; exercises fmtResetClock same-day + a live normal limit with a projectable runway.",
+      "input": {
+        "subject": {
+          "id": "codex.5h", "provider": "codex", "label": "Codex 5h",
+          "util": 20.0, "window_secs": 18000, "resets_in_secs": 16200, "status": "normal",
+          "samples": [[-100, 10.0], [-50, 15.0], [0, 20.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [ { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 20.0, "status": "normal" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "normal", "pace": { "deficit": 10.0, "in_deficit": true }, "runway_secs": 800 },
+        "frontend": { "pick": "codex.5h", "islandText": "5h 80%", "resetRel": "4h 30m", "resetClock": { "en": "2:30 PM", "zh-TW": "14:30" } }
+      }
+    },
+    {
+      "name": "in_deficit_at_90_near_boundary",
+      "note": "util 90 -> half-way through window but 90% burned: clearly in_deficit; also the 90% near boundary (engine has no separate crit tier, still 'near').",
+      "input": {
+        "subject": {
+          "id": "codex.5h", "provider": "codex", "label": "Codex 5h",
+          "util": 90.0, "window_secs": 18000, "resets_in_secs": 9000, "status": "normal",
+          "samples": [[-100, 80.0], [-50, 85.0], [0, 90.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [ { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 90.0, "status": "near" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "near", "pace": { "deficit": 40.0, "in_deficit": true }, "runway_secs": 100 },
+        "frontend": { "pick": "codex.5h", "islandText": "5h 10%", "resetRel": "2h 30m", "resetClock": null }
+      }
+    },
+    {
+      "name": "threshold_below_75_normal",
+      "note": "util 74 -> just under the 75 near threshold, must stay normal.",
+      "input": {
+        "subject": {
+          "id": "codex.5h", "provider": "codex", "label": "Codex 5h",
+          "util": 74.0, "window_secs": 18000, "resets_in_secs": 9000, "status": "normal",
+          "samples": [[-100, 64.0], [-50, 69.0], [0, 74.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [ { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 74.0, "status": "normal" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "normal", "pace": { "deficit": 24.0, "in_deficit": true }, "runway_secs": 260 },
+        "frontend": { "pick": "codex.5h", "islandText": "5h 26%", "resetRel": "2h 30m", "resetClock": null }
+      }
+    },
+    {
+      "name": "threshold_at_75_near",
+      "note": "util 75 -> exactly the 75 near threshold, flips to near.",
+      "input": {
+        "subject": {
+          "id": "codex.5h", "provider": "codex", "label": "Codex 5h",
+          "util": 75.0, "window_secs": 18000, "resets_in_secs": 9000, "status": "normal",
+          "samples": [[-100, 65.0], [-50, 70.0], [0, 75.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [ { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 75.0, "status": "near" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "near", "pace": { "deficit": 25.0, "in_deficit": true }, "runway_secs": 250 },
+        "frontend": { "pick": "codex.5h", "islandText": "5h 25%", "resetRel": "2h 30m", "resetClock": null }
+      }
+    },
+    {
+      "name": "locked_reset_tomorrow_clock",
+      "note": "Weekly window fully burned (util 100 -> locked), resets tomorrow 09:00 local; fmtResetClock tomorrow marker + fmtResetRel '23h'.",
+      "input": {
+        "subject": {
+          "id": "codex.week", "provider": "codex", "label": "Codex Weekly",
+          "util": 100.0, "window_secs": 604800, "resets_in_secs": 82800, "status": "normal",
+          "samples": [[-100, 90.0], [-50, 95.0], [0, 100.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [ { "id": "codex.week", "provider": "codex", "label": "Codex Weekly", "util": 100.0, "status": "locked" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "locked", "pace": { "deficit": 13.6905, "in_deficit": true }, "runway_secs": 0 },
+        "frontend": { "pick": "codex.week", "islandText": "wk 0%", "resetRel": "23h", "resetClock": { "en": "Tmrw 9:00 AM", "zh-TW": "明 09:00" } }
+      }
+    },
+    {
+      "name": "locked_reset_cross_week_clock",
+      "note": "Anthropic weekly locked, resets Sunday 08:00 local (2d22h out); fmtResetClock weekday-table branch (Sun / 週日) + fmtResetRel '2d 22h'.",
+      "input": {
+        "subject": {
+          "id": "cc.week", "provider": "anthropic", "label": "Weekly all models",
+          "util": 100.0, "window_secs": 604800, "resets_in_secs": 252000, "status": "normal",
+          "samples": [[-100, 90.0], [-50, 95.0], [0, 100.0]]
+        },
+        "island": {
+          "provider": "anthropic", "pin": "auto",
+          "limits": [ { "id": "cc.week", "provider": "anthropic", "label": "Weekly all models", "util": 100.0, "status": "locked" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "locked", "pace": { "deficit": 41.6667, "in_deficit": true }, "runway_secs": 0 },
+        "frontend": { "pick": "cc.week", "islandText": "wk 0%", "resetRel": "2d 22h", "resetClock": { "en": "Sun 8:00 AM", "zh-TW": "週日 08:00" } }
+      }
+    },
+    {
+      "name": "pin_5h_no_data_dash",
+      "note": "v0.3.0 iron rule: pin '5h' but the snapshot has only the weekly window -> pickIslandLimit returns null (renders '-'), NEVER silently falls back to auto.",
+      "input": {
+        "subject": {
+          "id": "codex.week", "provider": "codex", "label": "Codex Weekly",
+          "util": 50.0, "window_secs": 604800, "resets_in_secs": 100000, "status": "normal",
+          "samples": [[-100, 40.0], [-50, 45.0], [0, 50.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "5h",
+          "limits": [ { "id": "codex.week", "provider": "codex", "label": "Codex Weekly", "util": 50.0, "status": "normal" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "normal", "pace": { "deficit": -33.4656, "in_deficit": false }, "runway_secs": 500 },
+        "frontend": { "pick": null, "islandText": null, "resetRel": null, "resetClock": null }
+      }
+    },
+    {
+      "name": "pin_auto_picks_worst_locked",
+      "note": "auto pin ranks locked > near > highest util: picks the locked weekly over the near 5h.",
+      "input": {
+        "subject": {
+          "id": "codex.week", "provider": "codex", "label": "Codex Weekly",
+          "util": 100.0, "window_secs": 604800, "resets_in_secs": 50000, "status": "normal",
+          "samples": [[-100, 90.0], [-50, 95.0], [0, 100.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [
+            { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 80.0, "status": "near" },
+            { "id": "codex.week", "provider": "codex", "label": "Codex Weekly", "util": 100.0, "status": "locked" }
+          ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "locked", "pace": { "deficit": 8.2672, "in_deficit": true }, "runway_secs": 0 },
+        "frontend": { "pick": "codex.week", "islandText": "wk 0%", "resetRel": null, "resetClock": null }
+      }
+    },
+    {
+      "name": "pin_5h_explicit_on_pace",
+      "note": "pin '5h' selects the 5h window even though the weekly is locked; also the on-pace case (deficit ~0, in_deficit false).",
+      "input": {
+        "subject": {
+          "id": "codex.5h", "provider": "codex", "label": "Codex 5h",
+          "util": 60.0, "window_secs": 18000, "resets_in_secs": 7200, "status": "normal",
+          "samples": [[-100, 50.0], [-50, 55.0], [0, 60.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "5h",
+          "limits": [
+            { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 60.0, "status": "normal" },
+            { "id": "codex.week", "provider": "codex", "label": "Codex Weekly", "util": 100.0, "status": "locked" }
+          ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "normal", "pace": { "deficit": 0.0, "in_deficit": false }, "runway_secs": 400 },
+        "frontend": { "pick": "codex.5h", "islandText": "5h 40%", "resetRel": "2h", "resetClock": null }
+      }
+    },
+    {
+      "name": "stale_no_projection",
+      "note": "Degraded 'stale' incoming status: engine records no sample and computes no pace/runway; island shows the last-known number tagged ' est.'.",
+      "input": {
+        "subject": {
+          "id": "codex.5h", "provider": "codex", "label": "Codex 5h",
+          "util": 30.0, "window_secs": 18000, "resets_in_secs": 6000, "status": "stale",
+          "samples": []
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [ { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 30.0, "status": "stale" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "stale", "pace": null, "runway_secs": null },
+        "frontend": { "pick": "codex.5h", "islandText": "5h 70% est.", "resetRel": "1h 40m", "resetClock": null }
+      }
+    },
+    {
+      "name": "source_failed_dash",
+      "note": "Degraded 'source_failed': util is a placeholder, island shows '-' (unknown), never a fabricated 0/100%.",
+      "input": {
+        "subject": {
+          "id": "codex.5h", "provider": "codex", "label": "Codex 5h",
+          "util": 0.0, "window_secs": 18000, "resets_in_secs": 0, "status": "source_failed",
+          "samples": []
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [ { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 0.0, "status": "source_failed" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "source_failed", "pace": null, "runway_secs": null },
+        "frontend": { "pick": "codex.5h", "islandText": "5h —", "resetRel": null, "resetClock": null }
+      }
+    },
+    {
+      "name": "idle_flat_no_runway",
+      "note": "UX Spec 7 'insufficient projection': live samples are flat (slope <= idle) so runway is None (island shows reset countdown instead of a fabricated number); status stays normal.",
+      "input": {
+        "subject": {
+          "id": "codex.5h", "provider": "codex", "label": "Codex 5h",
+          "util": 40.0, "window_secs": 18000, "resets_in_secs": 9000, "status": "normal",
+          "samples": [[-100, 40.0], [-50, 40.0], [0, 40.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [ { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 40.0, "status": "normal" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "normal", "pace": { "deficit": -10.0, "in_deficit": false }, "runway_secs": null },
+        "frontend": { "pick": "codex.5h", "islandText": "5h 60%", "resetRel": "2h 30m", "resetClock": null }
+      }
+    },
+    {
+      "name": "insufficient_samples_no_runway",
+      "note": "UX Spec 7 'insufficient projection': only 2 samples (< MIN_SAMPLES_FOR_RUNWAY) so runway is None though pace is still computable; status normal.",
+      "input": {
+        "subject": {
+          "id": "codex.5h", "provider": "codex", "label": "Codex 5h",
+          "util": 40.0, "window_secs": 18000, "resets_in_secs": 9000, "status": "normal",
+          "samples": [[-50, 38.0], [0, 40.0]]
+        },
+        "island": {
+          "provider": "codex", "pin": "auto",
+          "limits": [ { "id": "codex.5h", "provider": "codex", "label": "Codex 5h", "util": 40.0, "status": "normal" } ]
+        }
+      },
+      "expect": {
+        "backend": { "status": "normal", "pace": { "deficit": -10.0, "in_deficit": false }, "runway_secs": null },
+        "frontend": { "pick": "codex.5h", "islandText": "5h 60%", "resetRel": "2h 30m", "resetClock": null }
+      }
+    }
+  ]
+}

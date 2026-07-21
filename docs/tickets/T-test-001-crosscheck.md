@@ -1,5 +1,5 @@
 # T-test-001 — Rust↔TS 交叉驗證:共用 fixture 防兩端邏輯漂移
-status: todo
+status: done
 
 `只實作本票行為與資料。純測試票,不改任何產品行為。對照 PLAN flow。`
 

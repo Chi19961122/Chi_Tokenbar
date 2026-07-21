@@ -2,6 +2,7 @@
 
 mod analytics;
 mod burnrate;
+#[cfg(test)] mod crosscheck_tests;
 mod config;
 mod engine;
 mod model;
