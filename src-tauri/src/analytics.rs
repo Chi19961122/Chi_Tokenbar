@@ -3,12 +3,14 @@
 //! no undocumented API, no risk. Days and hours are bucketed in the user's
 //! local timezone so the charts read on the same clock as their labels (F-15).
 
+use crate::pricing::{PricingOverride, RateSpec};
 use chrono::{Datelike, TimeZone, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Per-scan counters for opt-in diagnostics (`TOKENBAR_DEBUG`).
@@ -265,6 +267,9 @@ struct Acc {
     recent_tokens: u64,
     now: i64,
     stats: ScanStats,
+    /// 查價用的本機 override 表(T-feat-006)。預設空表 = 純 vendored,所以既有
+    /// 測試與 stub 路徑行為不變;真實掃描由 `compute_with` 塞入 `pricing::current()`。
+    pricing: Arc<PricingOverride>,
 }
 
 #[derive(Default)]
@@ -294,6 +299,7 @@ impl Acc {
             recent_tokens: 0,
             now,
             stats: ScanStats::default(),
+            pricing: Arc::new(PricingOverride::empty()),
         }
     }
 
@@ -576,6 +582,8 @@ pub fn source_fingerprint(range: &str, sources: &[String]) -> u64 {
 /// Skips the scan outright rather than scanning then discarding: `scan_*` walks
 /// a whole directory tree, and an unselected source's files are pure waste.
 pub fn compute_with(range: &str, sources: &[String]) -> Analytics {
+    // 每輪掃描前取一次 override 表:pricing::current() 內部 stat mtime,沒變就回快取,
+    // 變了才重讀(檔案不存在 = 空表 = 純 vendored,零成本路徑)。
     compute_routed(
         range,
         sources,
@@ -583,6 +591,7 @@ pub fn compute_with(range: &str, sources: &[String]) -> Analytics {
         scan_claude,
         scan_grok,
         detect_accounts(),
+        crate::pricing::current(),
     )
 }
 
@@ -600,6 +609,7 @@ fn compute_routed<C, L, K>(
     scan_claude_fn: L,
     scan_grok_fn: K,
     accounts: Vec<Account>,
+    pricing: Arc<PricingOverride>,
 ) -> Analytics
 where
     C: FnOnce(&mut Acc, i64) -> u32,
@@ -612,6 +622,8 @@ where
     let start = range_start(range);
 
     let mut acc = Acc::new(now);
+    // 在任何 scanner 跑之前塞入 override 表,cost 才會走 override → vendored → blended 鏈。
+    acc.pricing = pricing;
     // Each source scans iff selected. A source with no local data simply
     // contributes nothing (no fake 0 card — `book` drops zero-token rows and
     // byAgent only holds keys that actually had usage).
@@ -864,6 +876,8 @@ fn process_codex_line(
     let dca = ca.saturating_sub(pca);
     let do_ = o.saturating_sub(po);
     let dr = r.saturating_sub(pr);
+    // 先算成本再 add:add_with_cost 借 &mut acc,無法在同一呼叫裡再借 acc.pricing。
+    let cost = codex_cost(&acc.pricing, "gpt-5-codex", di, dca, do_, dr);
     acc.add_with_cost(
         ts,
         "gpt-5-codex",
@@ -874,7 +888,7 @@ fn process_codex_line(
         dca,
         do_,
         dr,
-        codex_cost("gpt-5-codex", di, dca, do_, dr),
+        cost,
     );
 }
 
@@ -928,7 +942,28 @@ fn claude_rates(model: &str) -> Option<ClaudeRates> {
     Some(rates)
 }
 
+/// 單一查價入口(T-feat-006):override 精確 → override substring → vendored
+/// `claude_rates` 家族表 → blended `rate_per_mtok`。所有計價都收斂走這條鏈,新增
+/// 的 override 層只是插在最前面;沒有 override 檔時每一層都回退到原本的行為,故既有
+/// 金額斷言一字不變。
+fn resolve_rates(over: &PricingOverride, model: &str) -> RateSpec {
+    if let Some(spec) = over.lookup(model) {
+        return spec;
+    }
+    if let Some(r) = claude_rates(model) {
+        return RateSpec::Component {
+            input: r.input,
+            output: r.output,
+            cache_read: r.cache_read,
+            cache_write_5m: r.cache_write_5m,
+            cache_write_1h: r.cache_write_1h,
+        };
+    }
+    RateSpec::Blended(rate_per_mtok(model))
+}
+
 fn claude_cost(
+    over: &PricingOverride,
     model: &str,
     input: u64,
     output: u64,
@@ -936,24 +971,57 @@ fn claude_cost(
     cache_write_5m: u64,
     cache_write_1h: u64,
 ) -> f64 {
-    let Some(r) = claude_rates(model) else {
-        return ((input + output + cache_read + cache_write_5m + cache_write_1h) as f64 / 1e6)
-            * rate_per_mtok(model);
-    };
-    (input as f64 * r.input
-        + output as f64 * r.output
-        + cache_read as f64 * r.cache_read
-        + cache_write_5m as f64 * r.cache_write_5m
-        + cache_write_1h as f64 * r.cache_write_1h)
-        / 1e6
+    match resolve_rates(over, model) {
+        RateSpec::Component {
+            input: ri,
+            output: ro,
+            cache_read: rcr,
+            cache_write_5m: rc5,
+            cache_write_1h: rc1,
+        } => {
+            (input as f64 * ri
+                + output as f64 * ro
+                + cache_read as f64 * rcr
+                + cache_write_5m as f64 * rc5
+                + cache_write_1h as f64 * rc1)
+                / 1e6
+        }
+        RateSpec::Blended(rate) => {
+            ((input + output + cache_read + cache_write_5m + cache_write_1h) as f64 / 1e6) * rate
+        }
+    }
 }
 
-fn codex_cost(model: &str, input: u64, cached: u64, output: u64, reasoning: u64) -> f64 {
-    let rate = rate_per_mtok(model);
-    (input.saturating_sub(cached) as f64 * rate
-        + cached as f64 * rate * 0.1
-        + (output + reasoning) as f64 * rate)
-        / 1e6
+/// Codex 的 `input` 累計已含 cached,計價把非快取部分與 cached 分開:blended 時 cached
+/// 打 0.1 折(沿用既有語意),分項時 cached 走 override 的 cache_read 費率,
+/// output+reasoning 走 output 費率。無 override 時 "gpt-5-codex" 落到 blended,行為不變。
+fn codex_cost(
+    over: &PricingOverride,
+    model: &str,
+    input: u64,
+    cached: u64,
+    output: u64,
+    reasoning: u64,
+) -> f64 {
+    match resolve_rates(over, model) {
+        RateSpec::Blended(rate) => {
+            (input.saturating_sub(cached) as f64 * rate
+                + cached as f64 * rate * 0.1
+                + (output + reasoning) as f64 * rate)
+                / 1e6
+        }
+        RateSpec::Component {
+            input: ri,
+            output: ro,
+            cache_read: rcr,
+            ..
+        } => {
+            (input.saturating_sub(cached) as f64 * ri
+                + cached as f64 * rcr
+                + (output + reasoning) as f64 * ro)
+                / 1e6
+        }
+    }
 }
 
 type CodexUsage = (u64, u64, u64, u64);
@@ -1232,6 +1300,7 @@ fn scan_claude_line(
         .unwrap_or_else(|| cache_creation.saturating_sub(cache_write_1h));
     let cached = cache_read + cache_creation;
     let cost = claude_cost(
+        &acc.pricing,
         model,
         input,
         output,
@@ -1545,6 +1614,7 @@ mod tests {
             claude,
             |_, _| {},
             accounts,
+            Arc::new(PricingOverride::empty()),
         )
     }
 
@@ -2105,6 +2175,7 @@ mod tests {
             |_, _| {},
             |_, _| {},
             Vec::new(),
+            Arc::new(PricingOverride::empty()),
         );
         assert!(a.by_agent.is_empty());
         assert_eq!(a.total_tokens, 0);
@@ -2406,6 +2477,103 @@ mod tests {
 
         let tied = record_acc(0, &[("2026-07-16", 9, 101), ("2026-07-17", 10, 101)]);
         assert!(!records_for(&tied, today, 10).pr_now);
+    }
+
+    // ── T-feat-006 pricing override: the override → vendored → blended chain ──
+    //
+    // These drive real cost through `scan_claude_line` (the same path production
+    // uses) with an injected override table, and assert the resulting $ amount —
+    // a lookup that never reaches the cost is the bug this ticket guards against,
+    // so the assertions are on money, not on `lookup` in isolation.
+
+    /// Total est. cost for one input-only Claude message of `tokens` under `over`.
+    /// Input-only so the amount is just `tokens × input_rate / 1e6`, making the
+    /// active rate directly readable from the assertion.
+    fn claude_cost_with(over: Arc<PricingOverride>, model: &str, tokens: u64) -> f64 {
+        let mut acc = Acc::new(1_782_000_000);
+        acc.pricing = over;
+        let mut seen = HashSet::new();
+        let line = serde_json::json!({
+            "timestamp": "2026-07-17T00:00:00Z",
+            "message": { "model": model, "usage": { "input_tokens": tokens } }
+        })
+        .to_string();
+        scan_claude_lines(&mut acc, 0, "p", vec![line].into_iter(), &mut seen);
+        acc.days.values().map(|d| d.cost).sum()
+    }
+
+    /// 精確命中蓋過 vendored:opus vendored input = $5/Mtok,override 到 $10/Mtok。
+    #[test]
+    fn override_exact_hit_overrides_vendored_amount() {
+        let vendored = claude_cost_with(
+            Arc::new(PricingOverride::empty()),
+            "claude-opus-4-8",
+            1_000_000,
+        );
+        assert!((vendored - 5.0).abs() < 1e-9, "vendored opus 應為 $5:{vendored}");
+
+        let over = Arc::new(PricingOverride::from_json_str(
+            r#"{ "models": { "claude-opus-4-8": { "input": 10.0, "output": 50.0 } } }"#,
+        ));
+        let overridden = claude_cost_with(over, "claude-opus-4-8", 1_000_000);
+        assert!((overridden - 10.0).abs() < 1e-9, "override 應蓋成 $10:{overridden}");
+    }
+
+    /// 混合檔:壞條目(負 input)被跳過、好條目生效,兩者互不影響。
+    #[test]
+    fn override_mixed_file_skips_bad_keeps_good() {
+        let over = Arc::new(PricingOverride::from_json_str(
+            r#"{ "models": {
+                "claude-opus-4-8": { "input": 10.0, "output": 50.0 },
+                "claude-sonnet-4-x": { "input": -3.0, "output": 15.0 }
+            } }"#,
+        ));
+        // 好條目:opus 走 override input=10 → $10。
+        let good = claude_cost_with(over.clone(), "claude-opus-4-8", 1_000_000);
+        assert!((good - 10.0).abs() < 1e-9, "好條目應生效:{good}");
+        // 壞條目(負 input)被跳過:sonnet 落回 vendored input=3 → $3。
+        let fell_back = claude_cost_with(over, "claude-sonnet-4-x", 1_000_000);
+        assert!((fell_back - 3.0).abs() < 1e-9, "壞條目應退 vendored $3:{fell_back}");
+    }
+
+    /// 整檔壞 JSON → 全部退 vendored,結果與無檔一致(逐 model 比對成本)。
+    #[test]
+    fn override_whole_bad_json_matches_no_file() {
+        let bad = Arc::new(PricingOverride::from_json_str("not json {{{"));
+        let none = Arc::new(PricingOverride::empty());
+        for model in ["claude-opus-4-8", "claude-sonnet-4-x", "claude-haiku-x"] {
+            let with_bad = claude_cost_with(bad.clone(), model, 1_000_000);
+            let no_file = claude_cost_with(none.clone(), model, 1_000_000);
+            assert!(
+                (with_bad - no_file).abs() < 1e-12,
+                "壞檔成本必須與無檔一致:{model} {with_bad} vs {no_file}"
+            );
+        }
+    }
+
+    /// 優先序:精確 > override substring > vendored(sonnet vendored=3,substring=7,精確=20)。
+    #[test]
+    fn override_priority_exact_beats_substring_beats_vendored() {
+        let model = "claude-sonnet-4-x";
+        let vendored = claude_cost_with(Arc::new(PricingOverride::empty()), model, 1_000_000);
+        assert!((vendored - 3.0).abs() < 1e-9, "vendored sonnet 應為 $3:{vendored}");
+
+        // substring key "sonnet" 蓋過 vendored(7 > 3)。
+        let sub = Arc::new(PricingOverride::from_json_str(
+            r#"{ "models": { "sonnet": { "input": 7.0, "output": 15.0 } } }"#,
+        ));
+        let sub_cost = claude_cost_with(sub, model, 1_000_000);
+        assert!((sub_cost - 7.0).abs() < 1e-9, "substring 應蓋成 $7:{sub_cost}");
+
+        // 同時有 substring(7)與精確 id(20)→ 精確勝出。
+        let both = Arc::new(PricingOverride::from_json_str(
+            r#"{ "models": {
+                "sonnet": { "input": 7.0, "output": 15.0 },
+                "claude-sonnet-4-x": { "input": 20.0, "output": 15.0 }
+            } }"#,
+        ));
+        let exact_cost = claude_cost_with(both, model, 1_000_000);
+        assert!((exact_cost - 20.0).abs() < 1e-9, "精確應蓋成 $20:{exact_cost}");
     }
 }
 

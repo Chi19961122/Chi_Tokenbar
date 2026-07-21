@@ -1,5 +1,5 @@
 # T-feat-006 — 可重載 pricing / alias 表(vendored 預設 + 本機 override)
-status: todo
+status: done
 
 `只實作本票行為與資料。可沿用現有樣式。禁止大規模 redesign。對照 PLAN flow。`
 

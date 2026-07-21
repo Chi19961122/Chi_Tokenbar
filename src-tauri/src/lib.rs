@@ -5,6 +5,7 @@ mod burnrate;
 mod config;
 mod engine;
 mod model;
+mod pricing;
 mod providers;
 mod ranking;
 mod scan_coord;
